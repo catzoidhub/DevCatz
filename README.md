@@ -26,10 +26,12 @@ account, no Pro tier, nothing locked behind a payment.
 ## Install
 
 Download the DMG from [catzoid.com/devcatz/download](https://catzoid.com/devcatz/download) — it picks the right
-build for your Mac (Apple silicon or Intel, macOS 13 or later). Or with Homebrew:
+build for your Mac (Apple silicon or Intel, macOS 13 or later). Or with Homebrew — it asks you to trust a tap
+that is not its own the first time:
 
 ```bash
-brew install --cask catzoidhub/catz/devcatz
+brew tap catzoidhub/catz && brew trust catzoidhub/catz
+brew install --cask devcatz
 ```
 
 The app is signed and notarized by Apple and updates itself (Settings → About → Check for Updates). Windows builds
