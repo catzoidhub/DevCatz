@@ -1,4 +1,4 @@
-DevCatz 0.1.0 — third-party software
+DevCatz 1.0.0 — third-party software
 
 DevCatz is free software under the GNU General Public License v3.0. It contains the open-source packages below,
 each under its own licence; their copyright notices and licence texts follow. Electron also ships the licences
