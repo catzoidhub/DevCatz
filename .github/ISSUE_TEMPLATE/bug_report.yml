@@ -1,0 +1,47 @@
+name: Bug report
+description: Something does not work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Thank you for reporting! The quickest way is **Help → Report a Bug…** inside DevCatz: it adds the version and Mac details for you and can attach a screenshot. This form is for when the app will not open, or you prefer GitHub.
+        A security problem? Please do not report it here — use **Security → Report a vulnerability** instead.
+  - type: input
+    id: version
+    attributes:
+      label: DevCatz version
+      description: Settings → About, or DevCatz → About DevCatz.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Mac
+      description: macOS version and chip.
+      placeholder: "macOS 15.4, Apple silicon"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen again
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error message, log or screenshot
+      description: Paste text as text, drop screenshots in. Remove anything secret first.
