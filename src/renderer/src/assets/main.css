@@ -1,0 +1,1941 @@
+@import 'tailwindcss';
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
+}
+
+/*
+ * DevCatz UI — design tokens.
+ *
+ * Soft OKLCH palette (no pure white/black), indigo→violet accent matching the
+ * app icon, 16 px card radius, 10 px fields. Everything below is global so
+ * new views look right by using the ordinary DaisyUI classes
+ * (.card, .btn, .badge, .table, .tabs …). See memory: devcatz-ui-design-system.
+ */
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-base-100: oklch(98% 0.004 285);
+  --color-base-200: oklch(95.5% 0.006 285);
+  --color-base-300: oklch(90.5% 0.009 285);
+  --color-base-content: oklch(32% 0.02 280);
+  --color-primary: oklch(57% 0.2 283);
+  --color-primary-content: oklch(98% 0.01 283);
+  --color-secondary: oklch(62% 0.2 305);
+  --color-secondary-content: oklch(98% 0.01 305);
+  --color-accent: oklch(70% 0.15 190);
+  --color-accent-content: oklch(20% 0.04 190);
+  --color-neutral: oklch(29% 0.02 280);
+  --color-neutral-content: oklch(90% 0.01 280);
+  --color-info: oklch(66% 0.14 240);
+  --color-info-content: oklch(98% 0.01 240);
+  --color-success: oklch(66% 0.15 158);
+  --color-success-content: oklch(98% 0.02 158);
+  --color-warning: oklch(78% 0.15 78);
+  --color-warning-content: oklch(28% 0.06 78);
+  --color-error: oklch(62% 0.19 25);
+  --color-error-content: oklch(98% 0.02 25);
+  --radius-box: 1rem;
+  --radius-field: 0.625rem;
+  --radius-selector: 0.5rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+  prefersdark: true;
+  --color-base-100: oklch(24% 0.014 282);
+  --color-base-200: oklch(21% 0.014 282);
+  --color-base-300: oklch(31% 0.016 282);
+  --color-base-content: oklch(87% 0.01 282);
+  --color-primary: oklch(72% 0.15 283);
+  --color-primary-content: oklch(20% 0.05 283);
+  --color-secondary: oklch(74% 0.15 305);
+  --color-secondary-content: oklch(20% 0.05 305);
+  --color-accent: oklch(76% 0.13 190);
+  --color-accent-content: oklch(20% 0.04 190);
+  --color-neutral: oklch(19% 0.014 282);
+  --color-neutral-content: oklch(85% 0.01 282);
+  --color-info: oklch(74% 0.12 240);
+  --color-info-content: oklch(18% 0.04 240);
+  --color-success: oklch(74% 0.13 158);
+  --color-success-content: oklch(18% 0.04 158);
+  --color-warning: oklch(82% 0.13 78);
+  --color-warning-content: oklch(24% 0.06 78);
+  --color-error: oklch(70% 0.16 25);
+  --color-error-content: oklch(18% 0.04 25);
+  --radius-box: 1rem;
+  --radius-field: 0.625rem;
+  --radius-selector: 0.5rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* ------------------------------------------------------------ surfaces */
+
+:root {
+  /* Cards sit a hair above the page: lighter in dark mode, white-ish in light. */
+  --surface-card: oklch(from var(--color-base-100) calc(l + 0.012) c h);
+  --surface-raised: oklch(from var(--color-base-100) calc(l + 0.03) c h);
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.05), 0 10px 30px -18px oklch(0 0 0 / 0.18);
+  --shadow-pop: 0 12px 40px -12px oklch(0 0 0 / 0.35), 0 1px 3px oklch(0 0 0 / 0.1);
+  --accent-gradient: linear-gradient(135deg, oklch(from var(--color-primary) calc(l + 0.06) c h), var(--color-secondary));
+  /* Section colours, same as the app icon's stack: projects = indigo, storage = teal, database = amber. */
+  --c-projects: var(--color-primary);
+  --c-storage: oklch(68% 0.13 180);
+  --c-database: oklch(76% 0.15 78);
+  --c-websocket: oklch(68% 0.17 28);
+  --c-search: oklch(70% 0.13 235);
+  --c-monitoring: oklch(70% 0.16 150);
+  /* Git's own orange. */
+  --c-git: oklch(70% 0.16 50);
+  --c-mail: oklch(72% 0.14 300);
+  --c-whatsapp: oklch(70% 0.15 350);
+  --c-expose: oklch(70% 0.15 200);
+  --c-runtimes: oklch(66% 0.17 320);
+  --c-settings: oklch(from var(--color-base-content) l c h / 0.9);
+}
+[data-theme='dark'],
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface-card: oklch(from var(--color-base-100) calc(l + 0.025) c h);
+    --surface-raised: oklch(from var(--color-base-100) calc(l + 0.05) c h);
+    --shadow-card: 0 1px 2px oklch(0 0 0 / 0.3), 0 10px 30px -18px oklch(0 0 0 / 0.6);
+  }
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  background: transparent;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+code,
+kbd,
+pre,
+.font-mono {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-feature-settings: 'tnum';
+}
+
+/* Draggable title bar area (hiddenInset window). */
+/*
+ * Back / forward (App.vue) float over the top-left of each section's top strip. A no-drag hole there only holds
+ * when it is a child of the strip (Electron cuts no-drag regions out of the drag regions found before them), so
+ * every top strip carries one: <span class="nav-hole" /> in a .title-strip.
+ */
+.title-strip {
+  position: relative;
+}
+.title-strip > .nav-hole {
+  position: absolute;
+  left: 0.25rem;
+  top: 0.5rem;
+  /* ← → */
+  width: 4rem;
+  height: 2rem;
+  -webkit-app-region: no-drag;
+}
+.drag {
+  -webkit-app-region: drag;
+}
+.drag button,
+.drag input,
+.drag a,
+.drag select,
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.selectable {
+  user-select: text;
+}
+
+/* Thin, unobtrusive scrollbars. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(from var(--color-base-content) l c h / 0.18);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: oklch(from var(--color-base-content) l c h / 0.32);
+}
+
+/* ---------------------------------------------------------- components */
+
+/* Cards: raised surface, hairline border, soft shadow (any `.card` in the app). */
+.card {
+  background: var(--surface-card);
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.09);
+  box-shadow: var(--shadow-card);
+}
+/* One rhythm for every card body in the site tabs: roomy padding, a clear title, quiet hints. */
+.card > .card-body {
+  padding: 1.25rem 1.375rem;
+  gap: 0.875rem;
+}
+.card .card-body > h2,
+.card .card-body > .flex > h2,
+.card .card-body > form > h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+/* A table that fills its card edge to edge. */
+.card > .card-body.card-table {
+  padding: 0;
+  gap: 0;
+}
+.card-table > .card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.375rem 0.75rem;
+}
+.card-table > .card-head > h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.card-table > .card-foot {
+  padding: 0.75rem 1.375rem 1rem;
+  border-top: 1px solid oklch(from var(--color-base-content) l c h / 0.07);
+}
+.card-table .table {
+  border-top: 1px solid oklch(from var(--color-base-content) l c h / 0.07);
+}
+.card-table .table thead th {
+  background: oklch(from var(--color-base-content) l c h / 0.03);
+}
+
+/* Scrolling body of a site tab: generous padding, sections 24 px apart. */
+.site-tab {
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.5rem 1.75rem 2.25rem;
+}
+
+/* Section labels (SITES, RUNTIMES, APPS …). */
+.label-caps {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.5;
+}
+
+/* Primary buttons carry the brand gradient. */
+.btn-primary:not(.btn-outline):not(.btn-ghost):not(.btn-soft):not(.btn-link) {
+  background-image: var(--accent-gradient);
+  border-color: transparent;
+  box-shadow: 0 1px 2px oklch(from var(--color-primary) l c h / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.18);
+}
+.btn-primary:not(.btn-outline):not(.btn-ghost):not(.btn-soft):not(.btn-link):hover {
+  filter: brightness(1.05);
+}
+.btn {
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease,
+    transform 80ms ease;
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+/* Segmented tab bar (site tabs, settings tabs). */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: oklch(from var(--color-base-content) l c h / 0.06);
+}
+/* Rail sections scroll above the fixed Settings button; the last few pixels fade out instead of a hard cut. */
+.rail-scroll {
+  mask-image: linear-gradient(to bottom, black calc(100% - 18px), transparent);
+}
+.seg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: oklch(from var(--color-base-content) l c h / 0.7);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+/* A choice between options (Docker tab: Local test / Production, .env.docker / Project .env): the picked one in the
+   accent colour, so it reads at a glance (plain .seg stays for tab bars). */
+.seg-choice .seg-item.is-active {
+  color: var(--color-primary);
+  background: color-mix(in oklch, var(--color-primary) 14%, var(--color-base-100));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-primary) 45%, transparent);
+}
+/* Labels that keep their own case (php.ini, WebSocket). */
+.seg-xs {
+  padding: 2px;
+  border-radius: 9px;
+}
+.seg-xs .seg-item {
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+.seg-item.normal-case {
+  text-transform: none;
+}
+.seg-item:hover {
+  color: var(--color-base-content);
+}
+.seg-item.is-active {
+  background: var(--surface-raised);
+  color: var(--color-base-content);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.1), 0 0 0 1px oklch(from var(--color-base-content) l c h / 0.06);
+}
+
+/* Sidebar rows (.menu): rounded, calm hover, selected = raised card. */
+.menu {
+  --menu-active-bg: var(--surface-raised);
+  --menu-active-fg: var(--color-base-content);
+}
+.menu li > a,
+.menu li > button {
+  border-radius: 10px;
+  transition: background-color 100ms ease;
+}
+.menu li > a.menu-active {
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.08), 0 0 0 1px oklch(from var(--color-base-content) l c h / 0.07);
+}
+.menu :where(li > .menu-title) {
+  color: inherit;
+}
+
+/* Status dots: running glows. */
+.status.status-success {
+  box-shadow: 0 0 0 3px oklch(from var(--color-success) l c h / 0.22);
+}
+
+/* Tables: quieter header, hairline rows. */
+.table :where(thead tr) {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: oklch(from var(--color-base-content) l c h / 0.55);
+}
+.table :where(thead th) {
+  font-weight: 600;
+}
+.table :where(tbody tr) {
+  border-color: oklch(from var(--color-base-content) l c h / 0.07);
+}
+
+/* Badges default to the soft look unless a style is chosen. */
+.badge-ghost {
+  background: oklch(from var(--color-base-content) l c h / 0.07);
+  border-color: transparent;
+}
+
+/* Alerts and toasts: glassy, no heavy fill. */
+.alert {
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.08);
+  background: var(--surface-card);
+}
+/*
+ * Colored alerts without a style (toasts, plain alert-error …): DaisyUI gives
+ * them its *-content text colour, which is dark in dark mode and unreadable on
+ * the card background above. Tinted card, coloured border, normal text instead.
+ */
+.alert:is(.alert-error, .alert-success, .alert-info, .alert-warning):not(.alert-soft, .alert-outline, .alert-dash) {
+  color: var(--color-base-content);
+  background: color-mix(in oklch, var(--alert-tone) 18%, var(--surface-raised));
+  border-color: oklch(from var(--alert-tone) l c h / 0.6);
+}
+.alert.alert-error {
+  --alert-tone: var(--color-error);
+}
+.alert.alert-success {
+  --alert-tone: var(--color-success);
+}
+.alert.alert-info {
+  --alert-tone: var(--color-info);
+}
+.alert.alert-warning {
+  --alert-tone: var(--color-warning);
+}
+.toast .alert {
+  box-shadow: var(--shadow-pop);
+  /* Solid, so it never blends into the window behind it. */
+  background-color: color-mix(in oklch, var(--alert-tone, var(--color-base-content)) 18%, var(--surface-raised));
+}
+
+/* Inputs */
+.input,
+.select,
+.textarea {
+  background: var(--surface-raised);
+  transition: box-shadow 120ms ease;
+}
+.input:focus-within,
+.select:focus-within,
+.textarea:focus-within {
+  box-shadow: 0 0 0 3px oklch(from var(--color-primary) l c h / 0.2);
+}
+
+/*
+ * A modal covers the window's drag regions (headers, empty states): without
+ * no-drag Electron keeps them and clicks/scrolls on the modal move the window.
+ */
+.modal {
+  -webkit-app-region: no-drag;
+}
+
+/* Modal: rendered with v-if, so no open/close animation (DaisyUI's leaves the box half-transparent). */
+.modal.modal-open .modal-box {
+  opacity: 1;
+  scale: 1;
+  translate: 0;
+}
+.modal-box {
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pop);
+}
+
+/* Progress */
+.progress {
+  height: 6px;
+}
+
+/* Section rail */
+.rail-item {
+  --rail-c: var(--color-primary);
+  display: flex;
+  width: 5rem;
+  flex-direction: column;
+  align-items: center;
+  /* Compact enough for ten sections above Settings in the default window height. */
+  gap: 4px;
+  padding: 5px 0 4px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  color: oklch(from var(--color-base-content) l c h / 0.55);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.rail-item:hover {
+  color: var(--color-base-content);
+  background: oklch(from var(--color-base-content) l c h / 0.06);
+}
+.rail-item .rail-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+.rail-item.is-active {
+  color: var(--rail-c);
+}
+.rail-item.is-active .rail-icon {
+  background: color-mix(in oklch, var(--rail-c) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--rail-c) 28%, transparent);
+}
+
+/* Stack tags in the sites list (Laravel, Go, Nuxt …). */
+.stack-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* Header title chip for URLs. */
+.url-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 10px 2px 8px;
+  border-radius: 999px;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.1);
+  background: oklch(from var(--color-base-content) l c h / 0.04);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  color: var(--color-primary);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.url-chip:hover {
+  background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+}
+
+/* Sidebar Git chip: changed files / commits to push or pull ("●3 ↑1"). */
+.git-chip {
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+  color: var(--c-git);
+  background: oklch(from var(--c-git) l c h / 0.14);
+}
+/* Sidebar: a worktree site under its parent row (indented, tighter). */
+.worktree-row > a {
+  padding-left: 1.25rem;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+}
+.git-chip.is-warn {
+  color: var(--color-warning);
+  background: oklch(from var(--color-warning) l c h / 0.16);
+}
+
+/* Sidebar group count: "2/5" with a live dot, or just the total. */
+.sec-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  background: oklch(from var(--color-base-content) l c h / 0.06);
+  color: oklch(from var(--color-base-content) l c h / 0.6);
+}
+.sec-count.is-live {
+  color: var(--color-success);
+  background: oklch(from var(--color-success) l c h / 0.12);
+}
+.sec-count .status {
+  box-shadow: none;
+}
+
+/* Sidebar search */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 9px;
+  background: oklch(from var(--color-base-content) l c h / 0.06);
+  transition: box-shadow 120ms ease, background-color 120ms ease;
+}
+.search-box:focus-within {
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 3px oklch(from var(--color-primary) l c h / 0.2);
+}
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 12px;
+}
+.search-box input::placeholder {
+  color: oklch(from var(--color-base-content) l c h / 0.45);
+}
+
+/* Radio-style selector dot (which service a panel shows): hollow ring, filled with --pick-c when on. */
+.pick-dot {
+  --pick-c: var(--color-primary);
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 1.5px solid oklch(from var(--color-base-content) l c h / 0.28);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+.pick-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: white;
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+.pick-dot:hover {
+  border-color: var(--pick-c);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--pick-c) 14%, transparent);
+}
+.pick-dot.is-on {
+  border-color: var(--pick-c);
+  background: var(--pick-c);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--pick-c) 22%, transparent);
+}
+.pick-dot.is-on::after {
+  transform: scale(1);
+}
+.pick-dot:focus-visible {
+  outline: 2px solid var(--pick-c);
+  outline-offset: 2px;
+}
+
+/* Scrolls without a visible bar (section rail on short windows). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Sidebar drag and drop: the row the dragged item will land before. */
+.drop-before {
+  box-shadow: inset 0 2px 0 0 var(--color-primary);
+}
+
+/* ---------------------------------------------------------- DBCatz (database viewer window) */
+
+/* Connection tabs in the title bar: pill tabs on the baseline, an accent bar for saved connections. */
+.dv-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 14rem;
+  height: 32px;
+  padding: 0 0.7rem;
+  margin-bottom: 6px;
+  border-radius: 0.6rem;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: oklch(from var(--color-base-content) l c h / 0.65);
+  transition: background 0.12s, color 0.12s;
+}
+.dv-tab:hover {
+  background: oklch(from var(--color-base-content) l c h / 0.06);
+  color: var(--color-base-content);
+}
+.dv-tab.is-active {
+  background: var(--surface-raised);
+  color: var(--color-base-content);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.08), inset 0 0 0 1px oklch(from var(--color-base-content) l c h / 0.08);
+}
+.dv-tab-accent {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--tab-accent, transparent);
+  margin-right: 0.1rem;
+}
+.dv-tab-close {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 0.1rem;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+}
+.dv-tab:hover .dv-tab-close,
+.dv-qtab:hover .dv-tab-close {
+  opacity: 0.6;
+}
+.dv-tab-close:hover {
+  opacity: 1 !important;
+  background: oklch(from var(--color-base-content) l c h / 0.12);
+}
+.dv-tab-add {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-bottom: 9px;
+  border-radius: 0.5rem;
+  font-size: 16px;
+  opacity: 0.5;
+}
+.dv-tab-add:hover {
+  opacity: 1;
+  background: oklch(from var(--color-base-content) l c h / 0.08);
+}
+/* Editor tabs in the query area: smaller, flat. */
+.dv-qtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 24px;
+  padding: 0 0.6rem;
+  border-radius: 0.4rem;
+  font-size: 11.5px;
+  white-space: nowrap;
+  opacity: 0.65;
+}
+.dv-qtab:hover {
+  opacity: 1;
+  background: oklch(from var(--color-base-content) l c h / 0.06);
+}
+.dv-qtab.is-active {
+  opacity: 1;
+  background: oklch(from var(--color-base-content) l c h / 0.09);
+  font-weight: 600;
+}
+
+/* Connection rows and table rows in the sidebars. */
+.dv-conn,
+.dv-table {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.6rem;
+  text-align: left;
+  font-size: 13px;
+  cursor: default;
+  transition: background 0.1s;
+}
+.dv-table {
+  gap: 0.45rem;
+  padding: 0.3rem 0.5rem;
+}
+.dv-conn:hover,
+.dv-table:hover {
+  background: oklch(from var(--color-base-content) l c h / 0.06);
+}
+.dv-conn.is-editing,
+.dv-table.is-active {
+  background: oklch(from var(--color-primary) l c h / 0.14);
+}
+.dv-table.is-active {
+  color: var(--color-base-content);
+}
+.dv-table.is-active svg {
+  opacity: 0.9;
+  color: var(--color-primary);
+}
+
+/* Engine picker and format choices: card-like radio buttons. */
+.dv-engine,
+.dv-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.7rem;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.1);
+  background: var(--surface-card);
+  font-size: 12.5px;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+}
+.dv-choice {
+  display: block;
+}
+.dv-engine:hover,
+.dv-choice:hover {
+  border-color: oklch(from var(--color-base-content) l c h / 0.25);
+}
+.dv-engine.is-active,
+.dv-choice.is-active {
+  border-color: var(--color-primary);
+  background: oklch(from var(--color-primary) l c h / 0.1);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+/* The data grid: dense, hairline rows, sticky header, NULLs dimmed. */
+.dv-grid {
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  font-size: 11.5px;
+  table-layout: auto;
+}
+.dv-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+  background: oklch(from var(--color-base-100) calc(l + 0.02) c h);
+  border-bottom: 1px solid oklch(from var(--color-base-content) l c h / 0.12);
+  border-right: 1px solid oklch(from var(--color-base-content) l c h / 0.05);
+  max-width: 24rem;
+  cursor: default;
+  user-select: none;
+}
+.dv-grid thead th:hover {
+  background: oklch(from var(--color-base-content) l c h / 0.06);
+}
+.dv-grid thead th.is-sorted {
+  color: var(--color-primary);
+}
+.dv-grid tbody td {
+  padding: 0.3rem 0.6rem;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid oklch(from var(--color-base-content) l c h / 0.06);
+  border-right: 1px solid oklch(from var(--color-base-content) l c h / 0.04);
+}
+.dv-grid tbody tr:nth-child(even) td {
+  background: oklch(from var(--color-base-content) l c h / 0.018);
+}
+.dv-grid tbody tr:hover td {
+  background: oklch(from var(--color-base-content) l c h / 0.05);
+}
+.dv-grid tbody tr.is-selected td,
+.dv-grid tbody tr.is-open td {
+  background: oklch(from var(--color-primary) l c h / 0.14);
+}
+.dv-grid td.is-null {
+  color: oklch(from var(--color-base-content) l c h / 0.35);
+  font-style: italic;
+}
+.dv-grid td.is-editing {
+  padding: 0.1rem 0.3rem;
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+.dv-grid tr.dv-insert td {
+  padding: 0.15rem 0.3rem;
+  background: oklch(from var(--color-success) l c h / 0.1);
+}
+.dv-rownum {
+  width: 2.5rem;
+  min-width: 2.5rem;
+  text-align: right !important;
+  color: oklch(from var(--color-base-content) l c h / 0.4);
+  user-select: none;
+  cursor: default;
+  background: oklch(from var(--color-base-content) l c h / 0.02);
+}
+.dv-cell-input {
+  width: 100%;
+  min-width: 6rem;
+  padding: 0.15rem 0.3rem;
+  border-radius: 0.3rem;
+  font: inherit;
+  background: var(--color-base-100);
+  outline: none;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.15);
+}
+.dv-cell-input:focus {
+  border-color: var(--color-primary);
+}
+
+/* Query editor and key value areas. */
+.dv-editor {
+  width: 100%;
+  min-height: 7rem;
+  flex: 1 1 45%;
+  resize: none;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+  background: transparent;
+  outline: none;
+  tab-size: 2;
+  user-select: text;
+}
+.dv-editor::placeholder {
+  opacity: 0.35;
+}
+
+/* DBCatz code editor: a transparent textarea over the highlighted copy. */
+.dv-code {
+  position: relative;
+  flex: 1 1 45%;
+  min-height: 7rem;
+  overflow: hidden;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+.dv-code-hl,
+.dv-code-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  white-space: pre;
+  overflow: auto;
+  border: 0;
+  background: transparent;
+  tab-size: inherit;
+}
+.dv-code-hl {
+  pointer-events: none;
+  color: var(--color-base-content);
+  overflow: hidden;
+}
+.dv-code-input {
+  resize: none;
+  color: transparent;
+  caret-color: var(--color-base-content);
+  outline: none;
+  user-select: text;
+}
+.dv-code-input::placeholder {
+  color: oklch(from var(--color-base-content) l c h / 0.35);
+}
+.dv-code-input::selection {
+  background: oklch(from var(--color-primary) l c h / 0.3);
+}
+/* Token colours (light), tuned for both themes below. */
+.hl-kw { color: oklch(55% 0.2 300); font-weight: 600; }
+.hl-type { color: oklch(55% 0.15 200); }
+.hl-fn { color: oklch(52% 0.16 250); }
+.hl-str { color: oklch(52% 0.15 145); }
+.hl-num { color: oklch(58% 0.17 50); }
+.hl-cmt { color: oklch(from var(--color-base-content) l c h / 0.45); font-style: italic; }
+.hl-ident { color: oklch(50% 0.12 80); }
+.hl-tbl { color: oklch(52% 0.16 25); font-weight: 600; }
+.hl-op { color: oklch(55% 0.18 350); }
+.hl-punct { color: oklch(from var(--color-base-content) l c h / 0.6); }
+.hl-const { color: oklch(55% 0.17 320); font-weight: 600; }
+.hl-key { color: oklch(50% 0.15 230); }
+.hl-br { font-weight: 600; }
+.hl-br-0 { color: oklch(60% 0.18 50); }
+.hl-br-1 { color: oklch(58% 0.17 300); }
+.hl-br-2 { color: oklch(58% 0.15 200); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .hl-kw { color: oklch(78% 0.14 300); }
+  :root:not([data-theme='light']) .hl-type { color: oklch(78% 0.12 200); }
+  :root:not([data-theme='light']) .hl-fn { color: oklch(78% 0.13 250); }
+  :root:not([data-theme='light']) .hl-str { color: oklch(78% 0.14 145); }
+  :root:not([data-theme='light']) .hl-num { color: oklch(80% 0.15 50); }
+  :root:not([data-theme='light']) .hl-ident { color: oklch(80% 0.1 80); }
+  :root:not([data-theme='light']) .hl-tbl { color: oklch(78% 0.14 25); }
+  :root:not([data-theme='light']) .hl-op { color: oklch(78% 0.15 350); }
+  :root:not([data-theme='light']) .hl-const { color: oklch(78% 0.14 320); }
+  :root:not([data-theme='light']) .hl-key { color: oklch(78% 0.12 230); }
+  :root:not([data-theme='light']) .hl-br-0 { color: oklch(80% 0.15 50); }
+  :root:not([data-theme='light']) .hl-br-1 { color: oklch(78% 0.14 300); }
+  :root:not([data-theme='light']) .hl-br-2 { color: oklch(78% 0.12 200); }
+}
+[data-theme='dark'] .hl-kw { color: oklch(78% 0.14 300); }
+[data-theme='dark'] .hl-type { color: oklch(78% 0.12 200); }
+[data-theme='dark'] .hl-fn { color: oklch(78% 0.13 250); }
+[data-theme='dark'] .hl-str { color: oklch(78% 0.14 145); }
+[data-theme='dark'] .hl-num { color: oklch(80% 0.15 50); }
+[data-theme='dark'] .hl-ident { color: oklch(80% 0.1 80); }
+[data-theme='dark'] .hl-tbl { color: oklch(78% 0.14 25); }
+[data-theme='dark'] .hl-op { color: oklch(78% 0.15 350); }
+[data-theme='dark'] .hl-const { color: oklch(78% 0.14 320); }
+[data-theme='dark'] .hl-key { color: oklch(78% 0.12 230); }
+[data-theme='dark'] .hl-br-0 { color: oklch(80% 0.15 50); }
+[data-theme='dark'] .hl-br-1 { color: oklch(78% 0.14 300); }
+[data-theme='dark'] .hl-br-2 { color: oklch(78% 0.12 200); }
+
+/* Read-only highlighted block (Redis JSON view, DDL). */
+.dv-json {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow: auto;
+  user-select: text;
+}
+.dv-celled {
+  display: block;
+  min-width: 6rem;
+}
+.dv-celled select.dv-cell-input {
+  appearance: auto;
+}
+.dv-cell-area {
+  min-height: 3.5rem;
+  min-width: 14rem;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+/* DBCatz cell editor: a small card anchored to the edited cell. */
+.dv-pop {
+  display: flex;
+  flex-direction: column;
+  border-radius: 0.85rem;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.12);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pop);
+  animation: dv-pop-in 0.12s ease-out;
+}
+.dv-pop.is-above {
+  animation-name: dv-pop-in-up;
+}
+@keyframes dv-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+}
+@keyframes dv-pop-in-up {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+}
+.dv-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.9rem 0.5rem;
+}
+.dv-pop-body {
+  padding: 0 0.9rem 0.75rem;
+}
+.dv-pop-body .dv-celled {
+  min-width: 0;
+}
+.dv-pop-body .dv-cell-input {
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.55rem;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.dv-pop-body .dv-cell-area {
+  min-width: 0;
+  min-height: 7.5rem;
+}
+.dv-pop-body .dv-celled > span.flex {
+  padding: 0.35rem 0.1rem;
+  gap: 0.4rem 0.9rem;
+}
+.dv-pop-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid oklch(from var(--color-base-content) l c h / 0.08);
+  background: oklch(from var(--color-base-content) l c h / 0.025);
+  border-radius: 0 0 0.85rem 0.85rem;
+}
+
+/* DBCatz connection progress. */
+.dv-progress {
+  border-radius: 0.85rem;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.1);
+  background: var(--surface-card);
+  padding: 0.9rem 1rem;
+}
+.dv-step-dot {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: 0.1rem;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  background: oklch(from var(--color-base-content) l c h / 0.08);
+}
+.dv-step-dot.is-ok {
+  background: oklch(from var(--color-success) l c h / 0.18);
+  color: var(--color-success);
+}
+.dv-step-dot.is-run {
+  background: oklch(from var(--color-primary) l c h / 0.18);
+  color: var(--color-primary);
+}
+.dv-step-dot.is-fail {
+  background: oklch(from var(--color-error) l c h / 0.18);
+  color: var(--color-error);
+}
+/* Connection form sections. */
+.dv-section {
+  border-radius: 0.9rem;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.09);
+  background: var(--surface-card);
+  padding: 1rem 1.1rem;
+}
+.dv-section > h3 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-bottom: 0.75rem;
+}
+.dv-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+.dv-toggle:hover {
+  background: oklch(from var(--color-base-content) l c h / 0.04);
+}
+.dv-toggle.is-off {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.dv-toggle.is-off:hover {
+  background: transparent;
+}
+
+/* DBCatz connection form: cards with a head row, a tinted sub-panel for SSH / AWS / Vault, a quick URL strip. */
+.dv-card {
+  margin-bottom: 0.9rem;
+  border-radius: 0.9rem;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.09);
+  background: var(--surface-card);
+  overflow: hidden;
+}
+.dv-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1.1rem;
+  border-bottom: 1px solid oklch(from var(--color-base-content) l c h / 0.06);
+}
+.dv-card-head > h3 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-right: auto;
+}
+.dv-card-head > h3 + .seg {
+  margin-left: auto;
+}
+.dv-card-head > h3:not(:only-child) {
+  margin-right: 0;
+}
+button.dv-card-head {
+  border-bottom: 0;
+}
+button.dv-card-head:hover {
+  background: oklch(from var(--color-base-content) l c h / 0.03);
+}
+.dv-card-body {
+  padding: 0.9rem 1.1rem 1.1rem;
+}
+.dv-card-body + .dv-card-body,
+.dv-sub + .dv-card-body {
+  border-top: 1px solid oklch(from var(--color-base-content) l c h / 0.06);
+}
+.dv-sub {
+  padding: 0.9rem 1.1rem 1.1rem;
+  background: oklch(from var(--color-primary) l c h / 0.05);
+  border-bottom: 1px solid oklch(from var(--color-base-content) l c h / 0.06);
+}
+.dv-sub-title {
+  margin-bottom: 0.7rem;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.dv-label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.5;
+}
+
+/* DBCatz connection list: section heads (drop targets), row actions, connected state. */
+.dv-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 0.5rem;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: oklch(from var(--color-base-content) l c h / 0.55);
+}
+.dv-sec-head.is-drop {
+  background: oklch(from var(--color-primary) l c h / 0.15);
+  color: var(--color-base-content);
+}
+.dv-row-act,
+.dv-row-more {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 0.4rem;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+}
+.dv-conn:hover .dv-row-act,
+.dv-sec-head:hover .dv-row-more {
+  opacity: 0.65;
+}
+.dv-row-act:hover,
+.dv-row-more:hover {
+  opacity: 1 !important;
+  background: oklch(from var(--color-base-content) l c h / 0.1);
+}
+.dv-conn-state {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin: 0 0.25rem 0 0.35rem;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px oklch(from var(--color-base-content) l c h / 0.35);
+}
+.dv-conn-state.is-on {
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px oklch(from var(--color-success) l c h / 0.2);
+}
+.dv-conn-state.is-stopped {
+  box-shadow: inset 0 0 0 1.5px oklch(from var(--color-base-content) l c h / 0.2);
+  opacity: 0.6;
+}
+.dv-conn.drop-before {
+  box-shadow: inset 0 2px 0 var(--color-primary);
+}
+
+/* DBCatz risk list (structure changes). */
+.dv-risk {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.08);
+}
+.dv-risk-tag {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 0.35rem;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dv-risk.is-block {
+  background: oklch(from var(--color-error) l c h / 0.08);
+  border-color: oklch(from var(--color-error) l c h / 0.3);
+}
+.dv-risk.is-block .dv-risk-tag {
+  background: var(--color-error);
+  color: var(--color-error-content);
+}
+.dv-risk.is-danger {
+  background: oklch(from var(--color-warning) l c h / 0.08);
+  border-color: oklch(from var(--color-warning) l c h / 0.3);
+}
+.dv-risk.is-danger .dv-risk-tag {
+  background: var(--color-warning);
+  color: var(--color-warning-content);
+}
+.dv-risk.is-warn .dv-risk-tag {
+  background: oklch(from var(--color-base-content) l c h / 0.1);
+}
+/* Unique / primary markers on columns. */
+.dv-key-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.3rem;
+  border-radius: 0.3rem;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+.dv-key-tag.is-pk {
+  background: oklch(from var(--color-warning) l c h / 0.18);
+  color: var(--color-warning);
+}
+.dv-key-tag.is-uq {
+  background: oklch(from var(--color-info) l c h / 0.18);
+  color: var(--color-info);
+}
+.dv-key-tag.is-fk {
+  background: oklch(from var(--color-secondary) l c h / 0.18);
+  color: var(--color-secondary);
+}
+
+/* DBCatz connection mode chips (tabs, headers). */
+.dv-mode-chip {
+  flex-shrink: 0;
+  padding: 0 0.35rem;
+  border-radius: 0.3rem;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.6;
+}
+.dv-mode-chip.is-prod {
+  background: oklch(62% 0.21 25);
+  color: white;
+}
+.dv-mode-chip.is-ro {
+  background: oklch(from var(--color-info) l c h / 0.2);
+  color: var(--color-info);
+}
+
+/* DBCatz connection rows: three lines (name, where, chips), presence dot on the logo, actions on hover. */
+.dv-conn.dv-row {
+  position: relative;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+  padding: 0.7rem 0.75rem 0.7rem 0.85rem;
+  border-radius: 0.8rem;
+}
+.dv-row-accent {
+  position: absolute;
+  left: 0.3rem;
+  top: 0.85rem;
+  bottom: 0.85rem;
+  width: 3px;
+  border-radius: 3px;
+}
+.dv-row-logo {
+  position: relative;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+.dv-row-logo > img {
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0.25rem;
+  border-radius: 0.65rem;
+  background: white;
+  box-shadow: inset 0 0 0 1px oklch(from var(--color-base-content) l c h / 0.1);
+}
+.dv-presence {
+  position: absolute;
+  right: -0.2rem;
+  bottom: -0.2rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: oklch(from var(--color-base-content) l c h / 0.25);
+  box-shadow: 0 0 0 2.5px var(--color-base-200);
+}
+.dv-presence.is-on {
+  background: var(--color-success);
+}
+.dv-presence.is-off {
+  background: transparent;
+  box-shadow: 0 0 0 2.5px var(--color-base-200), inset 0 0 0 1.5px oklch(from var(--color-base-content) l c h / 0.3);
+}
+.dv-row-actions {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  display: flex;
+  gap: 0.1rem;
+  padding: 0.1rem;
+  border-radius: 0.55rem;
+  background: var(--surface-raised);
+  box-shadow: 0 1px 6px oklch(0 0 0 / 0.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.dv-row:hover .dv-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.dv-row:hover .dv-row-act {
+  opacity: 0.75;
+}
+.dv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.15rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: oklch(from var(--color-base-content) l c h / 0.07);
+  color: oklch(from var(--color-base-content) l c h / 0.7);
+}
+.dv-chip > i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+.dv-chip.is-normal {
+  color: oklch(from var(--color-base-content) l c h / 0.6);
+}
+.dv-chip.is-normal > i {
+  background: oklch(from var(--color-base-content) l c h / 0.35);
+}
+.dv-chip.is-production {
+  background: oklch(62% 0.21 25 / 0.16);
+  color: oklch(68% 0.19 25);
+}
+.dv-chip.is-readonly {
+  background: oklch(from var(--color-info) l c h / 0.16);
+  color: var(--color-info);
+}
+.dv-chip.is-on {
+  background: oklch(from var(--color-success) l c h / 0.15);
+  color: var(--color-success);
+}
+.dv-chip.is-muted {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px oklch(from var(--color-base-content) l c h / 0.12);
+  color: oklch(from var(--color-base-content) l c h / 0.5);
+}
+.dv-conn.dv-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--color-primary);
+}
+
+/* ---------------------------------------------------------------- code editor (CodeEditor.vue, Docker tab)
+   Tokens use the hl-* palette above (shared with DBCatz's editors). */
+.code-editor {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.12);
+  border-radius: var(--radius-box);
+  background: oklch(from var(--color-base-200) l c h / 0.6);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+.code-gutter {
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: 0.75rem 0.5rem 0.75rem 0.75rem;
+  border-right: 1px solid oklch(from var(--color-base-content) l c h / 0.08);
+  color: oklch(from var(--color-base-content) l c h / 0.32);
+  text-align: right;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.code-body {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+.code-hl,
+.code-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  line-height: inherit;
+  white-space: pre;
+  overflow: auto;
+  border: 0;
+  background: transparent;
+  tab-size: inherit;
+}
+.code-hl {
+  pointer-events: none;
+  overflow: hidden;
+  color: var(--color-base-content);
+}
+.code-input {
+  resize: none;
+  color: transparent;
+  caret-color: var(--color-base-content);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.code-input::selection {
+  background: oklch(from var(--color-primary) l c h / 0.3);
+}
+.code-editor.is-readonly .code-input {
+  caret-color: transparent;
+}
+/* Find & replace: the matches marked under the code, the bar floating top-right. */
+.code-marks {
+  color: transparent;
+}
+.code-marks mark {
+  color: transparent;
+  border-radius: 3px;
+  background: oklch(from var(--color-warning) l c h / 0.28);
+  box-shadow: 0 0 0 1px oklch(from var(--color-warning) l c h / 0.45);
+}
+.code-marks mark.is-current {
+  background: oklch(from var(--color-primary) l c h / 0.35);
+  box-shadow: 0 0 0 1.5px var(--color-primary);
+}
+.code-find {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.4rem;
+  border-radius: 0.7rem;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.12);
+  background: var(--color-base-100);
+  box-shadow: 0 10px 28px -10px rgb(0 0 0 / 0.35);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+}
+.code-find-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.code-find-input {
+  width: 12rem;
+  height: 1.6rem;
+  padding: 0 0.5rem;
+  border-radius: 0.45rem;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.14);
+  background: oklch(from var(--color-base-200) l c h / 0.6);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  outline: none;
+}
+.code-find-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px oklch(from var(--color-primary) l c h / 0.18);
+}
+.code-find-count {
+  min-width: 4.2rem;
+  padding: 0 0.25rem;
+  text-align: center;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.code-find-btn {
+  display: grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.3rem;
+  border-radius: 0.45rem;
+  opacity: 0.7;
+}
+.code-find-btn:hover:not(:disabled) {
+  opacity: 1;
+  background: oklch(from var(--color-base-content) l c h / 0.08);
+}
+.code-find-btn:disabled {
+  opacity: 0.3;
+}
+.code-find-btn.is-on {
+  opacity: 1;
+  color: var(--color-primary);
+  background: oklch(from var(--color-primary) l c h / 0.12);
+}
+
+/* ✦ Ask DevCatz next to back / forward: a small accent disc so it reads as the entry to the AI. */
+.ask-fab {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+  overflow: hidden;
+  font-size: 18px;
+  color: white;
+  background: var(--accent-gradient, var(--color-primary));
+  box-shadow: 0 6px 18px -4px color-mix(in oklch, var(--color-primary) 65%, transparent), 0 0 0 1px color-mix(in oklch, white 18%, transparent) inset;
+  transition: transform 140ms ease;
+}
+/* A streak of light sweeps across now and then (the floating button and the palette's mark). */
+.ask-mark {
+  position: relative;
+  overflow: hidden;
+}
+.ask-fab::before,
+.ask-mark::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  background: linear-gradient(115deg, transparent 38%, rgb(255 255 255 / 0.65) 50%, transparent 62%);
+  transform: translateX(-120%);
+  animation: ask-shine 3.2s ease-in-out infinite;
+  will-change: transform;
+  pointer-events: none;
+}
+/* The cat breathes (its sparkles twinkle inside the SVG). */
+.ask-fab > span,
+.ask-mark > span {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  animation: ask-twinkle 3.2s ease-in-out infinite;
+  will-change: transform;
+}
+.ask-fab img,
+.ask-mark img,
+.ask-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ask-fab > span {
+  width: 2rem;
+  height: 2rem;
+}
+.ask-mark > span {
+  width: 1.7rem;
+  height: 1.7rem;
+}
+.ask-avatar img {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.ask-fab:hover {
+  transform: scale(1.08);
+}
+.ask-fab:hover > span {
+  animation-duration: 1.2s;
+}
+.ask-fab:active {
+  transform: scale(0.96);
+}
+@keyframes ask-shine {
+  0%, 55% { transform: translateX(-120%); }
+  80%, 100% { transform: translateX(120%); }
+}
+@keyframes ask-twinkle {
+  0%, 60%, 100% { transform: scale(1) translateY(0); }
+  72% { transform: scale(1.1) translateY(-1px); }
+  84% { transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-fab,
+  .ask-fab::before,
+  .ask-fab > span,
+  .ask-mark,
+  .ask-mark::before,
+  .ask-mark > span {
+    animation: none;
+  }
+}
+
+/* ---- Ask DevCatz palette */
+.ask-panel {
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  box-shadow: 0 24px 64px -16px rgb(0 0 0 / 0.35), 0 0 0 1px color-mix(in oklch, var(--color-primary) 8%, transparent);
+  background:
+    radial-gradient(120% 60% at 0% 0%, color-mix(in oklch, var(--color-primary) 7%, transparent), transparent 60%),
+    var(--color-base-100);
+}
+.ask-mark,
+.ask-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: white;
+  background: var(--accent-gradient, var(--color-primary));
+}
+.ask-mark {
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: 16px;
+  box-shadow: 0 6px 16px -6px color-mix(in oklch, var(--color-primary) 70%, transparent);
+}
+.ask-avatar {
+  width: 1.6rem;
+  height: 1.6rem;
+  font-size: 11px;
+}
+.ask-chip {
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 12.5px;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent);
+  background: color-mix(in oklch, var(--color-base-200) 60%, transparent);
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+.ask-chip:hover {
+  border-color: color-mix(in oklch, var(--color-primary) 45%, transparent);
+  background: color-mix(in oklch, var(--color-primary) 8%, transparent);
+  color: var(--color-primary);
+}
+.ask-bubble {
+  max-width: 85%;
+  padding: 0.5rem 0.85rem;
+  border-radius: 1rem 1rem 0.3rem 1rem;
+  font-size: 13.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--color-primary-content);
+  background: var(--accent-gradient, var(--color-primary));
+}
+.ask-error {
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 13px;
+  color: var(--color-error);
+  background: color-mix(in oklch, var(--color-error) 9%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-error) 22%, transparent);
+}
+.ask-thinking {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.6rem;
+}
+.ask-thinking > span {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--color-primary);
+  animation: ask-dot 1.1s ease-in-out infinite;
+}
+.ask-thinking > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ask-thinking > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.ask-thinking > em {
+  margin-left: 0.4rem;
+  font-size: 12px;
+  font-style: normal;
+  opacity: 0.55;
+}
+@keyframes ask-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+.ask-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.45rem 0.45rem 0.45rem 0.9rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 13%, transparent);
+  background: var(--color-base-100);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.ask-composer:focus-within {
+  border-color: color-mix(in oklch, var(--color-primary) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 14%, transparent);
+}
+.ask-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 1.75rem;
+  max-height: 8rem;
+  padding: 0.25rem 0;
+  resize: none;
+  field-sizing: content;
+  font-size: 14px;
+  line-height: 1.45;
+  background: transparent;
+  outline: none;
+}
+.ask-send {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.7rem;
+  color: white;
+  background: var(--accent-gradient, var(--color-primary));
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.ask-send svg {
+  width: 1rem;
+  height: 1rem;
+}
+.ask-send:disabled {
+  opacity: 0.35;
+}
+.ask-send:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+.ask-send.is-stop {
+  background: var(--color-base-content);
+  color: var(--color-base-100);
+}
+
+/* ---- AI steps (Ask DevCatz answers) */
+.ai-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.ai-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.6rem 0.6rem 0.7rem;
+  border-radius: 0.8rem;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 9%, transparent);
+  background: color-mix(in oklch, var(--color-base-200) 45%, transparent);
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.ai-step:hover {
+  border-color: color-mix(in oklch, var(--color-primary) 30%, transparent);
+}
+.ai-step-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.6rem;
+  color: var(--color-primary);
+  background: color-mix(in oklch, var(--color-primary) 12%, transparent);
+}
+.ai-step-icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+.ai-step-num {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  background: color-mix(in oklch, var(--color-base-content) 9%, transparent);
+}
+.ai-step.is-danger .ai-step-icon {
+  color: var(--color-error);
+  background: color-mix(in oklch, var(--color-error) 11%, transparent);
+}
+.ai-step.is-done {
+  border-color: color-mix(in oklch, var(--color-success) 30%, transparent);
+  background: color-mix(in oklch, var(--color-success) 6%, transparent);
+}
+.ai-step.is-done .ai-step-icon {
+  color: var(--color-success);
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
+}
+.ai-step.is-failed {
+  border-color: color-mix(in oklch, var(--color-error) 30%, transparent);
+}
+
+/* Site Settings → Ports: one row per app, the check under it. */
+.site-port {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.7rem;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.09);
+  background: oklch(from var(--color-base-200) l c h / 0.4);
+}
+.site-port-note {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+.site-port-note.is-ok {
+  color: var(--color-success);
+}
+.site-port-note.is-warn {
+  color: var(--color-warning);
+}
+
+/* Toasts sit left of the ✦ button, bottoms level, 1rem apart:
+   right = 1.25rem (fab inset) + 2.75rem (fab) + 1rem (gap); bottom = the fab's. */
+.toast.is-beside-fab {
+  inset-inline-end: 5rem;
+  bottom: 1.25rem;
+}
+
+/* Logs: one chip per app of a site that runs several processes; the line tags share its colour. */
+.log-tag {
+  font-weight: 600;
+}
+.log-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 1.4rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid oklch(from var(--color-base-content) l c h / 0.14);
+  opacity: 0.75;
+  transition: opacity 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+.log-chip:hover {
+  opacity: 1;
+}
+.log-chip.is-on {
+  opacity: 1;
+  border-color: oklch(from var(--color-primary) l c h / 0.6);
+  background: oklch(from var(--color-primary) l c h / 0.12);
+}
+.log-chip-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--tag, var(--color-primary));
+}
+
+/* Site Settings → Apps: the subdomain line under an app's port. */
+.site-port-sub {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+

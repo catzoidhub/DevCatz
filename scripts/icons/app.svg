@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    DevCatz app icon.
+    · the tile is the site's window                             → sites / projects
+    · the cat is MrCatz, its eyes are code brackets "< >"      → development
+    · it sits on a stack of three layers: indigo = projects, teal = object storage, amber = database
+    Palette: indigo #6D5DF6 · teal #2FD3BC · amber #FFC14D on a deep indigo tile (#2E2A7A → #4F42D8).
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F2B80"/>
+      <stop offset="1" stop-color="#4E41D6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.62">
+      <stop offset="0" stop-color="#8E7BFF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#8E7BFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.14"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#ECE9FF"/>
+    </linearGradient>
+    <!-- stack layers: lighter top face, deeper side -->
+    <linearGradient id="l1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9D8EFF"/><stop offset="1" stop-color="#6D5DF6"/></linearGradient>
+    <linearGradient id="l2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5CE6D0"/><stop offset="1" stop-color="#22B8A1"/></linearGradient>
+    <linearGradient id="l3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD37A"/><stop offset="1" stop-color="#F0A52E"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#15123F" flood-opacity="0.4"/>
+    </filter>
+    <filter id="soft" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#1B1760" flood-opacity="0.35"/>
+    </filter>
+    <filter id="tipglow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+
+  <!-- tile (site window) -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#tile)" filter="url(#shadow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#glow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#sheen)"/>
+  <!-- the stack: bottom = database (amber), middle = object storage (teal), top = projects (indigo) -->
+  <g filter="url(#soft)">
+    <g id="layer3">
+      <path fill="url(#l3)" d="M262 764 a250 62 0 0 0 500 0 v58 a250 62 0 0 1 -500 0 z"/>
+      <ellipse cx="512" cy="764" rx="250" ry="62" fill="#FFD98F"/>
+    </g>
+    <g id="layer2">
+      <path fill="url(#l2)" d="M262 704 a250 62 0 0 0 500 0 v58 a250 62 0 0 1 -500 0 z"/>
+      <ellipse cx="512" cy="704" rx="250" ry="62" fill="#79EEDB"/>
+    </g>
+    <g id="layer1">
+      <path fill="url(#l1)" d="M262 644 a250 62 0 0 0 500 0 v58 a250 62 0 0 1 -500 0 z"/>
+      <ellipse cx="512" cy="644" rx="250" ry="62" fill="#B6ABFF"/>
+    </g>
+  </g>
+
+  <!-- MrCatz on top, eyes as < > -->
+  <g transform="translate(512 56) scale(0.73) translate(-512 0)">
+    <!-- Catzoid family: robot neck ring under the chin (the chin covers its back half) -->
+    <ellipse cx="512" cy="782" rx="184" ry="40" fill="none" stroke="#2A2480" stroke-width="30"/>
+    <ellipse cx="512" cy="782" rx="184" ry="40" fill="none" stroke="#6D5DF6" stroke-width="16"/>
+    <!-- Catzoid family: antenna with a glowing teal tip -->
+    <g filter="url(#soft)">
+      <path d="M560 336 L582 196" fill="none" stroke="#3B33A8" stroke-width="22" stroke-linecap="round"/>
+      <circle cx="584" cy="176" r="40" fill="#2FD3BC" opacity="0.35" filter="url(#tipglow)"/>
+      <circle cx="584" cy="176" r="28" fill="#2FD3BC" stroke="#FFFFFF" stroke-width="8"/>
+    </g>
+    <g filter="url(#soft)">
+      <path fill="url(#fur)" stroke="url(#fur)" stroke-width="36" stroke-linejoin="round"
+        d="M268 418 L246 222 L446 334
+           C 487 318, 537 318, 578 334
+           L778 222 L756 418
+           C 792 470, 808 528, 808 586
+           C 808 712, 676 790, 512 790
+           C 348 790, 216 712, 216 586
+           C 216 528, 232 470, 268 418 Z"/>
+      <path fill="#6D5DF6" opacity="0.3" d="M300 404 L286 282 L420 356 Z"/>
+      <path fill="#6D5DF6" opacity="0.3" d="M724 404 L738 282 L604 356 Z"/>
+    </g>
+    <g fill="none" stroke="#3B33A8" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="446,548 392,596 446,644"/>
+      <polyline points="578,548 632,596 578,644"/>
+    </g>
+    <path fill="#3B33A8" stroke="#3B33A8" stroke-width="16" stroke-linejoin="round" d="M486 662 L538 662 L512 694 Z"/>
+    <path fill="none" stroke="#3B33A8" stroke-width="18" stroke-linecap="round" d="M470 724 C 490 744, 504 744, 512 728 C 520 744, 534 744, 554 724"/>
+  </g>
+</svg>

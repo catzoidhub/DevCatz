@@ -1,0 +1,51 @@
+{
+  "name": "devcatz",
+  "productName": "DevCatz",
+  "version": "1.0.0",
+  "license": "GPL-3.0-only",
+  "private": true,
+  "description": "Local development environment for JavaScript, Go and PHP/Laravel projects on macOS: sites on *.localhost with HTTPS, runtimes, databases and Docker",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "predev": "node scripts/dev-bundle-name.mjs",
+    "dev": "electron-vite dev",
+    "build": "node scripts/licenses.mjs && electron-vite build",
+    "licenses": "node scripts/licenses.mjs",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json",
+    "package": "node scripts/package.mjs",
+    "icons": "bun scripts/render-icons.ts",
+    "postinstall": "node node_modules/electron/install.js || bun node_modules/electron/install.js",
+    "package:dir": "electron-vite build && electron-builder --mac dir"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
+    "electron-updater": "^6.8.11",
+    "http-proxy-3": "^2.0.1",
+    "node-forge": "^1.4.0",
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^22",
+    "@types/node-forge": "^1.3.14",
+    "@types/qrcode": "1.5.5",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "daisyui": "^5.7.50",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vue": "^3.5.44",
+    "vue-tsc": "^3.3.13"
+  },
+  "trustedDependencies": [
+    "electron",
+    "electron-winstaller"
+  ],
+  "author": {
+    "name": "Mahryan Rakhmatullah"
+  }
+}

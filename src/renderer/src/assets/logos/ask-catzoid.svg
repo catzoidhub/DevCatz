@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    Ask DevCatz mark: MrCatz's head (the Catzoid brand cat, from Catzoid/art/logos/catzoid.svg) with a touch of
+    AI — sparkles (static: the button's CSS animation moves the whole mark, which the GPU does cheaply). Drawn in white for the violet
+    accent gradient behind it (the floating ✦ button, the palette's header); no tile of its own.
+  -->
+  <defs>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#ECE9FF"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#1B1760" flood-opacity="0.35"/>
+    </filter>
+    <!-- a four-point star, radius 100, centred on 0 0 -->
+    <path id="star" d="M0 -100 Q0 0 100 0 Q0 0 0 100 Q0 0 -100 0 Q0 0 0 -100 Z"/>
+  </defs>
+
+  <!-- the head, a little smaller and lower than in the brand tile: room for the sparkles -->
+  <g transform="translate(512 552) scale(0.9) translate(-512 -500)">
+    <!-- neck ring -->
+    <ellipse cx="512" cy="782" rx="184" ry="40" fill="none" stroke="#2A2480" stroke-width="30" opacity="0.55"/>
+    <ellipse cx="512" cy="782" rx="184" ry="40" fill="none" stroke="#C9C0FF" stroke-width="16"/>
+    <!-- antenna with the glowing teal tip -->
+    <g filter="url(#soft)">
+      <path d="M560 336 L582 196" fill="none" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"/>
+      <circle cx="584" cy="176" r="46" fill="#2FD3BC" opacity="0.45" filter="url(#glow)"/>
+      <circle cx="584" cy="176" r="30" fill="#2FD3BC" stroke="#FFFFFF" stroke-width="10"/>
+    </g>
+    <g filter="url(#soft)">
+      <path fill="url(#fur)" stroke="url(#fur)" stroke-width="36" stroke-linejoin="round"
+        d="M268 418 L246 222 L446 334
+           C 487 318, 537 318, 578 334
+           L778 222 L756 418
+           C 792 470, 808 528, 808 586
+           C 808 712, 676 790, 512 790
+           C 348 790, 216 712, 216 586
+           C 216 528, 232 470, 268 418 Z"/>
+      <path fill="#6D5DF6" opacity="0.35" d="M300 404 L286 282 L420 356 Z"/>
+      <path fill="#6D5DF6" opacity="0.35" d="M724 404 L738 282 L604 356 Z"/>
+    </g>
+    <!-- the "< >" eyes with their glow -->
+    <g fill="none" stroke="#B8A8FF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" opacity="0.85">
+      <polyline points="446,548 392,596 446,644"/>
+      <polyline points="578,548 632,596 578,644"/>
+    </g>
+    <g fill="none" stroke="#3B33A8" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="446,548 392,596 446,644"/>
+      <polyline points="578,548 632,596 578,644"/>
+    </g>
+    <path fill="#3B33A8" stroke="#3B33A8" stroke-width="16" stroke-linejoin="round" d="M486 662 L538 662 L512 694 Z"/>
+    <path fill="none" stroke="#3B33A8" stroke-width="20" stroke-linecap="round" d="M470 724 C 490 744, 504 744, 512 728 C 520 744, 534 744, 554 724"/>
+  </g>
+
+  <!-- AI sparkles: a big one top-left, a small one bottom-right, twinkling out of step -->
+  <g fill="#FFFFFF">
+    <g transform="translate(150 172)">
+      <use href="#star" transform="scale(1.35)" opacity="0.55" filter="url(#glow)"/>
+      <use href="#star" transform="scale(1.1)"/>
+    </g>
+    <g transform="translate(884 790)">
+      <use href="#star" transform="scale(0.62)"/>
+    </g>
+    <g transform="translate(262 46)">
+      <use href="#star" transform="scale(0.36)"/>
+    </g>
+  </g>
+</svg>

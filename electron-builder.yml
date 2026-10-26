@@ -1,0 +1,58 @@
+appId: com.mrcatz.devcatz
+productName: DevCatz
+copyright: Copyright © 2026 Mahryan Rakhmatullah
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: resources
+    to: .
+    filter: ['*.png']
+  # the licences of the open-source packages inside (Catzoid #66), opened from About → Third-party licences
+  - from: resources/third-party-licenses.txt
+    to: third-party-licenses.txt
+# latest-mac.yml for in-app updates (Catzoid #54). The apps read it through the Catzoid site
+# (<site>/updates/devcatz/, set at run time), which serves it from this repo's newest release.
+publish:
+  provider: github
+  owner: catzoidhub
+  repo: DevCatz
+  releaseType: release
+protocols:
+  - name: DevCatz
+    schemes: [devcatz]
+mac:
+  category: public.app-category.developer-tools
+  icon: resources/icon.png
+  target:
+    - target: dmg
+      arch: [arm64]
+    # What in-app updates install (Catzoid #54): the zip, its .blockmap and latest-mac.yml go on the release too.
+    - target: zip
+      arch: [arm64]
+  # Signed with the Developer ID Application certificate in the login keychain
+  # (electron-builder picks it up automatically).
+  # Set CSC_IDENTITY_AUTO_DISCOVERY=false for an unsigned local build.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  # Notarized by scripts/package.mjs (bun run package) when the notarytool keychain
+  # profile mrcatz-notary exists; the app is notarized + stapled here, the DMG after.
+  notarize: true
+  minimumSystemVersion: '13.0'
+dmg:
+  # Signed too, then notarized and stapled by scripts/package.mjs (Apple's recommended order).
+  sign: true
+  title: DevCatz ${version}
+  artifactName: DevCatz-${version}-${arch}.${ext}
+  contents:
+    - { x: 150, y: 190, type: file }
+    - { x: 450, y: 190, type: link, path: /Applications }
+  window: { width: 600, height: 400 }
+
+# No native modules to compile: ssh2's optional cpu-features / crypto bindings fall back to pure JS.
+npmRebuild: false
