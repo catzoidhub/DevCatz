@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import CatMood from './CatMood.vue';
 import { attempt, herd, state } from '../store';
+import { isWin } from '../platform';
 
 /**
  * First-run welcome (Catzoid #29): what DevCatz does, and the two things that ask for your password — each only
@@ -49,8 +50,8 @@ async function done() {
         </div>
 
         <div class="space-y-1">
-          <p class="label-caps">Two things ask for your password — only if you choose them</p>
-          <p class="text-xs opacity-60">Nothing is installed now. Each button says what it does first; both can be undone in Settings → Project.</p>
+          <p class="label-caps">{{ isWin ? 'One thing asks you to confirm — only if you choose it' : 'Two things ask for your password — only if you choose them' }}</p>
+          <p class="text-xs opacity-60">Nothing is installed now. {{ isWin ? 'The button says' : 'Each button says' }} what it does first; {{ isWin ? 'it can' : 'both can' }} be undone in Settings → Project.</p>
         </div>
 
         <div class="space-y-3">
@@ -60,8 +61,9 @@ async function done() {
                 <p class="font-medium">1 · Trust DevCatz’s certificate</p>
                 <p class="mt-1 text-sm opacity-70">
                   So <span class="font-mono">https://</span> works without warnings — cookies, sign-in callbacks and service workers behave as
-                  in production. DevCatz Local CA lives only on this Mac and goes into your login keychain; macOS asks for your password or
-                  Touch ID once.
+                  in production.
+                  <template v-if="isWin">DevCatz Local CA lives only on this PC and goes into your own Trusted Root certificates; Windows asks you to confirm once.</template>
+                  <template v-else>DevCatz Local CA lives only on this Mac and goes into your login keychain; macOS asks for your password or Touch ID once.</template>
                 </p>
               </div>
               <span v-if="s.cert.caTrusted" class="badge badge-success badge-sm shrink-0">trusted</span>
@@ -71,7 +73,8 @@ async function done() {
             </div>
           </div>
 
-          <div class="rounded-xl border border-base-300/70 bg-base-200/40 p-4">
+          <!-- Windows, stage 1: no port forwarding yet (Catzoid #57); sites keep :8443. -->
+          <div v-if="!isWin" class="rounded-xl border border-base-300/70 bg-base-200/40 p-4">
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0">
                 <p class="font-medium">2 · Names without a port <span class="badge badge-ghost badge-sm ml-1">optional</span></p>
@@ -90,8 +93,12 @@ async function done() {
         </div>
 
         <p class="text-xs opacity-60">
-          No changes to <span class="font-mono">/etc/hosts</span>, no kernel extensions, nothing at login unless you turn it on.
-          <a class="link" @click="securityDoc">What DevCatz changes on your Mac</a>
+          <template v-if="isWin">
+            No changes to the <span class="font-mono">hosts</span> file, no administrator rights, nothing at sign-in unless you turn it on. Sites are at
+            <span class="font-mono">https://&lt;name&gt;.localhost:8443</span>.
+          </template>
+          <template v-else>No changes to <span class="font-mono">/etc/hosts</span>, no kernel extensions, nothing at login unless you turn it on.</template>
+          <a class="link" @click="securityDoc">What DevCatz changes on your {{ isWin ? 'PC' : 'Mac' }}</a>
         </p>
 
         <div class="modal-action mt-0">
