@@ -54,5 +54,23 @@ dmg:
     - { x: 450, y: 190, type: link, path: /Applications }
   window: { width: 600, height: 400 }
 
+# Windows x64 (Catzoid #57, stage 1), built on GitHub Actions (.github/workflows/release-windows.yml) and signed there
+# by the SignPath Foundation once the project is approved (#16); until then only unsigned test builds for the VM.
+win:
+  icon: resources/icon.png # ≥ 256 × 256; electron-builder makes the .ico
+  target:
+    - target: nsis
+      arch: [x64]
+  # Sets the .exe's icon and version info; with no certificate configured nothing is signed here.
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  # Per user: no administrator prompt, and in-app updates work without UAC.
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # What the Catzoid site's catalog matches (catalog.go winX64).
+  artifactName: ${productName}-Setup-${version}.${ext}
+  uninstallDisplayName: ${productName}
+
 # No native modules to compile: ssh2's optional cpu-features / crypto bindings fall back to pure JS.
 npmRebuild: false

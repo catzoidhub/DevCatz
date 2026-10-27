@@ -1,0 +1,94 @@
+# Windows x64 installer (Catzoid #57 / #16), started by hand: `gh workflow run release-windows.yml -f tag=v1.0.0`.
+# Builds the NSIS installer on a Windows runner (icon and version info set without Wine). Once SignPath has approved the
+# project (secret SIGNPATH_API_TOKEN, variables SIGNPATH_ORGANIZATION_ID / _PROJECT_SLUG / _SIGNING_POLICY_SLUG), the
+# .exe is signed there and only a signed .exe goes on the release. Without signing the run keeps the unsigned .exe as
+# a workflow artifact for testing in a VM — never on the release (the site and the in-app updates read the release).
+name: Release Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build (e.g. v1.0.0)
+        required: true
+      upload:
+        description: Upload the signed installer to the release
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Package (NSIS, x64)
+        run: npx electron-builder --win nsis --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Keep the unsigned installer
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unsigned
+          path: |
+            dist/*-Setup-*.exe
+            dist/*-Setup-*.exe.blockmap
+            dist/latest.yml
+
+      # SignPath: the inputs come from the project page once it is approved; check them then.
+      - name: Sign (SignPath)
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Use the signed installer, refresh latest.yml
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: |
+          $signed = Get-ChildItem signed -Recurse -Filter '*-Setup-*.exe' | Select-Object -First 1
+          $exe = Get-ChildItem dist -Filter '*-Setup-*.exe' | Select-Object -First 1
+          Copy-Item $signed.FullName $exe.FullName -Force
+          if ((Get-AuthenticodeSignature $exe.FullName).Status -ne 'Valid') { throw 'The installer is not signed' }
+          # Signing changed the file: new SHA-512 / size in latest.yml, and a new .blockmap.
+          $bytes = [IO.File]::ReadAllBytes($exe.FullName)
+          $sha = [Convert]::ToBase64String([Security.Cryptography.SHA512]::Create().ComputeHash($bytes))
+          $yml = Get-Content dist/latest.yml -Raw
+          $yml = $yml -replace '(?m)^(\s*sha512: ).*$', "`${1}$sha" -replace '(?m)^(\s*size: ).*$', "`${1}$($bytes.Length)"
+          Set-Content dist/latest.yml $yml -NoNewline
+          Remove-Item "$($exe.FullName).blockmap" -ErrorAction SilentlyContinue
+          npx app-builder blockmap --input $exe.FullName --output "$($exe.FullName).blockmap"
+
+      - name: Upload to the release
+        if: env.SIGNPATH_API_TOKEN != '' && inputs.upload
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ inputs.tag }} (Get-ChildItem dist -Filter '*-Setup-*.exe').FullName "$((Get-ChildItem dist -Filter '*-Setup-*.exe').FullName).blockmap" dist/latest.yml --clobber -R ${{ github.repository }}
