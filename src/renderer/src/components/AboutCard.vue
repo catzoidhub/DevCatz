@@ -21,7 +21,10 @@ const LICENCE = { name: 'GPL-3.0', url: 'https://www.gnu.org/licenses/gpl-3.0.ht
 const info = ref<AboutInfo | null>(null);
 onMounted(async () => (info.value = (await attempt(() => herd.aboutInfo())) ?? null));
 
-const arch = computed(() => (info.value?.arch === 'arm64' ? 'Apple silicon' : info.value?.arch === 'x64' ? 'Intel' : (info.value?.arch ?? '')));
+// "Apple silicon" / "Intel" are Mac words; Windows says x64 / ARM64.
+const arch = computed(() =>
+  words.computer === 'PC' ? (info.value?.arch === 'arm64' ? 'ARM64' : (info.value?.arch ?? '')) : info.value?.arch === 'arm64' ? 'Apple silicon' : info.value?.arch === 'x64' ? 'Intel' : (info.value?.arch ?? ''),
+);
 const host = computed(() => (info.value ? new URL(info.value.site).host : ''));
 const links = computed(() => {
   const site = info.value?.site;

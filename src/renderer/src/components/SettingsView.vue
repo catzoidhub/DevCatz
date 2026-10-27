@@ -643,7 +643,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
               <button class="btn btn-sm join-item" @click="pickDb('dbBinRoot')">Choose…</button>
               <button v-if="s.settings.dbBinRoot" class="btn btn-sm join-item" @click="setS3({ dbBinRoot: '' })">Reset</button>
             </div>
-            <span class="mt-1 block text-xs opacity-60">Downloads and compiled builds go to <code>&lt;folder&gt;/&lt;engine&gt;/&lt;version&gt;</code>; installed ones stay where they are.<template v-if="!isWin"> MariaDB lives in Homebrew.</template></span>
+            <span class="mt-1 block text-xs opacity-60">{{ isWin ? 'Downloads go to' : 'Downloads and compiled builds go to' }} <code>&lt;folder&gt;/&lt;engine&gt;/&lt;version&gt;</code>; installed ones stay where they are.<template v-if="!isWin"> MariaDB lives in Homebrew.</template></span>
           </label>
           <div>
             <span class="label-caps mb-1 block">Host in .env lines</span>
@@ -670,7 +670,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
                 Every service answers on <code>{{ s.settings.dbDomain }}.{{ s.settings.tld }}</code>, told apart by port (e.g.
                 <code>{{ s.settings.dbDomain }}.{{ s.settings.tld }}:3306</code>); .env lines use it. Empty it to go back to 127.0.0.1.
               </template>
-              <template v-else>Empty = no domain; clients use 127.0.0.1. The suffix follows Settings → General → Default domain.</template>
+              <template v-else>Empty = no domain; clients use 127.0.0.1. {{ isWin ? 'Names end in .localhost.' : 'The suffix follows Settings → General → Default domain.' }}</template>
             </span>
           </label>
         </div>
