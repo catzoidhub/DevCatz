@@ -57,7 +57,8 @@ export function stream(cwd: string, command: string, log: Log, env: Record<strin
   });
 }
 
-const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+// Windows: cmd.exe has no single quotes.
+const quote = (s: string) => (isWin ? `"${s.replace(/"/g, '\\"')}"` : `'${s.replace(/'/g, `'\\''`)}'`);
 
 export const DB_TASK_LABELS: Record<DbAction, string> = {
   start: 'Starting database',

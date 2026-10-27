@@ -5,6 +5,7 @@ import { attempt, herd, notify, state } from '../store';
 import { CONFIG_HINT, DB_LOGO, hasPassword } from '../db';
 import TaskStepper from './TaskStepper.vue';
 import CatMood from './CatMood.vue';
+import { isWin } from '../platform';
 
 /**
  * New database service (engine → version → settings), the settings of an
@@ -231,7 +232,8 @@ async function cancel() {
                 {{ dbHost ? `Reachable at ${dbHost}:${form.port || '…'} or 127.0.0.1` : '127.0.0.1 only (a DB domain can be set in Settings → Database)' }}<template v-if="engine === 'elasticsearch'">; transport port {{ Number(form.port) + 100 }}</template>.
               </span>
             </label>
-            <label v-if="isSql" class="block">
+            <!-- Windows: TCP only, no Unix sockets. -->
+            <label v-if="isSql && !isWin" class="block">
               <span class="label-caps mb-1 block">Socket path <span class="normal-case opacity-60">(optional)</span></span>
               <input v-model="form.socket" class="input input-sm w-full font-mono text-xs" :placeholder="`/tmp/devcatz-${engine}-${form.port}.sock`" spellcheck="false" />
             </label>
@@ -258,7 +260,7 @@ async function cancel() {
                 <button type="button" class="btn btn-sm join-item" @click="chooseConfig">Choose…</button>
                 <button v-if="form.configFile" type="button" class="btn btn-sm join-item" @click="form.configFile = ''">Clear</button>
               </div>
-              <span class="mt-1 block text-xs opacity-60">Port, data folder{{ isSql ? ', socket' : '' }} and 127.0.0.1 from this form still apply on top of it.</span>
+              <span class="mt-1 block text-xs opacity-60">Port, data folder{{ isSql && !isWin ? ', socket' : '' }} and 127.0.0.1 from this form still apply on top of it.</span>
             </label>
           </fieldset>
 

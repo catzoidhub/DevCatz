@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { extname, join } from 'node:path';
+import { extname, isAbsolute, join } from 'node:path';
 import type {
   DbBinary,
   DbImportCandidate,
@@ -19,8 +19,9 @@ import type {
   StorageAction,
   TaskProgress,
 } from '@shared/types';
-import { Cancelled, client, DB_ENGINE_ORDER, DB_ENGINES, mysqlClient, mysqlClientArgs, psqlArgs, type RemoteBuild } from './dbengines';
+import { binOf, Cancelled, client, DB_ENGINE_ORDER, DB_ENGINES, mysqlClient, mysqlClientArgs, psqlArgs, SQLITE_ROOT, type RemoteBuild } from './dbengines';
 import { isPortOpen, pipeCommands, portOwner, run } from './env';
+import { isWin } from './platform';
 import { ProcessManager } from './processes';
 import { dataDir, store, tld } from './store';
 
@@ -96,12 +97,14 @@ export class DbServiceManager {
 
   /** Root folder of the build an instance runs, when it is on disk. */
   binaryOf(c: Pick<DbServiceConfig, 'engine' | 'version'>): DbBinary | null {
-    if (c.engine === 'sqlite') return { engine: 'sqlite', version: c.version, root: '/usr', source: 'system' };
+    if (c.engine === 'sqlite') return { engine: 'sqlite', version: c.version, root: SQLITE_ROOT, source: 'system' };
     const b = store.dbBinaries.find((x) => x.engine === c.engine && x.version === c.version);
     return b && existsSync(b.root) ? b : null;
   }
 
   socketOf(c: Pick<DbServiceConfig, 'engine' | 'socket' | 'port'>): string | null {
+    // Windows: TCP only.
+    if (isWin) return null;
     if (c.engine === 'mysql' || c.engine === 'mariadb') return c.socket || `/tmp/devcatz-${c.engine}-${c.port}.sock`;
     if (c.engine === 'postgresql') return `/tmp/.s.PGSQL.${c.port}`;
     return null;
@@ -129,7 +132,7 @@ export class DbServiceManager {
           defaultPort: e.defaultPort,
           sourceNote: e.sourceNote,
           requirement: e.requirement ? await e.requirement() : null,
-          installed: engine === 'sqlite' ? [this.binaryOf({ engine, version: (await e.version('/usr')) ?? 'system' })!] : store.dbBinaries.filter((b) => b.engine === engine && existsSync(b.root)),
+          installed: engine === 'sqlite' ? [this.binaryOf({ engine, version: (await e.version(SQLITE_ROOT)) ?? 'system' })!] : store.dbBinaries.filter((b) => b.engine === engine && existsSync(b.root)),
         };
       }),
     );
@@ -199,9 +202,10 @@ export class DbServiceManager {
         if (clash) throw new Error(`Port ${clash} is used by ${o.name}`);
       }
     }
-    if (c.socket && !c.socket.startsWith('/')) throw new Error('Socket path must be absolute');
-    if (c.socket && Buffer.byteLength(c.socket) > 103) throw new Error('Socket path is too long (macOS allows 103 bytes)');
-    if (c.dataDir && !c.dataDir.startsWith('/')) throw new Error('Data folder must be an absolute path');
+    // Windows: no sockets (the field is ignored there).
+    if (!isWin && c.socket && !c.socket.startsWith('/')) throw new Error('Socket path must be absolute');
+    if (!isWin && c.socket && Buffer.byteLength(c.socket) > 103) throw new Error('Socket path is too long (macOS allows 103 bytes)');
+    if (c.dataDir && !(isWin ? isAbsolute(c.dataDir) : c.dataDir.startsWith('/'))) throw new Error('Data folder must be an absolute path');
     if (c.configFile && !existsSync(c.configFile)) throw new Error(`${c.configFile} does not exist`);
     const data = this.dataDirOf(c);
     const sameData = others.find((o) => this.dataDirOf(o) === data);
@@ -249,7 +253,13 @@ export class DbServiceManager {
       root = await e.install(build, dest, step, signal);
       step('Checking the version', { detail: root, received: undefined, total: undefined });
       const v = await e.version(root);
-      if (!v) throw new Error(`${e.name} in ${root} does not run (wrong architecture?)`);
+      if (!v)
+        throw new Error(
+          `${e.name} in ${root} does not run ${
+            // Windows: MySQL's and PostgreSQL's MSVC builds need the Visual C++ runtime.
+            isWin ? '(the Microsoft Visual C++ Redistributable x64 may be missing: https://aka.ms/vs/17/release/vc_redist.x64.exe)' : '(wrong architecture?)'
+          }`,
+        );
     } catch (err) {
       // Nothing half-installed stays behind (Homebrew cleans up after itself).
       if (build.source !== 'homebrew') await rm(dest, { recursive: true, force: true }).catch(() => undefined);
@@ -367,7 +377,7 @@ export class DbServiceManager {
     const bin = this.binaryOf(c);
     if (!bin) throw new Error('The server build is missing');
     if (c.engine === 'postgresql') {
-      await client(join(bin.root, 'bin/psql'), [...psqlArgs(c), '-c', `ALTER ROLE "${c.user || 'root'}" PASSWORD ${next ? `'${next.replace(/'/g, "''")}'` : 'NULL'}`], { PGPASSWORD: c.password });
+      await client(binOf(bin.root, 'psql'), [...psqlArgs(c), '-c', `ALTER ROLE "${c.user || 'root'}" PASSWORD ${next ? `'${next.replace(/'/g, "''")}'` : 'NULL'}`], { PGPASSWORD: c.password });
       return;
     }
     const p = next.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -384,7 +394,7 @@ export class DbServiceManager {
 
   async remove(id: string, deleteData: boolean): Promise<void> {
     const c = this.get(id);
-    await this.processes.stop(dbProcessId(id));
+    await this.stopServer(c);
     if (deleteData) await rm(this.dataDirOf(c), { recursive: true, force: true });
     // Elasticsearch's per-instance config folder.
     await rm(dataDir('db-services', 'config', id), { recursive: true, force: true });
@@ -401,7 +411,7 @@ export class DbServiceManager {
     const c = this.get(id);
     if (c.engine === 'sqlite') return;
     const pid = dbProcessId(id);
-    if (action === 'stop' || action === 'restart') await this.processes.stop(pid);
+    if (action === 'stop' || action === 'restart') await this.stopServer(c);
     if (action === 'stop') return;
     const e = DB_ENGINES[c.engine];
     const fail = (msg: string): never => {
@@ -427,8 +437,25 @@ export class DbServiceManager {
       fail((err as Error).message);
     }
     const spec = e.spec!(c, bin!.root, data, this.socketOf(c));
-    this.processes.startMany(pid, [{ label: '', cwd: data, command: spec.command, env: spec.env, stopSignal: spec.stopSignal, leaderOnly: true }]);
+    // Windows: the server runs under cmd.exe, so a forced stop has to end the tree (taskkill /T), not just the leader.
+    this.processes.startMany(pid, [{ label: '', cwd: data, command: spec.command, env: spec.env, stopSignal: spec.stopSignal, leaderOnly: !isWin }]);
     this.onChange();
+  }
+
+  /**
+   * Stops an instance's server. Windows has no SIGTERM / SIGINT for console programs (the process manager's stop is
+   * taskkill /F): the engine's own shutdown first (SHUTDOWN, pg_ctl stop, redis-cli shutdown), then whatever is left.
+   */
+  private async stopServer(c: DbServiceConfig): Promise<void> {
+    const pid = dbProcessId(c.id);
+    const e = DB_ENGINES[c.engine];
+    const bin = this.binaryOf(c);
+    if (isWin && e.shutdown && bin && this.processes.getStatus(pid).status === 'running') {
+      this.processes.log(pid, 'sys', 'Shutting down…');
+      await e.shutdown(c, bin.root, this.dataDirOf(c)).catch((err: Error) => this.processes.log(pid, 'sys', `Shutdown request failed: ${err.message}`));
+      for (let i = 0; i < 60 && this.isActive(c.id); i++) await new Promise((r) => setTimeout(r, 500));
+    }
+    await this.processes.stop(pid);
   }
 
   /** "running" once the port answers; then the one-time bootstrap. */
@@ -478,7 +505,8 @@ export class DbServiceManager {
     for (const c of store.dbServices) if (c.autoStart && c.engine !== 'sqlite') this.action(c.id, 'start').catch((e) => console.error(`${c.name}:`, e.message));
   }
 
-  stopAll(): Promise<void> {
+  async stopAll(): Promise<void> {
+    if (isWin) await Promise.all(store.dbServices.filter((c) => this.isActive(c.id)).map((c) => this.stopServer(c)));
     return this.processes.stopAll();
   }
 
@@ -497,7 +525,7 @@ export class DbServiceManager {
       return out.split('\n').map((s) => s.trim()).filter((s) => s && !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(s));
     }
     if (c.engine === 'postgresql') {
-      const out = await client(join(bin.root, 'bin/psql'), [...psqlArgs(c), '-tAc', 'SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1'], { PGPASSWORD: c.password });
+      const out = await client(binOf(bin.root, 'psql'), [...psqlArgs(c), '-tAc', 'SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1'], { PGPASSWORD: c.password });
       return out.split('\n').map((s) => s.trim()).filter(Boolean);
     }
     return [];
@@ -522,7 +550,7 @@ export class DbServiceManager {
     if (c.engine === 'mysql' || c.engine === 'mariadb') {
       await client(mysqlClient(bin.root), [...mysqlClientArgs(c), '-e', `CREATE DATABASE IF NOT EXISTS \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`], { MYSQL_PWD: c.password });
     } else if (c.engine === 'postgresql') {
-      await client(join(bin.root, 'bin/psql'), [...psqlArgs(c), '-c', `CREATE DATABASE "${name}"`], { PGPASSWORD: c.password });
+      await client(binOf(bin.root, 'psql'), [...psqlArgs(c), '-c', `CREATE DATABASE "${name}"`], { PGPASSWORD: c.password });
     } else {
       throw new Error(`${DB_ENGINES[c.engine].name} creates databases on first use`);
     }
@@ -550,7 +578,7 @@ export class DbServiceManager {
     await this.createDatabase(id, to);
     try {
       if (c.engine === 'mysql' || c.engine === 'mariadb') {
-        const dump = [join(bin.root, 'bin/mariadb-dump'), join(bin.root, 'bin/mysqldump')].find((f) => existsSync(f));
+        const dump = [binOf(bin.root, 'mariadb-dump'), binOf(bin.root, 'mysqldump')].find((f) => existsSync(f));
         if (!dump) throw new Error(`No mysqldump in ${bin.root}`);
         await pipeCommands(
           [dump, [...mysqlClientArgs(c), '--single-transaction', '--routines', '--triggers', '--events', from]],
@@ -558,11 +586,11 @@ export class DbServiceManager {
           { MYSQL_PWD: c.password },
         );
       } else if (c.engine === 'postgresql') {
-        const dump = join(bin.root, 'bin/pg_dump');
+        const dump = binOf(bin.root, 'pg_dump');
         if (!existsSync(dump)) throw new Error(`No pg_dump in ${bin.root}`);
         await pipeCommands(
           [dump, ['-h', '127.0.0.1', '-p', String(c.port), '-U', c.user || 'root', '--no-owner', '--no-privileges', from]],
-          [join(bin.root, 'bin/psql'), [...psqlArgs(c, to), '-q']],
+          [binOf(bin.root, 'psql'), [...psqlArgs(c, to), '-q']],
           { PGPASSWORD: c.password },
         );
       } else {
@@ -601,7 +629,7 @@ export class DbServiceManager {
       rows = out.split('\n').filter(Boolean).map((l) => l.split('\t')).map(([n, b]) => [n, b && b !== 'NULL' ? Number(b) : null]);
       rows = rows.filter(([n]) => !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(n));
     } else {
-      const out = await client(join(root, 'bin/psql'), [...psqlArgs(s), '-tAF', '\t', '-c', 'SELECT datname, pg_database_size(datname) FROM pg_database WHERE NOT datistemplate ORDER BY 1'], { PGPASSWORD: s.password });
+      const out = await client(binOf(root, 'psql'), [...psqlArgs(s), '-tAF', '\t', '-c', 'SELECT datname, pg_database_size(datname) FROM pg_database WHERE NOT datistemplate ORDER BY 1'], { PGPASSWORD: s.password });
       rows = out.split('\n').filter(Boolean).map((l) => l.split('\t')).map(([n, b]) => [n, Number(b) || null]);
       rows = rows.filter(([n]) => n !== 'postgres');
     }
@@ -615,17 +643,17 @@ export class DbServiceManager {
     await this.createDatabase(targetId, name);
     try {
       if (c.engine === 'mysql' || c.engine === 'mariadb') {
-        const dump = [join(root, 'bin/mariadb-dump'), join(root, 'bin/mysqldump')].find((f) => existsSync(f));
+        const dump = [binOf(root, 'mariadb-dump'), binOf(root, 'mysqldump')].find((f) => existsSync(f));
         if (!dump) throw new Error(`No mysqldump in ${root}`);
-        const mysqldump = dump.endsWith('mysqldump');
+        const mysqldump = /mysqldump(\.exe)?$/.test(dump);
         const opts = ['--single-transaction', '--routines', '--triggers', '--events', '--no-tablespaces', ...(mysqldump ? ['--set-gtid-purged=OFF', ...(src.engine === 'mariadb' ? ['--column-statistics=0'] : [])] : [])];
         await pipeCommands([dump, [...mysqlClientArgs(s), ...opts, name]], [mysqlClient(root), [...mysqlClientArgs(c), name]], { MYSQL_PWD: s.password }, 2 * 60 * 60_000);
       } else {
-        const dump = join(root, 'bin/pg_dump');
+        const dump = binOf(root, 'pg_dump');
         if (!existsSync(dump)) throw new Error(`No pg_dump in ${root}`);
         await pipeCommands(
           [dump, ['-h', '127.0.0.1', '-p', String(s.port), '-U', s.user || 'postgres', '--no-owner', '--no-privileges', name]],
-          [join(root, 'bin/psql'), [...psqlArgs(c, name), '-q']],
+          [binOf(root, 'psql'), [...psqlArgs(c, name), '-q']],
           { PGPASSWORD: s.password },
           2 * 60 * 60_000,
         );
@@ -650,7 +678,7 @@ export class DbServiceManager {
     if (c.engine === 'mysql' || c.engine === 'mariadb') {
       await client(mysqlClient(bin.root), [...mysqlClientArgs(c), '-e', `DROP DATABASE IF EXISTS \`${name}\``], { MYSQL_PWD: c.password });
     } else if (c.engine === 'postgresql') {
-      await client(join(bin.root, 'bin/psql'), [...psqlArgs(c), '-c', `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`], { PGPASSWORD: c.password });
+      await client(binOf(bin.root, 'psql'), [...psqlArgs(c), '-c', `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`], { PGPASSWORD: c.password });
     }
   }
 
@@ -674,6 +702,7 @@ export class DbServiceManager {
   /** Database servers listening here that DevCatz does not run (DBngin, Herd, Docker, Homebrew …). */
   async detect(): Promise<{ running: ExternalDbService[]; dbngin: DbnginInstall[] }> {
     const ours = new Set(store.dbServices.filter((c) => this.isActive(c.id)).map((c) => c.port));
+    if (isWin) return { running: await this.detectWindows(ours), dbngin: [] };
     const { stdout } = await run('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fpcn'], { timeout: 10_000 });
     const byPid = new Map<number, { command: string; ports: Set<number> }>();
     let pid = 0;
@@ -744,6 +773,47 @@ export class DbServiceManager {
       }
     }
     return { running: out.sort((a, b) => a.port - b.port), dbngin };
+  }
+
+  /**
+   * Windows: no lsof, DBngin, Herd databases or Homebrew; the well-known database ports that answer, named by the
+   * process netstat sees on them (Docker Desktop / WSL publish through their relay processes).
+   */
+  private async detectWindows(ours: Set<number>): Promise<ExternalDbService[]> {
+    const WELL_KNOWN: [number, DbEngine][] = [
+      [3306, 'mysql'],
+      [3307, 'mysql'],
+      [5432, 'postgresql'],
+      [5433, 'postgresql'],
+      [6379, 'redis'],
+      [6380, 'redis'],
+      [27017, 'mongodb'],
+      [9200, 'elasticsearch'],
+    ];
+    const out: ExternalDbService[] = [];
+    for (const [port, guess] of WELL_KNOWN) {
+      if (ours.has(port) || !(await isPortOpen(port))) continue;
+      // "mysqld.exe (pid 123)"
+      const owner = await portOwner(port);
+      const m = owner?.match(/^(.*) \(pid (\d+)\)$/);
+      const name = (m?.[1] ?? '').replace(/\.exe$/i, '');
+      const engine: DbEngine = /mariadbd/i.test(name)
+        ? 'mariadb'
+        : /mysqld/i.test(name)
+          ? 'mysql'
+          : /^postgres/i.test(name)
+            ? 'postgresql'
+            : /valkey-server/i.test(name)
+              ? 'valkey'
+              : /redis-server/i.test(name)
+                ? 'redis'
+                : /^mongod$/i.test(name)
+                  ? 'mongodb'
+                  : guess;
+      const docker = /docker|wslrelay|vpnkit|com\.docker/i.test(name);
+      out.push({ engine, port, pid: m ? Number(m[2]) : null, process: name || 'unknown', source: docker ? 'Docker' : 'Other', path: null });
+    }
+    return out;
   }
 
   // ------------------------------------------------------------- state
