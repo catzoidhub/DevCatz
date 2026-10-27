@@ -2,7 +2,7 @@ import { aiSettings, migrateAiToShared, setAiKey, setAiSettings } from './ai/set
 import { readShared, siteBase, watchShared, writeShared } from './shared';
 // First: moves the MrCatz Herd data folder before store/herd read it.
 import './migrate';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -1150,6 +1150,10 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => void qui
 
 app.whenReady().then(async () => {
   setupLogFile();
+  // Windows: Node's fetch tries one IPv4 address and gives up when a CDN node is unreachable from the user's network
+  // (windows.php.net / downloads.php.net, 2026-10-27); Chromium's stack tries every address (IPv6 too) and uses the
+  // system proxy, as the browser does. Every download / API call in the main process goes through it there.
+  if (isWin) globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => net.fetch(input as string, init as never)) as typeof fetch;
   console.log(`DevCatz ${app.getVersion()} starting (packaged=${app.isPackaged})`);
   await loadShellEnv();
   // Theme and AI connection are shared with the other Catzoid apps (shared.ts): theirs wins when set.
