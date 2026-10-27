@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { request } from 'node:https';
 import { run } from './env';
+import { isWin } from './platform';
 import { PING_PATH } from './proxy';
 
 /**
@@ -73,12 +74,67 @@ async function runAsAdmin(script: string, prompt: string): Promise<{ ok: boolean
   return { ok: code === 0, message: (stderr || stdout).trim() };
 }
 
+// ------------------------------------------------------------- Windows
+
+/**
+ * Windows: the IP Helper service's port proxy (`netsh interface portproxy`) takes 443 / 80 on [::1] and, when nothing
+ * else listens there, 127.0.0.1, and relays to the proxy. The rules live in the registry and survive restarts; adding
+ * them needs administrator rights once (UAC).
+ */
+type WinRule = { family: 'v4tov4' | 'v6tov6'; listen: string; port: number; target: number };
+let winRules: WinRule[] = [];
+
+/** Reads DevCatz's forwards (listen port 443 / 80 on a loopback address) from `netsh … show all`. */
+async function refreshWinRules(): Promise<void> {
+  const out = (await run('netsh', ['interface', 'portproxy', 'show', 'all'], { timeout: 10_000 })).stdout;
+  const rules: WinRule[] = [];
+  for (const line of out.split(/\r?\n/)) {
+    const m = line.trim().match(/^(127\.0\.0\.1|::1)\s+(\d+)\s+(127\.0\.0\.1|::1)\s+(\d+)$/);
+    if (!m || !['443', '80'].includes(m[2])) continue;
+    rules.push({ family: m[1] === '::1' ? 'v6tov6' : 'v4tov4', listen: m[1], port: Number(m[2]), target: Number(m[4]) });
+  }
+  winRules = rules;
+}
+
+/** Runs PowerShell as administrator (the UAC prompt); the script goes in base64 so no quoting reaches the shell. */
+async function runAsAdminWin(script: string): Promise<{ ok: boolean; message: string }> {
+  const inner = Buffer.from(`$ErrorActionPreference = 'Stop'\n${script}`, 'utf16le').toString('base64');
+  const outer = `try { $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile','-EncodedCommand','${inner}'; exit $p.ExitCode } catch { Write-Error $_.Exception.Message; exit 1223 }`;
+  const { code, stdout, stderr } = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', outer], { timeout: 300_000 });
+  const message = (stderr || stdout).trim();
+  // 1223 = ERROR_CANCELLED: the UAC prompt was declined. Reported as -128 like macOS's "User canceled".
+  return { ok: code === 0, message: code === 1223 || /cancel/i.test(message) ? '-128 Cancelled' : message || `exit ${code}` };
+}
+
+const winDelete = (r: Pick<WinRule, 'family' | 'listen' | 'port'>) =>
+  `netsh interface portproxy delete ${r.family} listenaddress=${r.listen} listenport=${r.port} | Out-Null`;
+
+function installWin(httpsPort: number, httpPort: number, ipv4: { https: boolean; http: boolean }) {
+  const lines = ['Set-Service iphlpsvc -StartupType Automatic', 'Start-Service iphlpsvc'];
+  for (const r of winRules) lines.push(winDelete(r));
+  for (const [listen, target, scheme] of [
+    [443, httpsPort, 'https'],
+    [80, httpPort, 'http'],
+  ] as const) {
+    lines.push(`netsh interface portproxy add v6tov6 listenaddress=::1 listenport=${listen} connectaddress=::1 connectport=${target} | Out-Null`);
+    if (ipv4[scheme]) lines.push(`netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=${listen} connectaddress=127.0.0.1 connectport=${target} | Out-Null`);
+  }
+  return runAsAdminWin(lines.join('\n')).finally(refreshWinRules);
+}
+
+function uninstallWin() {
+  if (!winRules.length) return Promise.resolve({ ok: true, message: '' });
+  return runAsAdminWin(winRules.map(winDelete).join('\n')).finally(refreshWinRules);
+}
+
 export function cleanUrlsInstalled(): boolean {
+  if (isWin) return winRules.some((r) => r.port === 443);
   return existsSync(daemonFile('https'));
 }
 
 /** The installed forwarder also listens on 127.0.0.1 (after Laravel Herd is gone). */
 export function cleanUrlsCoverIpv4(): boolean {
+  if (isWin) return winRules.some((r) => r.port === 443 && r.family === 'v4tov4');
   try {
     return readFileSync(daemonFile('https'), 'utf8').includes('<string>127.0.0.1</string>');
   } catch {
@@ -87,7 +143,8 @@ export function cleanUrlsCoverIpv4(): boolean {
 }
 
 /** Checks the forward end to end: https://[::1]/ must be answered by our proxy. */
-export function cleanUrlsWorking(): Promise<boolean> {
+export async function cleanUrlsWorking(): Promise<boolean> {
+  if (isWin) await refreshWinRules();
   return new Promise((resolve) => {
     const req = request(
       { host: '::1', port: 443, path: PING_PATH, servername: 'localhost', rejectUnauthorized: false, timeout: 1500 },
@@ -131,6 +188,7 @@ const removeDaemons = (['https', 'http'] as const)
   .join('');
 
 export function installCleanUrls(httpsPort: number, httpPort: number, ipv4: { https: boolean; http: boolean }) {
+  if (isWin) return installWin(httpsPort, httpPort, ipv4);
   const write = (scheme: 'https' | 'http', listen: number, target: number) => `cat > ${daemonFile(scheme)} <<'MRCATZ_EOF'
 ${plist(scheme, listen, target, ipv4[scheme])}MRCATZ_EOF
 chown root:wheel ${daemonFile(scheme)}
@@ -145,6 +203,7 @@ ${write('http', 80, httpPort)}# Port 80 is best effort: another server (e.g. mac
 }
 
 export function uninstallCleanUrls() {
+  if (isWin) return uninstallWin();
   return runAsAdmin(`${removeDaemons}${removeLegacy}`, 'DevCatz wants to remove its port forwarding.');
 }
 
@@ -191,6 +250,7 @@ export function uninstallResolver(tld: string) {
  * pf leftovers) and every /etc/resolver file it manages — in one admin prompt. Null when there is nothing to remove.
  */
 export function systemLeftovers(): string[] {
+  if (isWin) return winRules.map((r) => `Port forward ${r.listen.includes(':') ? `[${r.listen}]` : r.listen}:${r.port} → ${r.target}`);
   const out: string[] = [];
   for (const s of ['https', 'http'] as const) if (existsSync(daemonFile(s))) out.push(daemonFile(s));
   for (const f of LEGACY.files) if (existsSync(f)) out.push(f);
@@ -203,6 +263,7 @@ export function systemLeftovers(): string[] {
 }
 
 export function removeSystemLeftovers() {
+  if (isWin) return uninstallWin();
   const resolvers = systemLeftovers().filter((f) => f.startsWith('/etc/resolver/'));
   const script = `${removeDaemons}${removeLegacy}${resolvers.map((f) => `rm -f ${f}\n`).join('')}/usr/bin/killall -HUP mDNSResponder 2>/dev/null || true\n`;
   return runAsAdmin(script, 'DevCatz wants to remove its port forwarding and DNS resolver files before it is uninstalled.');

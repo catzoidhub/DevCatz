@@ -61,7 +61,7 @@ let winListing: { at: number; byMinor: Map<string, WinRelease> } | null = null;
 async function winReleases(): Promise<Map<string, WinRelease>> {
   if (winListing && Date.now() - winListing.at < 3600_000) return winListing.byMinor;
   const res = await fetch(`${WIN_BASE}/releases.json`);
-  if (!res.ok) throw new Error(`windows.php.net: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`downloads.php.net: HTTP ${res.status}`);
   const json = (await res.json()) as Record<string, Record<string, unknown>>;
   const byMinor = new Map<string, WinRelease>();
   for (const [minor, rel] of Object.entries(json)) {
@@ -140,7 +140,7 @@ export async function listRemote(force = false): Promise<RemotePhp[]> {
       return up && compare(up.version, version) > 0 ? { minor, version, upstream: up } : { minor, version };
     })
     .sort((a, b) => compare(b.version, a.version));
-  // Windows: every minor windows.php.net still lists (7.4 included) is a download; there is no Homebrew.
+  // Windows: every minor php.net's Windows releases still list (7.4 included) is a download; there is no Homebrew.
   if (isWin) return builds;
   return [...builds, ...LEGACY_MINORS.filter((m) => !byMinor.has(m)).map((minor) => ({ minor, version: minor, via: 'homebrew' as const }))];
 }
@@ -422,22 +422,31 @@ function iniText(settings: PhpIniSettings): string {
 const WIN_EXTENSIONS = ['curl', 'fileinfo', 'mbstring', 'openssl', 'pdo_mysql', 'pdo_pgsql', 'pdo_sqlite', 'sqlite3', 'zip', 'gd', 'gd2', 'intl', 'bcmath', 'exif', 'sodium'];
 
 /**
- * Windows' base php.ini: the zip's extensions are shared .dll files, so the base names the version's ext folder
- * and loads the usual ones (php.ini-development leaves them all commented out).
+ * Windows' base php.ini: the zip's extensions are shared .dll files, so the base names the version's ext folder.
+ * Each extension is loaded from its own conf.d/20-<name>.ini (".ini.disabled" when turned off on the PHP page), so the
+ * usual ones start on and every one can be switched (php.ini-development leaves them all commented out).
  */
 function winBaseIni(phpBin: string): string {
-  const ext = join(dirname(phpBin), 'ext');
-  const has = (name: string) => existsSync(join(ext, `php_${name}.dll`));
   return [
-    '; Base php.ini for DevCatz (Windows): this build\'s extensions. Settings live in conf.d/99-mrcatz.ini.',
-    `extension_dir = "${ext}"`,
+    '; Base php.ini for DevCatz (Windows). Extensions: conf.d/20-<name>.ini; settings: conf.d/99-mrcatz.ini.',
+    `extension_dir = "${join(dirname(phpBin), 'ext')}"`,
     // php-cgi as a FastCGI server behind DevCatz's proxy (no web server sets REDIRECT_STATUS).
     'cgi.force_redirect = 0',
     'cgi.fix_pathinfo = 1',
-    ...WIN_EXTENSIONS.filter((e) => has(e) && !(e === 'gd2' && has('gd'))).map((e) => `extension=${e}`),
-    ...(has('opcache') ? ['zend_extension=opcache'] : []),
     '',
   ].join('\r\n');
+}
+
+/** Windows: turns the usual extensions on once (an extension switched off keeps its ".ini.disabled"). */
+function winDefaultExtensions(phpBin: string, version: string): void {
+  const ext = join(dirname(phpBin), 'ext');
+  const has = (name: string) => existsSync(join(ext, `php_${name}.dll`));
+  const defaults = [...WIN_EXTENSIONS.filter((e) => has(e) && !(e === 'gd2' && has('gd'))), ...(has('opcache') ? ['opcache'] : [])];
+  for (const e of defaults) {
+    const file = join(etcDir(version), 'conf.d', `20-${e}.ini`);
+    if (existsSync(file) || existsSync(`${file}.disabled`)) continue;
+    writeFileSync(file, `; Part of PHP ${version} (ext\\php_${e}.dll), on by default in DevCatz\r\n${e === 'opcache' ? 'zend_extension' : 'extension'}=${e}\r\n`);
+  }
 }
 
 /** Validates with `php -n -c <candidate>` first, then writes php.ini + conf.d/99-mrcatz.ini. */
@@ -451,7 +460,10 @@ export async function writeIni(phpBin: string, version: string, settings: PhpIni
     rmSync(candidate, { force: true });
     throw new Error(`php.ini rejected: ${problems.join(' ') || check.stderr.trim() || 'unknown error'}`);
   }
-  if (isWin) writeFileSync(join(dir, 'php.ini'), winBaseIni(phpBin));
+  if (isWin) {
+    writeFileSync(join(dir, 'php.ini'), winBaseIni(phpBin));
+    winDefaultExtensions(phpBin, version);
+  }
   else if (!existsSync(join(dir, 'php.ini'))) writeFileSync(join(dir, 'php.ini'), '; Base php.ini for DevCatz. Settings live in conf.d/99-mrcatz.ini.\n');
   renameSync(candidate, join(dir, 'conf.d/99-mrcatz.ini'));
   writeFileSync(join(dir, 'settings.json'), JSON.stringify(settings, null, 2));
@@ -490,8 +502,9 @@ export async function installComposer(progress: (p: RuntimeInstallProgress) => v
     progress({ version: 'composer', phase: 'download', received: r, total: t }),
   );
   renameSync(tmp, composerPhar());
-  // Windows: `composer` next to the phar, on whichever php.exe comes first on the Path.
-  if (isWin) writeFileSync(join(dirname(composerPhar()), 'composer.bat'), '@php "%~dp0composer.phar" %*\r\n');
+  // Windows: an older build put a composer.bat here that ran php.exe without DevCatz's php.ini (no openssl); the
+  // composer.cmd shims (writeShims / siteBinDir) carry the ini.
+  if (isWin) rmSync(join(dirname(composerPhar()), 'composer.bat'), { force: true });
   progress({ version: 'composer', phase: 'done', received: 0, total: 0 });
 }
 

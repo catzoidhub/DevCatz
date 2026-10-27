@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, ref } from 'vue';
 import TaskStepper from './TaskStepper.vue';
 import { attempt, herd, state } from '../store';
@@ -32,7 +33,7 @@ function close() {
 
 <template>
   <!-- The tooltip sits on a wrapper: a disabled button shows none. -->
-  <span class="inline-flex" :title="disabledReason ?? (installed === false ? 'DialCatz is not installed on this Mac: click to download and install it' : 'Open this site in DialCatz: an environment for it and its routes, to call its API')">
+  <span class="inline-flex" :title="disabledReason ?? (installed === false ? `DialCatz is not installed on this ${words.computer}: click to download and install it` : 'Open this site in DialCatz: an environment for it and its routes, to call its API')">
     <button type="button" class="btn btn-sm gap-2" :disabled="!!disabledReason" @click="open">
       <img :src="dialcatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ label }}
     </button>
@@ -52,7 +53,7 @@ function close() {
         </div>
         <TaskStepper v-if="task" :task="task" cancellable dismissable @cancel="herd.dialcatzCancelInstall()" @dismiss="close" />
         <p v-else class="rounded-box bg-base-200/60 px-3 py-2 text-xs opacity-70">
-          Download & Install fetches the latest release from GitHub (checksum verified), puts <span class="font-mono">DialCatz.app</span> in Applications and opens it at this site.
+          Download & Install fetches the latest release from GitHub (checksum verified), <template v-if="words.computer === 'PC'">runs its installer (just for you, no administrator rights)</template><template v-else>puts <span class="font-mono">DialCatz.app</span> in Applications</template> and opens it at this site.
         </p>
 
         <div class="modal-action">

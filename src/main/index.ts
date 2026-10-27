@@ -887,6 +887,7 @@ function api(): HerdApi {
       if (response === 0) herd.nodeUninstall(version);
     },
     nodeSetDefault: async (version) => herd.nodeSetDefault(version),
+    shimPathSet: async (on) => herd.shimPathSet(on),
     bunRemote: (refresh) => herd.bunRemote(refresh),
     bunInstall: (version) => herd.bunInstall(version),
     bunUninstall: async (version) => {

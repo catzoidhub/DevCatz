@@ -137,7 +137,7 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
             <button v-if="replacing" type="button" class="btn btn-ghost btn-sm" @click="replacing = false; keyInput = ''">Cancel</button>
           </form>
           <p class="text-xs opacity-60">
-            Kept only on this Mac ({{ words.secretStore }} item “Catzoid AI”), never shown again or sent anywhere but {{ info.name }}.
+            Kept only on this {{ words.computer }} ({{ words.secretStore }} item “Catzoid AI”), never shown again or sent anywhere but {{ info.name }}.
             <a v-if="info.keyUrl" class="link" @click="herd.openUrl(info.keyUrl)">Get a key</a>
           </p>
         </div>
@@ -149,7 +149,7 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
           <input v-if="editableUrl" v-model="urlInput" class="input input-sm w-full font-mono text-xs" :placeholder="info.baseUrl" spellcheck="false" @change="saveUrl" @keydown.enter="saveUrl" />
           <span v-else class="input input-sm flex w-full items-center font-mono text-xs opacity-60">{{ info.baseUrl }}</span>
           <p v-if="ai.provider === 'zai'" class="text-xs opacity-60">Use a <b>Standard API key</b> (pay-as-you-go balance); GLM Coding Plan keys only work in Z.ai’s supported tools. Keys from bigmodel.cn use <code>https://open.bigmodel.cn/api/paas/v4</code>.</p>
-          <p v-else-if="ai.provider === 'ollama'" class="text-xs opacity-60">Runs on this Mac, nothing leaves it. Install from ollama.com, then e.g. <code>ollama pull qwen2.5-coder</code>.</p>
+          <p v-else-if="ai.provider === 'ollama'" class="text-xs opacity-60">Runs on this {{ words.computer }}, nothing leaves it. Install from ollama.com, then e.g. <code>ollama pull qwen2.5-coder</code>.</p>
           <p v-else-if="ai.provider === 'openai-compatible'" class="text-xs opacity-60">Any server with an OpenAI-style <code>/chat/completions</code>: LM Studio, vLLM, LiteLLM, a company gateway.</p>
         </div>
       </div>

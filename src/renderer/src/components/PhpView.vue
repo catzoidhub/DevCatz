@@ -38,8 +38,10 @@ const upstreamFor = (version: string) => {
   const r = remote.value.find((x) => version.startsWith(`${x.minor}.`) && x.upstream);
   return r?.upstream && newer(r.upstream.version, version) ? r.upstream : null;
 };
+/** Where DevCatz's PHP builds come from: php.net's Windows builds, or static-php.dev on macOS. */
+const SOURCE = isWin ? "php.net's Windows builds" : 'static-php.dev';
 const upstreamTitle = (u: NonNullable<RemotePhp['upstream']>, built: string) =>
-  `PHP ${u.version} was released on php.net${u.date ? ` (${u.date})` : ''}${u.security ? ' with security fixes' : ''}. DevCatz installs PHP from static-php.dev, which has built up to ${built} so far; the update appears here once it builds ${u.version}.`;
+  `PHP ${u.version} was released on php.net${u.date ? ` (${u.date})` : ''}${u.security ? ' with security fixes' : ''}. DevCatz installs PHP from ${SOURCE}, which ${isWin ? 'have' : 'has'} built up to ${built} so far; the update appears here once ${u.version} is built.`;
 const isInstalled = (v: string) => php.value.installed.some((i) => i.version === v);
 const usedBy = (version: string) => s.value.projects.filter((p) => p.stack.runtime === 'php' && p.php.version === version).map((p) => p.name);
 const fpmFor = (version: string) => php.value.fpm.find((f) => f.version === version);
@@ -129,7 +131,7 @@ const tab = ref<Tab>('installed');
   <PageHeader title="PHP" :closable="false" tint="runtimes" :icon="ICONS.php">
     <p class="text-xs opacity-60">
       <template v-if="isWin">
-        Official PHP builds from windows.php.net (NTS x64, Laravel's usual extensions turned on). PHP sites are served by a few
+        Official PHP builds from php.net's Windows downloads (NTS x64, Laravel's usual extensions turned on). PHP sites are served by a few
         php-cgi workers per version (FastCGI), always on.
       </template>
       <template v-else>
@@ -300,22 +302,26 @@ const tab = ref<Tab>('installed');
                   <span class="opacity-55">· {{ r.upstream.date }}</span>
                   <span v-if="r.upstream.security" class="badge badge-warning badge-soft badge-xs">security</span>
                 </div>
-                <div class="mt-0.5 opacity-55">not built by static-php.dev yet</div>
+                <div class="mt-0.5 opacity-55">not built by {{ SOURCE }} yet</div>
               </div>
             </div>
             <span v-if="r.via === 'homebrew' ? hasMinor(r.minor) : isInstalled(r.version)" class="text-xs opacity-60">installed</span>
             <button v-else class="btn btn-xs" :disabled="!!busy" @click="install(r.version)">Install</button>
           </div>
         </div>
-        <p class="text-xs opacity-60">
+        <p v-if="!isWin" class="text-xs opacity-60">
           PHP 7.x and 5.6 are not built by static-php.dev; <b>Install</b> runs <code>brew install shivammathur/php/php@7.x</code> (needs Homebrew) and
           DevCatz then uses Homebrew's PHP and PHP-FPM like its own.
         </p>
         <p v-if="remote.some((r) => r.upstream)" class="text-xs text-warning">
-          php.net has newer releases than static-php.dev has built so far. DevCatz installs PHP from static-php.dev only; the newer versions show here, and as
-          updates under Installed, once static-php.dev builds them.
+          php.net has newer releases than {{ SOURCE }} {{ isWin ? 'have' : 'has' }} built so far. DevCatz installs PHP from {{ SOURCE }} only; the newer
+          versions show here, and as updates under Installed, once they are built.
         </p>
-        <p class="text-xs opacity-60">static-php.dev publishes no checksums: downloads use HTTPS, the binary must report the expected version, and the SHA-256 is recorded in <code>SHA256SUMS</code> next to it.</p>
+        <p v-if="isWin" class="text-xs opacity-60">
+          Every download is checked against the SHA-256 that php.net publishes for it (<code>releases.json</code>); the digest is recorded in
+          <code>SHA256SUMS</code> next to the binaries.
+        </p>
+        <p v-else class="text-xs opacity-60">static-php.dev publishes no checksums: downloads use HTTPS, the binary must report the expected version, and the SHA-256 is recorded in <code>SHA256SUMS</code> next to it.</p>
       </div>
     </div>
     </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, onMounted, ref, watch } from 'vue';
 import type { DbServiceState } from '@shared/types';
 import { connectionEnv, hasDatabases, type DbEnvFormat } from '@shared/dbconn';
@@ -177,7 +178,7 @@ const mask = (k: string, v: string) => (/PASSWORD/i.test(k) && v && v !== 'null'
         <a class="seg-item" :class="{ 'is-active': format === 'go' }" title="DSN for GORM / database/sql" @click="format = 'go'">Go</a>
       </div>
       <div v-if="service.engine !== 'sqlite'" class="seg">
-        <a class="seg-item" :class="{ 'is-active': hostKind === 'local' }" title="Apps running on this Mac" @click="hostKind = 'local'">This Mac</a>
+        <a class="seg-item" :class="{ 'is-active': hostKind === 'local' }" :title="`Apps running on this ${words.computer}`" @click="hostKind = 'local'">This {{ words.computer }}</a>
         <a class="seg-item" :class="{ 'is-active': hostKind === 'docker' }" title="Apps in containers (host.docker.internal)" @click="hostKind = 'docker'">Docker</a>
       </div>
       <span class="flex-1" />

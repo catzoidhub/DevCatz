@@ -131,7 +131,7 @@ function copyDetails() {
     <div class="card-body flex-row flex-wrap items-center gap-3">
       <div class="min-w-0 flex-1">
         <h2 class="font-semibold">Uninstall DevCatz</h2>
-        <p class="text-xs opacity-60">Stops everything, removes what DevCatz put on this Mac (port forwarding, DNS files, its certificate authority) and moves it to the Trash. Your projects stay.</p>
+        <p class="text-xs opacity-60">Stops everything, removes what DevCatz put on this {{ words.computer }} (port forwarding{{ words.computer === 'Mac' ? ', DNS files' : '' }}, its certificate authority) and {{ words.computer === 'PC' ? 'runs its uninstaller' : 'moves it to the Trash' }}. Your projects stay.</p>
       </div>
       <button class="btn btn-sm btn-outline btn-error" @click="uninstallDialog = true">Uninstall DevCatz…</button>
     </div>

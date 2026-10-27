@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
+import { isWin } from '../platform';
 import { diff } from '../linediff';
 import AiDocker from './AiDocker.vue';
 import DockerFileDialog from './DockerFileDialog.vue';
@@ -21,14 +23,16 @@ const busy = ref<string | null>(null);
 const ready = computed(() => Boolean(status.value?.daemon));
 
 /** Same order as the main process: most recommended first. */
-const ENGINES: { id: DockerEngineId; name: string; start: string; download: string }[] = [
-  { id: 'orbstack', name: 'OrbStack', start: 'Open OrbStack', download: 'https://orbstack.dev/download' },
+// Windows: OrbStack, Colima and Finch are macOS-only.
+type EngineCard = { id: DockerEngineId; name: string; start: string; download: string; macOnly?: boolean };
+const ENGINES: EngineCard[] = ([
+  { id: 'orbstack', name: 'OrbStack', start: 'Open OrbStack', download: 'https://orbstack.dev/download', macOnly: true },
   { id: 'docker-desktop', name: 'Docker Desktop', start: 'Open Docker Desktop', download: 'https://www.docker.com/products/docker-desktop/' },
-  { id: 'colima', name: 'Colima', start: 'colima start', download: 'https://github.com/abiosoft/colima#installation' },
+  { id: 'colima', name: 'Colima', start: 'colima start', download: 'https://github.com/abiosoft/colima#installation', macOnly: true },
   { id: 'rancher', name: 'Rancher Desktop', start: 'Open Rancher Desktop', download: 'https://rancherdesktop.io/' },
   { id: 'podman', name: 'Podman', start: 'Start Podman', download: 'https://podman-desktop.io/downloads' },
-  { id: 'finch', name: 'Finch', start: 'finch vm start', download: 'https://github.com/runfinch/finch/releases' },
-];
+  { id: 'finch', name: 'Finch', start: 'finch vm start', download: 'https://github.com/runfinch/finch/releases', macOnly: true },
+] as EngineCard[]).filter((e) => !(isWin && e.macOnly));
 const engineName = (id: DockerEngineId | null) => ENGINES.find((e) => e.id === id)?.name ?? 'Container engine';
 const installedEngines = computed(() => ENGINES.filter((e) => status.value?.installed.includes(e.id)));
 const starting = ref<DockerEngineId | null>(null);
@@ -131,6 +135,9 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             Start one of them; this tab re-checks every few seconds.
             <span v-if="status.error" class="block font-mono opacity-60">{{ status.error }}</span>
           </template>
+          <template v-else-if="isWin">
+            Any Docker-compatible engine works. <b>Docker Desktop</b> is recommended (it runs on WSL 2); containers are published on <code>127.0.0.1</code> ports.
+          </template>
           <template v-else>
             Any Docker-compatible engine works. <b>OrbStack</b> is recommended: light, and every container gets an
             <code>https://*.orb.local</code> domain; with the others containers are published on <code>127.0.0.1</code> ports.
@@ -153,7 +160,8 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
     <div v-else class="flex flex-wrap items-center gap-2 text-xs opacity-70">
       <span class="status status-success" /> {{ engineName(status.engine) }} running
       <template v-if="status.context">· context <code>{{ status.context }}</code></template>
-      <template v-if="!status.orbLocal">· containers on <code>127.0.0.1</code> ports (OrbStack would give them <code>*.orb.local</code> domains)</template>
+      <template v-if="!status.orbLocal && isWin">· containers on <code>127.0.0.1</code> ports</template>
+      <template v-else-if="!status.orbLocal">· containers on <code>127.0.0.1</code> ports (OrbStack would give them <code>*.orb.local</code> domains)</template>
     </div>
 
     <!-- Compose -->
@@ -297,7 +305,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             </template>
           </p>
           <p v-if="preview.options.target === 'local' && !preview.options.withServices" class="text-xs opacity-60">
-            Database and Redis stay on this Mac (DevCatz services or your own): <code>127.0.0.1</code>/<code>localhost</code> hosts become
+            Database and Redis stay on this {{ words.computer }} (DevCatz services or your own): <code>127.0.0.1</code>/<code>localhost</code> hosts become
             <code>host.docker.internal</code> inside the containers.
           </p>
           <div v-for="f in preview.files" :key="f.path" class="rounded-box border border-base-300/60">

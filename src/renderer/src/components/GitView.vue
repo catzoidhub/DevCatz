@@ -123,7 +123,7 @@ async function upload(k: GitSshKey) {
   const id = keyTarget.value[k.path] ?? accounts.value[0]?.id;
   if (!id) return;
   const a = accounts.value.find((x) => x.id === id)!;
-  await attempt(() => herd.gitSshAddToAccount(id, k.path, `DevCatz · ${k.comment || 'this Mac'}`).then(() => true), `Key added to ${NAME[a.kind]} (${a.username})`);
+  await attempt(() => herd.gitSshAddToAccount(id, k.path, `DevCatz · ${k.comment || `this ${words.computer}`}`).then(() => true), `Key added to ${NAME[a.kind]} (${a.username})`);
 }
 async function copy(t: string) {
   await navigator.clipboard.writeText(t).catch(() => undefined);
@@ -194,7 +194,7 @@ const broken = reactive(new Set<string>());
       </ul>
       <div class="border-t border-base-300/60 p-3 text-xs opacity-60">
         <template v-if="state?.git.version">git {{ state.git.version }} · your own config and credentials</template>
-        <span v-else class="text-warning">git is missing: xcode-select --install</span>
+        <span v-else class="text-warning">git is missing: {{ words.installGit }}</span>
       </div>
     </aside>
 

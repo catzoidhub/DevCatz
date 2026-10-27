@@ -68,7 +68,9 @@ const setStartAll = (startAllOnLaunch: boolean) => attempt(() => herd.updateSett
 const setTheme = (theme: ThemeMode) => attempt(() => herd.updateSettings({ theme }));
 const quitApp = () => attempt(() => herd.quitApp());
 const setLogin = (on: boolean) => attempt(() => herd.setLaunchAtLogin(on));
-const untrust = () => attempt(() => herd.untrustCa(), 'Removed from keychain');
+/** A path under DevCatz's data folder, as this OS writes it (placeholders only). */
+const appDataPath = (...parts: string[]) => [words.appData, 'DevCatz', ...parts].join(words.sep);
+const untrust = () => attempt(() => herd.untrustCa(), isWin ? 'Removed from your Trusted Root certificates' : 'Removed from keychain');
 const unpark = (dir: string) => attempt(() => herd.unparkFolder(dir));
 const setEditor = (editor: string) => attempt(() => herd.updateSettings({ editor }));
 const setBrowser = (browser: string) => attempt(() => herd.updateSettings({ browser }));
@@ -400,18 +402,20 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <button class="btn btn-sm" @click="savePorts">Apply</button>
         </div>
 
-        <!-- Windows, stage 1: no port forwarding yet; sites are at https://<name>.localhost:<port>. -->
         <p v-if="isWin" class="text-xs opacity-70">
-          Sites are served at <code>https://&lt;name&gt;.localhost:{{ s.settings.httpsPort }}</code>. Chrome, Edge and Firefox send every
-          <code>*.localhost</code> name to this PC by themselves.
+          Chrome, Edge and Firefox send every <code>*.localhost</code> name to this PC by themselves.
         </p>
-        <template v-if="!isWin">
         <div class="divider my-0" />
         <h3 class="font-medium">
           URLs without a port
           <span class="badge badge-sm ml-1" :class="s.cleanUrls.installed ? 'badge-success' : 'badge-ghost'">{{ s.cleanUrls.installed ? 'on' : 'off' }}</span>
         </h3>
-        <p class="text-xs opacity-70">
+        <p v-if="isWin" class="text-xs opacity-70">
+          Windows' port proxy (the IP Helper service) takes <code>[::1]:443</code> / <code>[::1]:80</code> and relays to the proxy on
+          {{ s.settings.httpsPort }} / {{ s.settings.httpPort }}, and on <code>127.0.0.1</code> too when no other app uses those ports. Needs
+          administrator approval once.
+        </p>
+        <p v-else class="text-xs opacity-70">
           Browsers resolve <code>*.{{ s.domain.tld }}</code> to <code>::1</code> first, so DevCatz listens on the IPv6 loopback: launchd takes
           <code>[::1]:443</code> / <code>[::1]:80</code> and relays to the proxy on {{ s.settings.httpsPort }} / {{ s.settings.httpPort }}, and on
           <code>127.0.0.1</code> too when no other app uses those ports. Needs your admin password once.
@@ -427,7 +431,6 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <button v-if="!s.cleanUrls.installed" class="btn btn-sm btn-primary" @click="cleanUrls(true)">Enable clean URLs…</button>
           <button v-if="s.cleanUrls.installed || s.cleanUrls.configured" class="btn btn-sm btn-outline" @click="cleanUrls(false)">Disable</button>
         </div>
-        </template>
       </div>
     </div>
 
@@ -627,7 +630,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <label class="block sm:col-span-2">
             <span class="label-caps mb-1 block">Data folders of new services</span>
             <div class="join w-full">
-              <input class="input input-sm join-item w-full font-mono text-xs" :value="s.settings.dbDataRoot" placeholder="DevCatz's data folder (~/Library/Application Support/DevCatz/db-services/data)" readonly />
+              <input class="input input-sm join-item w-full font-mono text-xs" :value="s.settings.dbDataRoot" :placeholder="`DevCatz's data folder (${appDataPath('db-services', 'data')})`" readonly />
               <button class="btn btn-sm join-item" @click="pickDb('dbDataRoot')">Choose…</button>
               <button v-if="s.settings.dbDataRoot" class="btn btn-sm join-item" @click="setS3({ dbDataRoot: '' })">Reset</button>
             </div>
@@ -636,16 +639,16 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <label class="block sm:col-span-2">
             <span class="label-caps mb-1 block">Server builds</span>
             <div class="join w-full">
-              <input class="input input-sm join-item w-full font-mono text-xs" :value="s.settings.dbBinRoot" placeholder="DevCatz's data folder (~/Library/Application Support/DevCatz/db-services/bin)" readonly />
+              <input class="input input-sm join-item w-full font-mono text-xs" :value="s.settings.dbBinRoot" :placeholder="`DevCatz's data folder (${appDataPath('db-services', 'bin')})`" readonly />
               <button class="btn btn-sm join-item" @click="pickDb('dbBinRoot')">Choose…</button>
               <button v-if="s.settings.dbBinRoot" class="btn btn-sm join-item" @click="setS3({ dbBinRoot: '' })">Reset</button>
             </div>
-            <span class="mt-1 block text-xs opacity-60">Downloads and compiled builds go to <code>&lt;folder&gt;/&lt;engine&gt;/&lt;version&gt;</code>; installed ones stay where they are. MariaDB lives in Homebrew.</span>
+            <span class="mt-1 block text-xs opacity-60">Downloads and compiled builds go to <code>&lt;folder&gt;/&lt;engine&gt;/&lt;version&gt;</code>; installed ones stay where they are.<template v-if="!isWin"> MariaDB lives in Homebrew.</template></span>
           </label>
           <div>
             <span class="label-caps mb-1 block">Host in .env lines</span>
             <div class="seg">
-              <a class="seg-item" :class="{ 'is-active': s.settings.dbEnvHost === 'local' }" @click="setS3({ dbEnvHost: 'local' })">This Mac</a>
+              <a class="seg-item" :class="{ 'is-active': s.settings.dbEnvHost === 'local' }" @click="setS3({ dbEnvHost: 'local' })">This {{ words.computer }}</a>
               <a class="seg-item" :class="{ 'is-active': s.settings.dbEnvHost === 'docker' }" @click="setS3({ dbEnvHost: 'docker' })">Docker</a>
             </div>
             <span class="mt-1 block text-xs opacity-60">What the Connection tab starts with (each copy can still switch).</span>

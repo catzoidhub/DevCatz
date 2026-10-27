@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { PhpExtensions } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
 import CatMood from './CatMood.vue';
+import { isWin } from '../platform';
 
 /** PECL extensions for one PHP version: the catalog, any package by name, built ones with on/off, and what is compiled in. */
 const props = defineProps<{ version: string }>();
@@ -34,14 +35,17 @@ const isBuiltin = (pkg: string) => data.value?.builtin.some((m) => m.toLowerCase
 const custom = ref('');
 const showLog = ref(false);
 const showBuiltin = ref(false);
-const PHASES: Record<string, string> = { toolkit: 'Toolkit', deps: 'Libraries', download: 'Download', build: 'Build', verify: 'Check' };
+// Windows installs ready-made DLLs: no toolkit, libraries or build steps.
+const PHASES: Record<string, string> = isWin ? { download: 'Download', verify: 'Check' } : { toolkit: 'Toolkit', deps: 'Libraries', download: 'Download', build: 'Build', verify: 'Check' };
+const showBundled = ref(false);
+const bundledOn = computed(() => data.value?.bundled.filter((e) => e.enabled).length ?? 0);
 
 async function install(pkg: string) {
   pkg = pkg.trim();
   if (!pkg) return;
   showLog.value = false;
   if (await attempt(() => herd.phpExtInstall(props.version, pkg).then(() => true))) {
-    notify('success', `${pkg} installed for PHP ${props.version}; PHP-FPM reloaded`);
+    notify('success', `${pkg} installed for PHP ${props.version}; ${isWin ? 'PHP restarted' : 'PHP-FPM reloaded'}`);
     custom.value = '';
   }
 }
@@ -60,10 +64,10 @@ async function remove(module: string) {
     <div class="card-body">
       <div class="flex items-center gap-2">
         <h2 class="flex-1 font-semibold">Extensions <span class="font-normal opacity-60">· PHP {{ version }}</span></h2>
-        <span v-if="data && data.supported && !data.toolkit" class="text-xs opacity-60" title="phpize and headers for this version are prepared on the first build">first build also prepares phpize (~1 min)</span>
+        <span v-if="data && data.supported && !data.toolkit && !isWin" class="text-xs opacity-60" title="phpize and headers for this version are prepared on the first build">first build also prepares phpize (~1 min)</span>
       </div>
 
-      <div v-if="data && !data.supported" class="alert alert-soft text-sm">
+      <div v-if="data && !data.supported && !isWin" class="alert alert-soft text-sm">
         Extensions can be added to DevCatz’s own PHP builds (8.x). This version comes from another tool (e.g. Homebrew): use its own <code>pecl</code>.
       </div>
       <template v-else-if="data">
@@ -119,7 +123,7 @@ async function remove(module: string) {
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5">
                 <span class="font-medium">{{ c.title }}</span>
-                <span v-if="c.brew" class="badge badge-ghost badge-xs" :title="`Uses Homebrew: ${c.brew.join(', ')} (installed when missing)`">brew</span>
+                <span v-if="c.brew && !isWin" class="badge badge-ghost badge-xs" :title="`Uses Homebrew: ${c.brew.join(', ')} (installed when missing)`">brew</span>
               </div>
               <div class="truncate text-xs opacity-60" :title="c.description">{{ c.description }}</div>
             </div>
@@ -131,11 +135,30 @@ async function remove(module: string) {
 
         <form class="flex items-center gap-2" @submit.prevent="install(custom)">
           <input v-model="custom" class="input input-sm w-56 font-mono" placeholder="Other PECL package, e.g. apfd" spellcheck="false" />
-          <button class="btn btn-sm" :disabled="!custom.trim() || !!running || !!data.problem">Build &amp; install</button>
+          <button class="btn btn-sm" :disabled="!custom.trim() || !!running || !!data.problem">{{ isWin ? 'Install' : 'Build &amp; install' }}</button>
           <a class="link text-xs opacity-60" @click="herd.openUrl('https://pecl.php.net/packages.php')">Browse PECL</a>
         </form>
 
-        <div class="text-xs opacity-60">
+        <!-- Windows: the extensions that come with this PHP -->
+        <div v-if="data.bundled.length" class="rounded-box border border-base-300/60 p-3">
+          <div class="flex items-center gap-2">
+            <span class="flex-1 text-sm font-medium">Included with PHP {{ version }} <span class="font-normal opacity-60">· {{ bundledOn }} of {{ data.bundled.length }} on</span></span>
+            <button class="btn btn-ghost btn-xs" @click="showBundled = !showBundled">{{ showBundled ? 'Hide' : 'Show all' }}</button>
+          </div>
+          <div class="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2 xl:grid-cols-4">
+            <label v-for="e in showBundled ? data.bundled : data.bundled.filter((b) => b.enabled)" :key="e.module" class="flex cursor-pointer items-center gap-2 text-sm">
+              <input type="checkbox" class="toggle toggle-xs toggle-primary" :checked="e.enabled" @change="toggle(e.module, ($event.target as HTMLInputElement).checked)" />
+              <span class="font-mono">{{ e.module }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div v-if="isWin" class="text-xs opacity-60">
+          PECL extensions come as ready-made DLLs from php.net's Windows builds for PHP {{ version.split('.').slice(0, 2).join('.') }} (NTS, x64) and must load into
+          this PHP to be kept; each one, and each included extension, is loaded from <code>conf.d\20-&lt;name&gt;.ini</code>. A newer patch of the same minor takes them over.
+          <a class="link" @click="showBuiltin = !showBuiltin">{{ showBuiltin ? 'Hide' : 'Show' }} the {{ data.builtin.length }} built-in modules</a>
+        </div>
+        <div v-else class="text-xs opacity-60">
           Built from PECL source with phpize for this exact PHP version and loaded from <code>conf.d/20-&lt;name&gt;.ini</code>. A newer patch of the same minor takes
           them over when installed.
           <a class="link" @click="showBuiltin = !showBuiltin">{{ showBuiltin ? 'Hide' : 'Show' }} the {{ data.builtin.length }} built-in modules</a>

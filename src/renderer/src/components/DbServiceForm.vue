@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, onMounted, ref, watch } from 'vue';
 import type { DbEngine, DbEngineInfo, DbServiceInput, DbServiceState, DbVersionOption, TaskProgress } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
@@ -94,7 +95,7 @@ const majorChange = computed(
 );
 const defaultData = computed(() => {
   const root = state.value?.settings.dbDataRoot;
-  return `${root || '~/Library/Application Support/DevCatz/db-services/data'}/${props.service?.id ?? '<id>'}`;
+  return [root || [words.appData, 'DevCatz', 'db-services', 'data'].join(words.sep), props.service?.id ?? '<id>'].join(words.sep);
 });
 
 async function chooseData() {

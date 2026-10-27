@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, ref } from 'vue';
 import { attempt, herd, state } from '../store';
 import TaskStepper from './TaskStepper.vue';
@@ -58,7 +59,7 @@ function close() {
 
         <TaskStepper v-if="task" :task="task" cancellable dismissable @cancel="herd.dbcatzCancelInstall()" @dismiss="close" />
         <p v-else class="rounded-box bg-base-200/60 px-3 py-2 text-xs opacity-70">
-          Download & Install fetches the latest release from GitHub (checksum verified), puts <span class="font-mono">DBCatz.app</span> in Applications and opens it{{ connId ? ' at this connection' : '' }}.
+          Download & Install fetches the latest release from GitHub (checksum verified), <template v-if="words.computer === 'PC'">runs its installer (just for you, no administrator rights)</template><template v-else>puts <span class="font-mono">DBCatz.app</span> in Applications</template> and opens it{{ connId ? ' at this connection' : '' }}.
         </p>
 
         <div class="modal-action">

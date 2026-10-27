@@ -21,8 +21,8 @@ import {
 import { DB_TASK_LABELS, dbStatus, runDbAction, stream } from './database';
 import { detectPackageManager, readEnvFiles, readJson, readText, runScriptCommand, slugify, type PackageJson } from './detect';
 import { detectStack, isLinkableDir, isProjectDir } from './runtimes';
-import { getShellEnv, isListening, isPortOpen, portOwner, run } from './env';
-import { isMac, isWin, joinPath, pathKey, splitPath } from './platform';
+import { getShellEnv, hasCommand, isListening, isPortOpen, portOwner, run, setUserPath } from './env';
+import { isMac, isWin, joinPath, pathKey, shellCommand, splitPath } from './platform';
 import { lookup } from 'node:dns/promises';
 import { ProcessManager } from './processes';
 import { captureScreenshot, screenshotTime } from './screenshots';
@@ -1624,7 +1624,7 @@ export class Herd extends EventEmitter {
     if (cmd.id === 'py-install') return this.installDeps(id);
     if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
     // DevCatz's Composer, else one on the site's PATH (Laravel Herd's, Homebrew's).
-    if (cmd.tool === 'composer' && !phps.composerInstalled() && (await run('/bin/sh', ['-c', 'command -v composer'], { env: this.runtimeEnv(p) })).code !== 0) {
+    if (cmd.tool === 'composer' && !phps.composerInstalled() && !(await hasCommand('composer', this.runtimeEnv(p)))) {
       throw new Error('Composer is not installed: install it on the PHP page first.');
     }
     if (cmd.tool === 'bun' && !this.bunChoice(p).binDir) throw new Error('Bun is not installed. Install it on the Bun page first.');
@@ -2711,16 +2711,17 @@ export class Herd extends EventEmitter {
   async phpExtensions(version: string): Promise<PhpExtensions> {
     const inst = this.installedPhps.find((i) => i.version === version);
     if (!inst) throw new Error(`PHP ${version} is not installed`);
-    // Building PECL extensions is macOS-only so far (phpize toolchain).
-    const supported = !isWin && inst.source === 'mrcatz' && !version.startsWith('7.') && !version.startsWith('5.');
+    // macOS builds PECL with phpize against static-php.dev's 8.x; Windows takes php.net's ready-made DLLs (7.4 too).
+    const supported = inst.source === 'mrcatz' && (isWin || (!version.startsWith('7.') && !version.startsWith('5.')));
     if (!this.builtinCache.has(version)) this.builtinCache.set(version, await phpext.builtin(inst.php));
     return {
       version,
       supported,
       builtin: this.builtinCache.get(version)!,
       installed: supported ? phpext.listInstalled(version) : [],
+      bundled: supported ? phpext.listBundled(version) : [],
       catalog: phpext.CATALOG,
-      toolkit: phpext.hasToolkit(version),
+      toolkit: isWin || phpext.hasToolkit(version),
       problem: supported ? await phpext.buildProblem() : null,
     };
   }
@@ -2776,6 +2777,11 @@ export class Herd extends EventEmitter {
   phpExtRemove(version: string, module: string): void {
     phpext.remove(version, module);
     this.fpm.reload(version);
+  }
+
+  async shimPathSet(on: boolean): Promise<void> {
+    await setUserPath(nodes.shimDir(), on);
+    this.changed();
   }
 
   phpExtDismiss(): void {
@@ -3015,7 +3021,7 @@ export class Herd extends EventEmitter {
       if (!name || !/^[A-Za-z0-9_]+$/.test(name)) throw new Error('Name: letters, digits and _ only');
       command = command.replace('{name}', name);
     }
-    if (task.needsBin && (await run('/bin/sh', ['-c', `command -v ${task.needsBin}`])).code !== 0) {
+    if (task.needsBin && !(await hasCommand(task.needsBin))) {
       throw new Error(task.needsBin === 'atlas' ? 'Atlas CLI is not installed: brew install ariga/tap/atlas' : `${task.needsBin} is not installed`);
     }
     if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
@@ -3043,7 +3049,7 @@ export class Herd extends EventEmitter {
       // Quoted: Alembic / Django names may have spaces.
       command = command.replace('{name}', `'${name.replace(/'/g, '')}'`);
     }
-    if (task.needsBin && (await run('/bin/sh', ['-c', `command -v ${task.needsBin}`], { env: this.runtimeEnv(p) })).code !== 0) {
+    if (task.needsBin && !(await hasCommand(task.needsBin, this.runtimeEnv(p)))) {
       throw new Error(task.needsBin === 'wp' ? 'WP-CLI is not installed: brew install wp-cli' : `${task.needsBin} is not installed`);
     }
     if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
@@ -3299,7 +3305,7 @@ export class Herd extends EventEmitter {
       `Illuminate\\Support\\Facades\\Broadcast::${fn}(getenv('DEVCATZ_CHANNEL'))->as(getenv('DEVCATZ_EVENT'))->with($data)->sendNow();`,
       "echo 'sent via ', config('broadcasting.default'), PHP_EOL;",
     ].join(' ');
-    const r = await run('/bin/sh', ['-c', 'php -r "eval(getenv(\'DEVCATZ_CODE\'));"'], {
+    const r = await run(...shellCommand(`php -r "eval(getenv('DEVCATZ_CODE'));"`), {
       cwd: p.path,
       timeout: 30_000,
       env: { ...this.runtimeEnv(p), DEVCATZ_CODE: code, DEVCATZ_CHANNEL: channel, DEVCATZ_EVENT: event, DEVCATZ_PAYLOAD: payload || '{}' },
@@ -3369,9 +3375,9 @@ export class Herd extends EventEmitter {
   async scoutCommand(siteId: string, command: 'import' | 'flush' | 'sync', model: string | null): Promise<string> {
     const p = this.project(siteId);
     if (command !== 'sync' && (!model || !/^[\w\\]+$/.test(model))) throw new Error('Choose a Searchable model');
-    const args = command === 'sync' ? 'scout:sync-index-settings' : `scout:${command} ${JSON.stringify(model)}`;
+    const args = command === 'sync' ? 'scout:sync-index-settings' : `scout:${command} "${model}"`;
     this.processes.log(p.id, 'sys', `$ php artisan ${args}`);
-    const r = await run('/bin/sh', ['-c', `php artisan ${args}`], { cwd: p.path, timeout: 600_000, env: this.runtimeEnv(p) });
+    const r = await run(...shellCommand(`php artisan ${args}`), { cwd: p.path, timeout: 600_000, env: this.runtimeEnv(p) });
     const out = `${r.stdout}${r.stderr}`.trim();
     for (const line of out.split('\n')) if (line.trim()) this.processes.log(p.id, 'sys', line);
     if (r.code !== 0) throw new Error(out.split('\n').slice(-3).join(' ') || `exit ${r.code}`);

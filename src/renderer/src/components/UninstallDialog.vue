@@ -3,6 +3,7 @@ import { keyLabel, words } from '@shared/platform';
 import { computed, ref, watch } from 'vue';
 import type { UninstallPlan } from '@shared/types';
 import CatMood from './CatMood.vue';
+import { isWin } from '../platform';
 import TaskStepper from './TaskStepper.vue';
 import { attempt, herd, notify, state, uninstallDialog } from '../store';
 
@@ -33,11 +34,17 @@ const items = computed(() => {
   if (!p) return [];
   return [
     { label: 'Every running site and service is stopped', detail: 'Sites, databases, storage, search, mail, WebSocket and gateways' },
-    ...(p.systemFiles.length ? [{ label: 'Port forwarding and DNS files (one admin password prompt)', detail: p.systemFiles.join('\n') }] : []),
-    { label: 'The DevCatz Local CA and the login item', detail: 'From your login keychain (macOS asks to confirm)' },
+    ...(p.systemFiles.length
+      ? [{ label: isWin ? 'Port forwarding (one administrator prompt)' : 'Port forwarding and DNS files (one admin password prompt)', detail: p.systemFiles.join('\n') }]
+      : []),
+    isWin
+      ? { label: 'The DevCatz Local CA, the sign-in item and the Path entry', detail: 'From your Trusted Root certificates (Windows asks to confirm)' }
+      : { label: 'The DevCatz Local CA and the login item', detail: 'From your login keychain (macOS asks to confirm)' },
     p.homebrew
       ? { label: 'The app, through Homebrew', detail: 'brew uninstall --cask devcatz' }
-      : { label: 'The app, to the Trash', detail: p.app ?? 'A development build: the app itself stays' },
+      : isWin
+        ? { label: 'The app, with its own uninstaller', detail: p.app ?? 'A development build: the app itself stays' }
+        : { label: 'The app, to the Trash', detail: p.app ?? 'A development build: the app itself stays' },
   ];
 });
 
@@ -76,7 +83,7 @@ const close = () => !busy.value && (uninstallDialog.value = false);
             <span class="flex min-w-0 flex-col">
               <span class="label-caps">Also remove DevCatz's data</span>
               <span class="text-xs opacity-50">
-                The sites list, runtimes, database and storage services with the data kept in DevCatz's folder, logs — to the Trash:
+                The sites list, runtimes, database and storage services with the data kept in DevCatz's folder, logs — to the {{ isWin ? 'Recycle Bin' : 'Trash' }}:
                 <span class="font-mono break-all">{{ plan.dataDir }}</span>
               </span>
             </span>

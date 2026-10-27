@@ -1,7 +1,9 @@
-import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync, type Dirent } from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import type { DepFolder, ProjectConfig, StackInfo } from '@shared/types';
 import { run } from './env';
+import { isWin } from './platform';
 
 /**
  * Free disk space (TODO §30): the dependency folders of a site — node_modules (every app and package of a
@@ -42,11 +44,34 @@ export function isRealDirInside(abs: string, root: string): boolean {
   }
 }
 
-/** Size on disk in bytes (`du -sk`; it does not follow symlinks). */
+/** Size on disk in bytes (`du -sk` on macOS; a walk on Windows). Neither follows symlinks / junctions. */
 export async function sizeOf(abs: string): Promise<number> {
+  if (isWin) return walkSize(abs);
   const r = await run('du', ['-sk', abs], { timeout: 120_000 });
   const kb = Number(r.stdout.trim().split(/\s+/)[0]);
   return Number.isFinite(kb) ? kb * 1024 : 0;
+}
+
+/** Sum of file sizes under `dir`, links skipped (node_modules on Windows is full of junctions from pnpm / npm). */
+async function walkSize(dir: string): Promise<number> {
+  let total = 0;
+  const stack = [dir];
+  while (stack.length) {
+    const d = stack.pop()!;
+    let entries: Dirent[];
+    try {
+      entries = await readdir(d, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) stack.push(p);
+      else if (e.isFile()) total += await stat(p).then((st) => st.size, () => 0);
+    }
+  }
+  return total;
 }
 
 /**

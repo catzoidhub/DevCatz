@@ -6,6 +6,7 @@ import { computed, onMounted, ref } from 'vue';
 import type { RemoteNode } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
 import CatMood from './CatMood.vue';
+import { isWin } from '../platform';
 
 const s = computed(() => state.value!);
 const n = computed(() => s.value.node);
@@ -43,6 +44,12 @@ const setDefault = (version: string | null) => attempt(() => herd.nodeSetDefault
 const uninstall = (version: string) => attempt(() => herd.nodeUninstall(version));
 
 const pathLine = computed(() => `export PATH="${n.value.shimDir}:$PATH"`);
+const pathBusy = ref(false);
+async function setShimPath(on: boolean) {
+  pathBusy.value = true;
+  if (await attempt(() => herd.shimPathSet(on).then(() => true))) notify('success', on ? 'Added to your Path. Open a new terminal to use it.' : 'Removed from your Path.');
+  pathBusy.value = false;
+}
 async function copyPath() {
   await navigator.clipboard.writeText(pathLine.value);
   notify('info', 'Copied. Add it to the end of ~/.zshrc, then open a new terminal.');
@@ -169,11 +176,28 @@ const tab = ref<Tab>('installed');
           Use the default in your terminal
           <span class="badge badge-sm ml-1" :class="n.shimOnPath ? 'badge-success' : 'badge-ghost'">{{ n.shimOnPath ? 'active' : 'not on PATH' }}</span>
         </h2>
-        <p class="text-xs opacity-70">
+        <template v-if="isWin">
+          <p class="text-xs opacity-70">
+            DevCatz keeps <code>node</code>, <code>npm</code>, <code>npx</code> and <code>corepack</code> shims for the default version — and
+            <code>bun</code>, <code>go</code>, <code>php</code>, <code>composer</code> for theirs — in one folder. Add it to your own Path (no
+            administrator rights) and new terminals (Windows Terminal, PowerShell, cmd, VS Code) use them.
+          </p>
+          <p class="text-xs opacity-70">
+            <code class="selectable">{{ n.shimDir }}</code>
+          </p>
+          <p class="text-xs opacity-60">A Node installed for all users (Program Files) still comes first: Windows puts the system Path before yours.</p>
+          <div class="flex gap-2">
+            <button v-if="!n.shimOnPath" class="btn btn-sm btn-primary" :disabled="pathBusy" @click="setShimPath(true)">
+              <span v-if="pathBusy" class="loading loading-spinner loading-xs" />Add to my Path
+            </button>
+            <button v-else class="btn btn-sm btn-outline" :disabled="pathBusy" @click="setShimPath(false)">Remove from my Path</button>
+          </div>
+        </template>
+        <p v-if="!isWin" class="text-xs opacity-70">
           DevCatz keeps <code>node</code>, <code>npm</code>, <code>npx</code> and <code>corepack</code> shims for the default version. To use them in
           your terminal, add this line to the <b>end</b> of <code>~/.zshrc</code>. It then takes precedence over a node from another tool (nvm, Homebrew …).
         </p>
-        <div class="join">
+        <div v-if="!isWin" class="join">
           <code class="selectable join-item flex-1 truncate rounded-l-box bg-base-200 px-3 py-1.5 text-xs">{{ pathLine }}</code>
           <button class="btn btn-sm join-item" @click="copyPath">Copy</button>
         </div>

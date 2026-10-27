@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import type { SiteDeps } from '@shared/types';
 import ConfirmDialog from './ConfirmDialog.vue';
@@ -69,7 +70,7 @@ async function free() {
           <span v-if="loading" class="loading loading-spinner loading-xs" />Refresh
         </button>
       </div>
-      <p class="text-xs opacity-60">Dependency folders can be thrown away on a project you are not working on and installed again any time with <b>Install dependencies</b>. They go to the Trash, so they can be put back.</p>
+      <p class="text-xs opacity-60">Dependency folders can be thrown away on a project you are not working on and installed again any time with <b>Install dependencies</b>. They go to the {{ words.trash }}, so they can be put back.</p>
 
       <div v-if="loading && !info" class="flex items-center gap-2 text-sm opacity-60"><span class="loading loading-spinner loading-sm" />Measuring…</div>
       <div v-else-if="info && !info.folders.length" class="flex items-center gap-3 text-sm opacity-70">
@@ -86,15 +87,15 @@ async function free() {
           <span class="text-sm">Total <b class="font-mono">{{ bytes(info.bytes) }}</b></span>
           <span class="flex-1" />
           <span v-if="running" class="text-xs opacity-60">Stop the site first</span>
-          <button class="btn btn-error btn-outline btn-sm" :disabled="running || !picked.length" @click="asking = true">Move {{ bytes(pickedBytes) }} to the Trash…</button>
+          <button class="btn btn-error btn-outline btn-sm" :disabled="running || !picked.length" @click="asking = true">Move {{ bytes(pickedBytes) }} to the {{ words.trash }}…</button>
         </div>
       </template>
     </div>
     <ConfirmDialog
       v-if="asking && info"
       :title="`Free ${bytes(pickedBytes)} from ${info.name}?`"
-      text="These folders go to the Trash. The project files are not touched; Install dependencies brings them back."
-      confirm="Move to Trash"
+      :text="`These folders go to the ${words.trash}. The project files are not touched; Install dependencies brings them back.`"
+      :confirm="`Move to ${words.trash}`"
       tone="error"
       :busy="busy"
       @ok="free"

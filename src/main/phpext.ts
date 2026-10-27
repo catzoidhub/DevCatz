@@ -6,10 +6,7 @@ import type { PhpExtCatalogItem, PhpExtension, PhpExtTask } from '@shared/types'
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { brewBin, etcDir, phpDir } from './php';
-import { isWin } from './platform';
-
-/** Windows: PECL builds need phpize + autotools (macOS only so far); the zip's own ext\*.dll are loaded by php.ts. */
-const NOT_ON_WINDOWS = 'Building PHP extensions is not available on Windows yet.';
+import { isWin, TAR } from './platform';
 
 /**
  * PHP extensions beyond the ones compiled into static-php.dev's build: built
@@ -65,6 +62,32 @@ const extDir = (version: string) => join(phpDir(), version, 'lib', 'extensions')
 const iniFile = (version: string, module: string, on = true) => join(etcDir(version), 'conf.d', `20-${module}.ini${on ? '' : '.disabled'}`);
 export const hasToolkit = (version: string) => existsSync(join(toolkitDir(version), 'bin', 'phpize'));
 
+/**
+ * Windows: no compiler. The PHP zip's own ext\php_<name>.dll are switched on and off; PECL packages come as ready-made
+ * DLLs from php.net's Windows PECL builds (downloads.php.net/~windows/pecl), matched to the PHP minor, NTS, x64. They
+ * live in php/<version>/pecl (module + <module>.json), libraries they ship (libssh2.dll …) next to php.exe, where the
+ * loader finds them. Every one is loaded from conf.d/20-<module>.ini.
+ */
+const WIN_PECL = 'https://downloads.php.net/~windows/pecl/releases';
+const peclDir = (version: string) => join(phpDir(), version, 'pecl');
+const bundledDir = (version: string) => join(phpDir(), version, 'ext');
+/** The module file of an installed extension (DevCatz's build, or on Windows a PECL DLL). */
+const moduleFile = (version: string, module: string) => (isWin ? join(peclDir(version), `php_${module}.dll`) : join(extDir(version), `${module}.so`));
+const metaFile = (version: string, module: string) => join(isWin ? peclDir(version) : extDir(version), `${module}.json`);
+
+/** Windows: the zip's own extensions (ext\php_*.dll), each with its on/off state. */
+export function listBundled(version: string): PhpExtension[] {
+  if (!isWin) return [];
+  const dir = bundledDir(version);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .map((f) => f.match(/^php_(\w+)\.dll$/i)?.[1])
+    .filter((m): m is string => !!m)
+    .map((m) => m.toLowerCase())
+    .map((module) => ({ module, pkg: module, version, zend: module === 'opcache' || module === 'xdebug', enabled: existsSync(iniFile(version, module)) }))
+    .sort((a, b) => a.module.localeCompare(b.module));
+}
+
 /** PATH etc. for builds: Homebrew's tools (autoconf, pkg-config) first. */
 function buildEnv(): Record<string, string> {
   const brew = brewBin();
@@ -99,7 +122,7 @@ function stream(cmd: string, args: string[], cwd: string, log: (line: string) =>
 
 /** What a build needs: Xcode Command Line Tools, autoconf (from Homebrew when missing). */
 export async function buildProblem(): Promise<string | null> {
-  if (isWin) return NOT_ON_WINDOWS;
+  if (isWin) return null; // ready-made DLLs: nothing to build with
   const clt = await run('xcode-select', ['-p'], { timeout: 10_000 });
   if (clt.code !== 0) return 'Xcode Command Line Tools are needed to build extensions: run “xcode-select --install” in Terminal.';
   const ac = await run('/bin/sh', ['-c', 'command -v autoconf'], { env: buildEnv(), timeout: 10_000 });
@@ -121,20 +144,21 @@ interface Meta {
   pkg: string;
   version: string;
   zend: boolean;
+  /** Windows: libraries the PECL zip shipped, copied next to php.exe. */
+  deps?: string[];
 }
 
 /** Extensions DevCatz built for a PHP version. */
 export function listInstalled(version: string): PhpExtension[] {
-  if (isWin) return [];
-  const dir = extDir(version);
+  const dir = isWin ? peclDir(version) : extDir(version);
   if (!existsSync(dir)) return [];
   const out: PhpExtension[] = [];
   for (const f of readdirSync(dir)) {
-    if (!f.endsWith('.so')) continue;
-    const module = f.slice(0, -3);
+    const module = isWin ? f.match(/^php_(\w+)\.dll$/)?.[1] : f.endsWith('.so') ? f.slice(0, -3) : undefined;
+    if (!module) continue;
     let meta: Meta = { pkg: module, version: '', zend: false };
     try {
-      meta = JSON.parse(readFileSync(join(dir, `${module}.json`), 'utf8')) as Meta;
+      meta = JSON.parse(readFileSync(metaFile(version, module), 'utf8')) as Meta;
     } catch {
       /* built before metadata */
     }
@@ -151,31 +175,47 @@ function iniText(file: string, meta: Meta, module: string): string {
 }
 
 export function setEnabled(version: string, module: string, on: boolean): void {
-  if (isWin) throw new Error(NOT_ON_WINDOWS);
+  if (!/^\w+$/.test(module)) throw new Error('Unknown extension');
   const from = iniFile(version, module, !on);
   const to = iniFile(version, module, on);
   if (existsSync(from)) renameSync(from, to);
   else if (on && !existsSync(to)) {
     const meta = listInstalled(version).find((e) => e.module === module);
-    if (!meta) throw new Error(`${module} is not installed for PHP ${version}`);
-    writeFileSync(to, iniText(join(extDir(version), `${module}.so`), { pkg: meta.pkg, version: meta.version, zend: meta.zend }, module));
+    const bundled = listBundled(version).find((e) => e.module === module);
+    if (meta) writeFileSync(to, iniText(moduleFile(version, module), { pkg: meta.pkg, version: meta.version, zend: meta.zend }, module));
+    else if (bundled) writeFileSync(to, `; Part of PHP ${version} (ext\\php_${module}.dll)\r\n${bundled.zend ? 'zend_extension' : 'extension'}=${module}\r\n`);
+    else throw new Error(`${module} is not installed for PHP ${version}`);
   }
 }
 
 export function remove(version: string, module: string): void {
-  if (isWin) return;
-  for (const f of [iniFile(version, module), iniFile(version, module, false), join(extDir(version), `${module}.so`), join(extDir(version), `${module}.json`)]) {
+  if (!/^\w+$/.test(module)) throw new Error('Unknown extension');
+  // Libraries another PECL extension of this version still ships stay.
+  if (isWin) {
+    const meta = readMeta(version, module);
+    const kept = new Set(listInstalled(version).filter((e) => e.module !== module).flatMap((e) => readMeta(version, e.module)?.deps ?? []));
+    for (const d of meta?.deps ?? []) if (!kept.has(d)) rmSync(join(phpDir(), version, d), { force: true });
+  }
+  for (const f of [iniFile(version, module), iniFile(version, module, false), moduleFile(version, module), metaFile(version, module)]) {
     if (existsSync(f)) unlinkSync(f);
+  }
+}
+
+function readMeta(version: string, module: string): Meta | null {
+  try {
+    return JSON.parse(readFileSync(metaFile(version, module), 'utf8')) as Meta;
+  } catch {
+    return null;
   }
 }
 
 /** Drops ini files whose module is gone (PHP uninstalled and reinstalled, folder cleaned up). */
 export function pruneIni(version: string): void {
-  if (isWin) return;
   const d = join(etcDir(version), 'conf.d');
   for (const f of readdirSync(d)) {
     const m = f.match(/^20-(.+)\.ini(\.disabled)?$/);
-    if (m && !existsSync(join(extDir(version), `${m[1]}.so`))) unlinkSync(join(d, f));
+    const there = (mod: string) => existsSync(moduleFile(version, mod)) || (isWin && existsSync(join(bundledDir(version), `php_${mod}.dll`)));
+    if (m && !there(m[1])) unlinkSync(join(d, f));
   }
 }
 
@@ -184,15 +224,15 @@ export function pruneIni(version: string): void {
  * extensions are copied over instead of rebuilt.
  */
 export function carryOver(from: string, to: string): string[] {
-  if (isWin) return [];
   const list = listInstalled(from);
   if (!list.length) return [];
-  mkdirSync(extDir(to), { recursive: true });
+  mkdirSync(isWin ? peclDir(to) : extDir(to), { recursive: true });
   for (const e of list) {
-    copyFileSync(join(extDir(from), `${e.module}.so`), join(extDir(to), `${e.module}.so`));
-    const meta: Meta = { pkg: e.pkg, version: e.version, zend: e.zend };
-    writeFileSync(join(extDir(to), `${e.module}.json`), JSON.stringify(meta));
-    if (e.enabled) writeFileSync(iniFile(to, e.module), iniText(join(extDir(to), `${e.module}.so`), meta, e.module));
+    copyFileSync(moduleFile(from, e.module), moduleFile(to, e.module));
+    const meta: Meta = { pkg: e.pkg, version: e.version, zend: e.zend, ...(isWin ? { deps: readMeta(from, e.module)?.deps ?? [] } : {}) };
+    for (const d of meta.deps ?? []) if (existsSync(join(phpDir(), from, d))) copyFileSync(join(phpDir(), from, d), join(phpDir(), to, d));
+    writeFileSync(metaFile(to, e.module), JSON.stringify(meta));
+    if (e.enabled) writeFileSync(iniFile(to, e.module), iniText(moduleFile(to, e.module), meta, e.module));
   }
   return list.map((e) => e.module);
 }
@@ -271,9 +311,9 @@ export async function install(
   task: (t: Partial<PhpExtTask>) => void,
   log: (l: string) => void,
 ): Promise<PhpExtension> {
-  if (isWin) throw new Error(NOT_ON_WINDOWS);
   if (!VERSION.test(version)) throw new Error(`Invalid version ${version}`);
   if (!PKG.test(pkgName)) throw new Error('A PECL package name is letters, digits and _ only');
+  if (isWin) return installWin(version, phpBin, pkgName.toLowerCase(), task, log);
   const problem = await buildProblem();
   if (problem) throw new Error(problem);
   const item = CATALOG.find((c) => c.pkg === pkgName.toLowerCase());
@@ -323,6 +363,85 @@ export async function install(
     if (existsSync(iniFile(version, module, false))) unlinkSync(iniFile(version, module, false));
     writeFileSync(iniFile(version, module), iniText(so, meta, module));
     return { module, pkg: meta.pkg, version: pv, zend, enabled: true };
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/** Folder names of an index page (`href="6.2.0/"`). */
+async function listing(url: string): Promise<string[]> {
+  const res = await fetch(url);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`downloads.php.net: HTTP ${res.status}`);
+  return [...(await res.text()).matchAll(/href="([^"/?]+)\/?"/g)].map((m) => decodeURIComponent(m[1]));
+}
+
+const versionKey = (v: string) => v.split(/[.-]/).map((p) => (/^\d+$/.test(p) ? p.padStart(6, '0') : p));
+const newestFirst = (a: string, b: string) => (versionKey(b).join('.') > versionKey(a).join('.') ? 1 : -1);
+
+/** Windows: a PECL package as the ready-made DLL for this PHP minor (NTS, x64), checked by loading it. */
+async function installWin(version: string, phpBin: string, pkg: string, task: (t: Partial<PhpExtTask>) => void, log: (l: string) => void): Promise<PhpExtension> {
+  const minor = version.split('.').slice(0, 2).join('.');
+  const item = CATALOG.find((c) => c.pkg === pkg);
+  task({ phase: 'download', detail: `Looking up ${pkg} for PHP ${minor} (Windows)` });
+  const releases = (await listing(`${WIN_PECL}/${pkg}/`)).filter((v) => /^\d[\w.-]*$/.test(v));
+  if (!releases.length) throw new Error(`php.net has no Windows builds of “${pkg}”`);
+  // Stable releases first (newest first), then pre-releases; the first one built for this minor wins.
+  const stable = (v: string) => /^\d+(\.\d+)*$/.test(v);
+  const order = [...releases.filter(stable).sort(newestFirst), ...releases.filter((v) => !stable(v)).sort(newestFirst)];
+  let found: { pv: string; file: string } | null = null;
+  for (const pv of order.slice(0, 8)) {
+    const files = await listing(`${WIN_PECL}/${pkg}/${pv}/`);
+    const file = files
+      .filter((f) => new RegExp(`^php_${pkg}-${pv.replace(/\./g, '\\.')}-${minor.replace('.', '\\.')}-nts-(vs|vc)\\d+-x64\\.zip$`, 'i').test(f))
+      .sort(newestFirst)[0];
+    if (file) {
+      found = { pv, file };
+      break;
+    }
+    log(`${pkg} ${pv}: no build for PHP ${minor} NTS x64`);
+  }
+  if (!found) throw new Error(`There is no Windows build of ${pkg} for PHP ${minor} on php.net yet (newest: ${order[0]})`);
+
+  const work = mkdtempSync(join(tmpdir(), `devcatz-${pkg}-`));
+  try {
+    const archive = join(work, found.file);
+    log(`GET ${WIN_PECL}/${pkg}/${found.pv}/${found.file}`);
+    // php.net publishes no checksums for PECL DLLs; HTTPS, and the DLL must load into this PHP to be kept.
+    await downloadVerified(`${WIN_PECL}/${pkg}/${found.pv}/${found.file}`, archive, '', (received) =>
+      task({ detail: `Downloading ${pkg} ${found.pv} (${Math.round(received / 1024)} KB)` }),
+    );
+    const dir = join(work, 'zip');
+    mkdirSync(dir);
+    const x = await run(TAR, ['-xf', archive, '-C', dir], { timeout: 120_000 });
+    if (x.code !== 0) throw new Error(`Could not unpack ${found.file}: ${x.stderr.trim()}`);
+    const files = readdirSync(dir);
+    const dll = files.find((f) => f.toLowerCase() === `php_${pkg}.dll`) ?? files.find((f) => /^php_\w+\.dll$/i.test(f));
+    if (!dll) throw new Error(`${found.file} has no php_*.dll`);
+    const module = dll.slice(4, -4).toLowerCase();
+    // Libraries the extension links against (libssh2.dll, libyaml.dll …) go next to php.exe.
+    const deps = files.filter((f) => /\.dll$/i.test(f) && !/^php_/i.test(f));
+    for (const d of deps) {
+      if (!existsSync(join(phpDir(), version, d))) copyFileSync(join(dir, d), join(phpDir(), version, d));
+      log(`library ${d}`);
+    }
+
+    task({ phase: 'verify', detail: 'Loading it into PHP' });
+    let zend = item?.zend ?? false;
+    let err = await loads(phpBin, join(dir, dll), module, zend);
+    if (err && /zend_extension/i.test(err)) {
+      zend = true;
+      err = await loads(phpBin, join(dir, dll), module, zend);
+    }
+    if (err) throw new Error(`${module} does not load into PHP ${version}: ${err}`);
+
+    mkdirSync(peclDir(version), { recursive: true });
+    copyFileSync(join(dir, dll), moduleFile(version, module));
+    const meta: Meta = { pkg, version: found.pv, zend, deps };
+    writeFileSync(metaFile(version, module), JSON.stringify(meta));
+    if (existsSync(iniFile(version, module, false))) unlinkSync(iniFile(version, module, false));
+    writeFileSync(iniFile(version, module), iniText(moduleFile(version, module), meta, module));
+    return { module, pkg, version: found.pv, zend, enabled: true };
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

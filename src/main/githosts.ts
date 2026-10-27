@@ -1,5 +1,5 @@
 import { safeStorage } from 'electron';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { GitAccount, GitHostKind, GitPull, GitRepo, GitSshKey } from '@shared/types';
@@ -407,7 +407,9 @@ export async function sshGenerate(email: string): Promise<GitSshKey> {
   const base = existsSync(join(dir, 'id_ed25519')) ? 'id_ed25519_devcatz' : 'id_ed25519';
   const path = join(dir, base);
   if (existsSync(path)) throw new Error(`${path} already exists`);
-  const r = await run('/bin/sh', ['-c', `mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keygen -q -t ed25519 -N '' -C ${JSON.stringify(email.trim() || 'devcatz')} -f ${JSON.stringify(path)}`]);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // Windows: the OpenSSH client that ships with Windows 10/11 (System32\OpenSSH, on the Path).
+  const r = await run('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', email.trim() || 'devcatz', '-f', path]);
   if (r.code !== 0) throw new Error(`ssh-keygen: ${r.stderr.trim()}`);
   const key = (await sshKeys()).find((k) => k.path === `${path}.pub`);
   if (!key) throw new Error('Key not found after ssh-keygen');

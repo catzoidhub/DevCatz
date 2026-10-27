@@ -6,6 +6,8 @@ import type { AiProvider, TaskProgress, UninstallPlan } from '@shared/types';
 import { spawn } from 'node:child_process';
 import { removeSystemLeftovers, systemLeftovers } from './cleanurls';
 import { isWin } from './platform';
+import { setUserPath, userPathHas } from './env';
+import { shimDir } from './node';
 import { run } from './env';
 import { readShared, setSharedKey, SHARED_DIR } from './shared';
 
@@ -84,16 +86,19 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
   set({ step: 1, detail: plan.systemFiles.join(', ') || 'Nothing to remove' });
   if (plan.systemFiles.length) {
     const r = await removeSystemLeftovers();
-    if (!r.ok) throw new Error(r.message.includes('-128') ? 'Cancelled at the password prompt: nothing was removed after stopping the services.' : r.message);
+    if (!r.ok) throw new Error(r.message.includes('-128') ? `Cancelled at the ${isWin ? 'administrator' : 'password'} prompt: nothing was removed after stopping the services.` : r.message);
   }
 
-  set({ step: 2, detail: 'DevCatz Local CA, from the login keychain' });
+  // Windows: the shim folder in the user's Path would point at a folder that is about to go.
+  if (isWin && userPathHas(shimDir())) await setUserPath(shimDir(), false).catch((e: Error) => console.warn('uninstall: Path', e.message));
+
+  set({ step: 2, detail: isWin ? 'DevCatz Local CA, from your Trusted Root certificates' : 'DevCatz Local CA, from the login keychain' });
   await hooks.untrustCa().catch((e: Error) => console.warn('uninstall: CA', e.message));
   app.setLoginItemSettings({ openAtLogin: false });
 
   set({ step: 3, detail: opts.removeData ? plan.dataDir : 'Kept: the data folder' });
   if (opts.removeData) {
-    await run('/usr/bin/security', ['delete-generic-password', '-s', 'DevCatz Safe Storage'], { timeout: 15_000 }).catch(() => undefined);
+    if (!isWin) await run('/usr/bin/security', ['delete-generic-password', '-s', 'DevCatz Safe Storage'], { timeout: 15_000 }).catch(() => undefined);
     for (const p of [...smallLeftovers(), plan.dataDir]) await shell.trashItem(p).catch(() => rmSync(p, { recursive: true, force: true }));
   }
   if (removeShared) {

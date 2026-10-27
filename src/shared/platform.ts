@@ -20,6 +20,12 @@ export function wordsFor(os: OS) {
     fileManager: os === 'mac' ? 'Finder' : os === 'windows' ? 'File Explorer' : 'the file manager',
     tray: os === 'mac' ? 'menu bar' : 'system tray',
     revealIn: os === 'mac' ? 'Reveal in Finder' : os === 'windows' ? 'Show in File Explorer' : 'Show in folder',
+    trash: os === 'windows' ? 'Recycle Bin' : 'Trash',
+    computer: os === 'mac' ? 'Mac' : os === 'windows' ? 'PC' : 'computer',
+    /** Where the app keeps its data, for hints and placeholders (`<appData>/DevCatz`). */
+    appData: os === 'mac' ? '~/Library/Application Support' : os === 'windows' ? '%APPDATA%' : '~/.config',
+    sep: os === 'windows' ? '\\' : '/',
+    installGit: os === 'mac' ? 'run xcode-select --install in Terminal' : os === 'windows' ? 'install Git for Windows from git-scm.com' : 'install git with your package manager',
   };
 }
 

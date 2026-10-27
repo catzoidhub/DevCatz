@@ -199,7 +199,7 @@ function openGitPage() {
       <div class="text-lg font-semibold">Not a Git repository</div>
       <p class="text-sm opacity-70">Start tracking this site's history: DevCatz runs <code>git init -b main</code> in {{ p.path }}, then you can commit and connect a remote.</p>
       <button class="btn btn-primary btn-sm" @click="act(() => H.gitInit(p.id).then(() => true), 'Repository created')">Initialize repository</button>
-      <p v-if="state?.git.version === null" class="text-xs text-warning">git is not installed: run <code class="selectable">xcode-select --install</code> in Terminal.</p>
+      <p v-if="state?.git.version === null" class="text-xs text-warning">git is not installed: {{ words.installGit }}.</p>
     </div>
 
     <template v-else>

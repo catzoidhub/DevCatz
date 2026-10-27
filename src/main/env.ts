@@ -36,6 +36,7 @@ export async function loadShellEnv(): Promise<NodeJS.ProcessEnv> {
     delete env.ELECTRON_RUN_AS_NODE;
     delete env.ELECTRON_NO_ATTACH_CONSOLE;
     shellEnv = stripAgentEnv(env);
+    await userPath().catch(() => undefined);
     return shellEnv;
   }
   const shell = process.env.SHELL || '/bin/zsh';
@@ -90,6 +91,47 @@ export function run(
       },
     );
   });
+}
+
+/**
+ * Windows: puts `dir` first in (or takes it out of) the user's own Path (HKCU\Environment, no administrator rights).
+ * New terminals see it; DevCatz's own environment is updated too. The folder goes in through an environment variable,
+ * so no path reaches PowerShell's parser.
+ */
+let userPathDirs: string[] | null = null;
+
+/** Windows: the folders in the user's own Path (registry), lower-cased without trailing slashes; read once, then kept. */
+export async function userPath(): Promise<string[]> {
+  if (userPathDirs) return userPathDirs;
+  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "[Environment]::GetEnvironmentVariable('Path', 'User')"], { timeout: 20_000 });
+  userPathDirs = r.stdout.trim().split(';').filter(Boolean).map((d) => d.replace(/[\\/]+$/, '').toLowerCase());
+  return userPathDirs;
+}
+export const userPathHas = (dir: string): boolean => !!userPathDirs?.includes(dir.replace(/[\\/]+$/, '').toLowerCase());
+
+export async function setUserPath(dir: string, on: boolean): Promise<void> {
+  if (!isWin) throw new Error('Only on Windows');
+  const script = [
+    "$d = $env:DEVCATZ_DIR.TrimEnd('\\')",
+    "$cur = [Environment]::GetEnvironmentVariable('Path', 'User')",
+    "$parts = @(($cur -split ';') | Where-Object { $_ -and ($_.TrimEnd('\\') -ne $d) })",
+    `if ($env:DEVCATZ_ON -eq '1') { $parts = @($d) + $parts }`,
+    "[Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')",
+  ].join('; ');
+  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { DEVCATZ_DIR: dir, DEVCATZ_ON: on ? '1' : '0' }, timeout: 30_000 });
+  if (r.code !== 0) throw new Error(`Could not change your Path: ${r.stderr.trim() || `exit ${r.code}`}`);
+  const env = getShellEnv();
+  const key = pathKey(env);
+  const rest = splitPath(env[key]).filter((p) => p.replace(/[\\/]+$/, '').toLowerCase() !== dir.toLowerCase());
+  env[key] = joinPath(on ? [dir, ...rest] : rest);
+  userPathDirs = null;
+  await userPath();
+}
+
+/** Whether `bin` is on the PATH of `env` (`command -v` on macOS, `where` on Windows). */
+export async function hasCommand(bin: string, env: Record<string, string> = {}): Promise<boolean> {
+  if (isWin) return (await run('where.exe', [bin], { env, timeout: 5000 })).code === 0;
+  return (await run('/bin/sh', ['-c', `command -v ${bin}`], { env, timeout: 5000 })).code === 0;
 }
 
 /**

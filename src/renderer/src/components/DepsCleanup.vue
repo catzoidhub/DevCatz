@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, onMounted, ref } from 'vue';
 import type { SiteDeps } from '@shared/types';
 import ConfirmDialog from './ConfirmDialog.vue';
@@ -55,7 +56,7 @@ async function free() {
   busy.value = false;
   asking.value = false;
   picked.value = [];
-  if (freed) notify('success', `Freed ${bytes(freed)}: moved to the Trash`);
+  if (freed) notify('success', `Freed ${bytes(freed)}: moved to the ${words.trash}`);
   await load(true);
 }
 </script>
@@ -74,7 +75,7 @@ async function free() {
           <span v-if="loading" class="loading loading-spinner loading-xs" />Refresh
         </button>
       </div>
-      <p class="text-xs opacity-60">node_modules, Composer's vendor/ and Python venvs of your sites. On projects you are not working on they can go to the Trash; <b>Install dependencies</b> brings them back.</p>
+      <p class="text-xs opacity-60">node_modules, Composer's vendor/ and Python venvs of your sites. On projects you are not working on they can go to the {{ words.trash }}; <b>Install dependencies</b> brings them back.</p>
 
       <div v-if="!report" class="flex items-center gap-2 text-sm opacity-60"><span class="loading loading-spinner loading-sm" />Measuring every site…</div>
       <div v-else-if="!rows.length" class="flex items-center gap-3 text-sm opacity-70">
@@ -115,15 +116,15 @@ async function free() {
         <div class="flex items-center gap-3">
           <span class="text-xs opacity-60">{{ pickedRows.length }} selected</span>
           <span class="flex-1" />
-          <button class="btn btn-error btn-outline btn-sm" :disabled="!pickedRows.length" @click="asking = true">Move {{ bytes(pickedBytes) }} to the Trash…</button>
+          <button class="btn btn-error btn-outline btn-sm" :disabled="!pickedRows.length" @click="asking = true">Move {{ bytes(pickedBytes) }} to the {{ words.trash }}…</button>
         </div>
       </template>
     </div>
     <ConfirmDialog
       v-if="asking"
       :title="`Free ${bytes(pickedBytes)} from ${pickedRows.length} site${pickedRows.length === 1 ? '' : 's'}?`"
-      text="Their dependency folders go to the Trash. Project files are not touched; Install dependencies on a site brings them back."
-      confirm="Move to Trash"
+      :text="`Their dependency folders go to the ${words.trash}. Project files are not touched; Install dependencies on a site brings them back.`"
+      :confirm="`Move to ${words.trash}`"
       tone="error"
       :busy="busy"
       @ok="free"

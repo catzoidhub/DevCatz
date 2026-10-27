@@ -50,8 +50,8 @@ async function done() {
         </div>
 
         <div class="space-y-1">
-          <p class="label-caps">{{ isWin ? 'One thing asks you to confirm — only if you choose it' : 'Two things ask for your password — only if you choose them' }}</p>
-          <p class="text-xs opacity-60">Nothing is installed now. {{ isWin ? 'The button says' : 'Each button says' }} what it does first; {{ isWin ? 'it can' : 'both can' }} be undone in Settings → Project.</p>
+          <p class="label-caps">{{ isWin ? 'Two things ask you to confirm — only if you choose them' : 'Two things ask for your password — only if you choose them' }}</p>
+          <p class="text-xs opacity-60">Nothing is installed now. Each button says what it does first; both can be undone in Settings → Project.</p>
         </div>
 
         <div class="space-y-3">
@@ -73,15 +73,15 @@ async function done() {
             </div>
           </div>
 
-          <!-- Windows, stage 1: no port forwarding yet (Catzoid #57); sites keep :8443. -->
-          <div v-if="!isWin" class="rounded-xl border border-base-300/70 bg-base-200/40 p-4">
+          <div class="rounded-xl border border-base-300/70 bg-base-200/40 p-4">
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0">
                 <p class="font-medium">2 · Names without a port <span class="badge badge-ghost badge-sm ml-1">optional</span></p>
                 <p class="mt-1 text-sm opacity-70">
                   Sites answer on <span class="font-mono">https://shop.localhost:8443</span> out of the box. To drop the
-                  <span class="font-mono">:8443</span>, DevCatz adds two small system services that forward ports 443 and 80 to it — that
-                  needs your administrator password once.
+                  <span class="font-mono">:8443</span>,
+                  <template v-if="isWin">DevCatz asks Windows to forward ports 443 and 80 to it — that needs administrator approval once.</template>
+                  <template v-else>DevCatz adds two small system services that forward ports 443 and 80 to it — that needs your administrator password once.</template>
                 </p>
               </div>
               <span v-if="s.cleanUrls.installed" class="badge badge-success badge-sm shrink-0">on</span>
@@ -94,8 +94,7 @@ async function done() {
 
         <p class="text-xs opacity-60">
           <template v-if="isWin">
-            No changes to the <span class="font-mono">hosts</span> file, no administrator rights, nothing at sign-in unless you turn it on. Sites are at
-            <span class="font-mono">https://&lt;name&gt;.localhost:8443</span>.
+            No changes to the <span class="font-mono">hosts</span> file, no drivers, nothing at sign-in unless you turn it on.
           </template>
           <template v-else>No changes to <span class="font-mono">/etc/hosts</span>, no kernel extensions, nothing at login unless you turn it on.</template>
           <a class="link" @click="securityDoc">What DevCatz changes on your {{ isWin ? 'PC' : 'Mac' }}</a>

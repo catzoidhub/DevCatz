@@ -4,8 +4,9 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, posix, relative } from 'node:path';
 import { isPhpFramework, isPythonFramework, type AppInfo, type DockerEngineId, type DockerFile, type DockerGenOptions, type DockerTarget, type DockerService, type DockerStatus, type ProjectConfig, type StackInfo } from '@shared/types';
 import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './detect';
-import { getShellEnv, run } from './env';
+import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
+import { isWin } from './platform';
 
 /**
  * Docker per site: generates a production-like Dockerfile + compose file for
@@ -23,26 +24,31 @@ interface EngineDef {
   name: string;
   /** App bundle in /Applications or ~/Applications. */
   app?: string;
+  /** Windows: the app's .exe (`%ProgramFiles%` / `%LOCALAPPDATA%` placeholders); engines without one are macOS-only. */
+  win?: string;
+  macOnly?: boolean;
   /** CLI that, when found on PATH, means it is installed (Colima, Podman, Finch). */
   bin?: string;
   download: string;
 }
 
 /** Most recommended first (the "not installed" card offers them in this order). */
-export const ENGINES: EngineDef[] = [
-  { id: 'orbstack', name: 'OrbStack', app: 'OrbStack.app', download: 'https://orbstack.dev/download' },
-  { id: 'docker-desktop', name: 'Docker Desktop', app: 'Docker.app', download: 'https://www.docker.com/products/docker-desktop/' },
-  { id: 'colima', name: 'Colima', bin: 'colima', download: 'https://github.com/abiosoft/colima#installation' },
-  { id: 'rancher', name: 'Rancher Desktop', app: 'Rancher Desktop.app', download: 'https://rancherdesktop.io/' },
-  { id: 'podman', name: 'Podman', app: 'Podman Desktop.app', bin: 'podman', download: 'https://podman-desktop.io/downloads' },
-  { id: 'finch', name: 'Finch', bin: 'finch', download: 'https://github.com/runfinch/finch/releases' },
-];
+export const ENGINES: EngineDef[] = ([
+  { id: 'orbstack', name: 'OrbStack', app: 'OrbStack.app', macOnly: true, download: 'https://orbstack.dev/download' },
+  { id: 'docker-desktop', name: 'Docker Desktop', app: 'Docker.app', win: '%ProgramFiles%\\Docker\\Docker\\Docker Desktop.exe', download: 'https://www.docker.com/products/docker-desktop/' },
+  { id: 'colima', name: 'Colima', bin: 'colima', macOnly: true, download: 'https://github.com/abiosoft/colima#installation' },
+  { id: 'rancher', name: 'Rancher Desktop', app: 'Rancher Desktop.app', win: '%LOCALAPPDATA%\\Programs\\Rancher Desktop\\Rancher Desktop.exe', download: 'https://rancherdesktop.io/' },
+  { id: 'podman', name: 'Podman', app: 'Podman Desktop.app', win: '%LOCALAPPDATA%\\Programs\\Podman Desktop\\Podman Desktop.exe', bin: 'podman', download: 'https://podman-desktop.io/downloads' },
+  { id: 'finch', name: 'Finch', bin: 'finch', macOnly: true, download: 'https://github.com/runfinch/finch/releases' },
+] as EngineDef[]).filter((e) => !(isWin && e.macOnly));
+
+/** Windows: an engine's .exe with %ProgramFiles% / %LOCALAPPDATA% filled in. */
+const winExe = (e: EngineDef) => e.win?.replace(/%(\w+)%/g, (_m, k: string) => process.env[k] ?? '');
 
 const appInstalled = (app: string) => existsSync(join('/Applications', app)) || existsSync(join(homedir(), 'Applications', app));
+const engineAppInstalled = (e: EngineDef) => (isWin ? !!winExe(e) && existsSync(winExe(e)!) : !!e.app && appInstalled(e.app));
 
-async function onPath(bin: string): Promise<boolean> {
-  return (await run('/bin/sh', ['-c', `command -v ${bin}`], { timeout: 3000 })).code === 0;
-}
+const onPath = (bin: string): Promise<boolean> => hasCommand(bin);
 
 /** The CLI that talks to the running engine: `docker` (most), `podman` or `finch`. */
 let cli: { bin: string; compose: string[] } = { bin: 'docker', compose: ['compose'] };
@@ -65,7 +71,7 @@ function engineFromDocker(context: string, endpoint: string, os: string): Docker
 
 export async function dockerStatus(): Promise<DockerStatus> {
   const installed = (
-    await Promise.all(ENGINES.map(async (e) => ((e.app && appInstalled(e.app)) || (e.bin && (await onPath(e.bin))) ? e : null)))
+    await Promise.all(ENGINES.map(async (e) => (engineAppInstalled(e) || (e.bin && (await onPath(e.bin))) ? e : null)))
   ).filter((e): e is EngineDef => !!e);
   const base = { installed: installed.map((e) => e.id), cliFound: false, context: null, engine: null, orbLocal: false };
 
@@ -99,8 +105,9 @@ export async function dockerStatus(): Promise<DockerStatus> {
 export async function startEngine(id: DockerEngineId): Promise<void> {
   const e = ENGINES.find((x) => x.id === id);
   if (!e) throw new Error(`Unknown engine ${id}`);
-  if (e.app && appInstalled(e.app)) {
-    await run('open', ['-a', e.app.replace(/\.app$/, '')]);
+  if (engineAppInstalled(e)) {
+    if (isWin) spawn(winExe(e)!, [], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+    else await run('open', ['-a', e.app!.replace(/\.app$/, '')]);
     return;
   }
   const cmd: Record<string, string[]> = { colima: ['colima', 'start'], podman: ['podman', 'machine', 'start'], finch: ['finch', 'vm', 'start'] };
