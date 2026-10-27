@@ -3,6 +3,7 @@ import { readShared, siteBase, watchShared, writeShared } from './shared';
 // First: moves the MrCatz Herd data folder before store/herd read it.
 import './migrate';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron';
+import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { loadShellEnv, run } from './env';
@@ -20,6 +21,7 @@ import * as gitHosts from './githosts';
 import { MIGRATION_FLAG } from './migrate';
 import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3UploadProgress, type Settings, type TaskProgress, type GwKind, type SearchKind, type StorageKind, type WaEngine, type WsKind } from '@shared/types';
 import { uninstall, uninstallPlan, UNINSTALL_STEPS } from './uninstall';
+import { isMac, isWin } from './platform';
 import { openWeb, refreshBrowsers, refreshEditorIcons } from './browsers';
 
 app.setName('DevCatz');
@@ -40,6 +42,8 @@ function editorPath(e: string): string | null {
   return [`/Applications/${e}.app`, `${app.getPath('home')}/Applications/${e}.app`].find((p) => existsSync(p)) ?? null;
 }
 function installedEditors(): string[] {
+  // Windows, stage 1: no editor list; Open in Editor uses VS Code's `code` command when it is on the Path.
+  if (isWin) return [];
   return EDITORS.filter((e) => editorPath(e) !== null);
 }
 /** Browsers, the system default and the editors' icons (Settings → Open with); true when anything changed. */
@@ -135,11 +139,20 @@ function createWindow(): void {
     minHeight: 520,
     show: false,
     title: 'DevCatz',
-    titleBarStyle: 'hiddenInset',
-    // Inside the 96 px section rail (App.vue) with room to spare on macOS 26's larger buttons.
-    trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: '#00000000',
-    vibrancy: 'sidebar',
+    ...(isWin
+      ? {
+          // Windows: the page draws its own title strip; the system buttons sit over it on the right.
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: { color: '#00000000', symbolColor: nativeTheme.shouldUseDarkColors ? '#e5e7eb' : '#1f2937', height: 40 },
+          backgroundColor: nativeTheme.shouldUseDarkColors ? '#1d1f24' : '#f6f7f9',
+        }
+      : {
+          titleBarStyle: 'hiddenInset' as const,
+          // Inside the 96 px section rail (App.vue) with room to spare on macOS 26's larger buttons.
+          trafficLightPosition: { x: 18, y: 18 },
+          backgroundColor: '#00000000',
+          vibrancy: 'sidebar' as const,
+        }),
     icon: join(RESOURCES, 'icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -208,7 +221,25 @@ function broadcast(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
+/** Windows: starts a command line detached (an editor's CLI, Windows Terminal); false when it could not start. */
+function startDetached(command: string, args: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: false, shell: true });
+    child.once('error', () => resolve(false));
+    child.once('spawn', () => {
+      child.unref();
+      resolve(true);
+    });
+  });
+}
+
 async function openEditor(path: string): Promise<void> {
+  if (isWin) {
+    const where = await run('where', ['code']);
+    if (where.code === 0 && (await startDetached('code', [`"${path}"`]))) return;
+    await shell.openPath(path);
+    return;
+  }
   const editor = store.settings.editor || installedEditors()[0];
   if (editor) {
     const { code } = await run('open', ['-a', editor, path]);
@@ -218,6 +249,12 @@ async function openEditor(path: string): Promise<void> {
 }
 
 async function openTerminal(path: string): Promise<void> {
+  if (isWin) {
+    // Windows Terminal when it is there, else a plain Command Prompt in the folder.
+    if ((await run('where', ['wt'])).code === 0 && (await startDetached('wt', ['-d', `"${path}"`]))) return;
+    await startDetached('start', ['""', 'cmd', '/K', `cd /d "${path}"`]);
+    return;
+  }
   const apps = ['Warp', 'iTerm', 'Ghostty'].filter((t) => existsSync(`/Applications/${t}.app`));
   await run('open', ['-a', apps[0] ?? 'Terminal', path]);
 }
@@ -760,14 +797,17 @@ function api(): HerdApi {
     trustCa: async () => {
       const { response } = await dialog.showMessageBox(win!, {
         type: 'question',
-        buttons: ['Add to Keychain', 'Cancel'],
+        buttons: [isWin ? 'Add to Windows' : 'Add to Keychain', 'Cancel'],
         defaultId: 0,
         cancelId: 1,
         message: 'Trust the DevCatz local certificate authority?',
-        detail:
-          `The CA is created on this Mac and only signs certificates for your *.${store.settings.tld} sites. ` +
-          'It will be added to your login keychain as trusted for SSL; macOS asks for your password next. ' +
-          'You can remove it again from Settings.',
+        detail: isWin
+          ? `The CA is created on this PC and only signs certificates for your *.${store.settings.tld} sites. ` +
+            "It goes into your own Trusted Root certificates (no administrator needed); Windows asks you to confirm next. " +
+            'You can remove it again from Settings.'
+          : `The CA is created on this Mac and only signs certificates for your *.${store.settings.tld} sites. ` +
+            'It will be added to your login keychain as trusted for SSL; macOS asks for your password next. ' +
+            'You can remove it again from Settings.',
       });
       if (response !== 0) return false;
       return herd.trustCa();
@@ -1128,6 +1168,35 @@ app.whenReady().then(async () => {
     const key = String(herd.updater.pending());
     if (key === menuKey) return;
     menuKey = key;
+    // Windows: no menu bar in the window (the page has its own controls); the same items stay on Alt / shortcuts.
+    if (isWin) {
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate([
+          {
+            label: 'File',
+            submenu: [
+              { label: 'Settings', accelerator: 'Ctrl+,', click: () => showWindow('settings') },
+              { type: 'separator' },
+              { label: 'Quit DevCatz', accelerator: 'Ctrl+Q', click: () => void quit('menu') },
+            ],
+          },
+          { role: 'editMenu' },
+          { role: 'viewMenu' },
+          {
+            role: 'help',
+            submenu: [
+              { label: `About ${app.name}`, click: () => showWindow('settings:about') },
+              { label: herd.updater.pending() ? 'Update Available…' : 'Check for Updates…', click: () => showWindow('update:check') },
+              { type: 'separator' },
+              { label: 'Report a Bug…', click: () => showWindow('report:bug') },
+              { label: 'Send Feedback…', click: () => showWindow('report:idea') },
+              { label: 'DevCatz Docs', click: () => void shell.openExternal(`${siteBase()}/docs`) },
+            ],
+          },
+        ]),
+      );
+      return;
+    }
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
         {
@@ -1218,9 +1287,12 @@ app.whenReady().then(async () => {
     n.on('click', () => showWindow('mail'));
     n.show();
   };
-  void herd.mail.autoStart();
-  herd.whatsapp.autoStart();
-  herd.gateways.autoStart();
+  // Mail, WhatsApp and the gateways run macOS builds: Windows stage 1 leaves them off (Catzoid #57).
+  if (isMac) {
+    void herd.mail.autoStart();
+    herd.whatsapp.autoStart();
+    herd.gateways.autoStart();
+  }
   gitHosts.setAccountsListener(() => herd.emit('change'));
   herd.onNewUpdates = (list) => {
     if (!Notification.isSupported()) return;

@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { checksumFor, downloadVerified } from './download';
 import type { InstalledNode, NodeInstallProgress, RemoteNode } from '@shared/types';
 import { getShellEnv, run } from './env';
+import { exe, isWin, pathKey, splitPath, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -11,9 +12,17 @@ import { dataDir } from './store';
  * official builds from nodejs.org (SHA-256 verified) unpacked into
  * ~/Library/Application Support/DevCatz/node/<version>. Versions that
  * Laravel Herd's own nvm installed are picked up too (read-only).
+ * On Windows the win-x64 zip is used; its binaries sit in the version
+ * folder itself (no bin/).
  */
 const DIST = 'https://nodejs.org/dist';
 const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
+/** Build name on nodejs.org and the key index.json lists it under. */
+const BUILD = isWin ? 'win-x64' : `darwin-${ARCH}`;
+const INDEX_KEY = isWin ? 'win-x64-zip' : `osx-${ARCH}-tar`;
+const EXT = isWin ? 'zip' : 'tar.gz';
+/** Where a version's `node` lives: <version>/bin, or the version folder itself on Windows. */
+const binOf = (versionDir: string) => (isWin ? versionDir : join(versionDir, 'bin'));
 const HERD_NVM = join(homedir(), 'Library/Application Support/Herd/config/nvm/versions/node');
 
 export const versionsDir = () => {
@@ -47,7 +56,7 @@ export async function listRemote(force = false): Promise<RemoteNode[]> {
   const byMajor = new Map<number, RemoteNode>();
   for (const r of all) {
     const m = major(r.version);
-    if (m < 18 || !r.files.includes(`osx-${ARCH}-tar`)) continue;
+    if (m < 18 || !r.files.includes(INDEX_KEY)) continue;
     const prev = byMajor.get(m);
     if (!prev || compare(r.version, prev.version) > 0) {
       byMajor.set(m, { version: r.version, major: m, lts: r.lts || null, date: r.date });
@@ -70,8 +79,8 @@ export function listInstalled(): InstalledNode[] {
       return;
     }
     for (const v of entries) {
-      if (/^v\d+\.\d+\.\d+$/.test(v) && existsSync(join(dir, v, 'bin/node'))) {
-        out.push({ version: v, major: major(v), source, binDir: join(dir, v, 'bin') });
+      if (/^v\d+\.\d+\.\d+$/.test(v) && existsSync(join(binOf(join(dir, v)), exe('node')))) {
+        out.push({ version: v, major: major(v), source, binDir: binOf(join(dir, v)) });
       }
     }
   };
@@ -94,24 +103,25 @@ export async function systemNode(): Promise<string | null> {
 export async function install(version: string, progress: (p: NodeInstallProgress) => void): Promise<void> {
   if (!/^v\d+\.\d+\.\d+$/.test(version)) throw new Error(`Invalid version ${version}`);
   const target = join(versionsDir(), version);
-  if (existsSync(join(target, 'bin/node'))) return;
-  const name = `node-${version}-darwin-${ARCH}`;
+  if (existsSync(join(binOf(target), exe('node')))) return;
+  const name = `node-${version}-${BUILD}`;
   const tmp = join(versionsDir(), `.tmp-${version}-${Date.now()}`);
   mkdirSync(tmp, { recursive: true });
   try {
     // Checksum first, so a tampered or truncated download is never unpacked.
-    const expected = await checksumFor(`${DIST}/${version}/SHASUMS256.txt`, `${name}.tar.gz`);
-    const archive = join(tmp, `${name}.tar.gz`);
+    const expected = await checksumFor(`${DIST}/${version}/SHASUMS256.txt`, `${name}.${EXT}`);
+    const archive = join(tmp, `${name}.${EXT}`);
     let received = 0;
     let total = 0;
-    await downloadVerified(`${DIST}/${version}/${name}.tar.gz`, archive, expected, (r, t) => {
+    await downloadVerified(`${DIST}/${version}/${name}.${EXT}`, archive, expected, (r, t) => {
       received = r;
       total = t;
       progress({ version, phase: 'download', received, total });
     });
 
     progress({ version, phase: 'extract', received, total });
-    const { code, stderr } = await run('tar', ['-xzf', archive, '-C', tmp], { timeout: 180_000 });
+    // Windows 10+ ships bsdtar as tar.exe, which unpacks the .zip too.
+    const { code, stderr } = await run(TAR, [isWin ? '-xf' : '-xzf', archive, '-C', tmp], { timeout: 180_000 });
     if (code !== 0) throw new Error(`tar: ${stderr.trim()}`);
     renameSync(join(tmp, name), target);
     progress({ version, phase: 'done', received, total });
@@ -169,6 +179,12 @@ export function writeShims(defaultVersion: string | null): void {
   const dir = shimDir();
   mkdirSync(dir, { recursive: true });
   const node = listInstalled().find((n) => n.version === defaultVersion);
+  if (isWin) {
+    // node.exe, and npm / npx / corepack as the .cmd files the zip ships.
+    writeCmdShim(dir, 'node', node ? join(node.binDir, 'node.exe') : null);
+    for (const bin of ['npm', 'npx', 'corepack']) writeCmdShim(dir, bin, node ? join(node.binDir, `${bin}.cmd`) : null);
+    return;
+  }
   for (const bin of ['node', 'npm', 'npx', 'corepack']) {
     const link = join(dir, bin);
     try {
@@ -182,9 +198,27 @@ export function writeShims(defaultVersion: string | null): void {
 
 /** True when the user's interactive shell finds our shim `node` first. */
 export function shimOnPath(): boolean {
+  if (isWin) {
+    const env = getShellEnv();
+    const first = splitPath(env[pathKey(env)]).find((p) => existsSync(join(p, 'node.exe')) || existsSync(join(p, 'node.cmd')));
+    return first !== undefined && first.replace(/[\\/]+$/, '').toLowerCase() === shimDir().toLowerCase();
+  }
   const path = getShellEnv().PATH ?? '';
   const first = path.split(':').find((p) => existsSync(join(p, 'node')));
   return first !== undefined && first.replace(/\/$/, '') === shimDir();
+}
+
+/**
+ * Windows shim: `<name>.cmd` in the shim folder that runs `target` with the
+ * same arguments (symlinks need developer mode there). A `.cmd` target is
+ * `call`ed so control comes back. Removed when `target` is null or missing.
+ */
+export function writeCmdShim(dir: string, name: string, target: string | null, extraArgs = ''): void {
+  const file = join(dir, `${name}.cmd`);
+  rmSync(file, { force: true });
+  if (!target || !existsSync(target)) return;
+  const call = target.toLowerCase().endsWith('.cmd') ? '@call ' : '@';
+  writeFileSync(file, `${call}"${target}"${extraArgs ? ` ${extraArgs}` : ''} %*\r\n`);
 }
 
 /** Reads a project's requested Node version (`.nvmrc`, `.node-version`, `engines.node`). */

@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { BunChoice, InstalledBun, RemoteBun, RuntimeInstallProgress } from '@shared/types';
 import { checksumFor, downloadVerified } from './download';
 import { run } from './env';
-import { compare, shimDir } from './node';
+import { compare, shimDir, writeCmdShim } from './node';
+import { exe, isWin, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -12,9 +13,10 @@ import { dataDir } from './store';
  * (SHA-256 verified against the release's SHASUMS256.txt) unpacked into
  * ~/Library/Application Support/DevCatz/bun/<version>/bun. A Bun the user
  * installed themselves (~/.bun/bin, Homebrew) is picked up too, read-only.
+ * On Windows: bun-windows-x64.zip, bun.exe with a bunx.exe copy beside it.
  */
 const RELEASES = 'https://api.github.com/repos/oven-sh/bun/releases?per_page=30';
-const ASSET = `bun-darwin-${process.arch === 'arm64' ? 'aarch64' : 'x64'}`;
+const ASSET = isWin ? 'bun-windows-x64' : `bun-darwin-${process.arch === 'arm64' ? 'aarch64' : 'x64'}`;
 
 export const bunDir = () => {
   const d = dataDir('bun');
@@ -45,21 +47,28 @@ export async function listInstalled(): Promise<InstalledBun[]> {
   const out: InstalledBun[] = [];
   try {
     for (const v of readdirSync(bunDir())) {
-      if (VERSION.test(v) && existsSync(join(bunDir(), v, 'bun'))) out.push({ version: v, source: 'mrcatz', binDir: join(bunDir(), v) });
+      if (VERSION.test(v) && existsSync(join(bunDir(), v, exe('bun')))) out.push({ version: v, source: 'mrcatz', binDir: join(bunDir(), v) });
     }
   } catch {
     /* none yet */
   }
   // The user's own Bun: ~/.bun/bin (official installer) or whatever the login shell finds.
-  const candidates = [join(homedir(), '.bun/bin/bun'), '/opt/homebrew/bin/bun', '/usr/local/bin/bun'];
-  const { code, stdout } = await run('which', ['bun'], { timeout: 3000 });
-  if (code === 0 && stdout.trim() && !stdout.trim().startsWith(shimDir())) candidates.unshift(stdout.trim());
+  const candidates = isWin ? [join(homedir(), '.bun', 'bin', 'bun.exe')] : [join(homedir(), '.bun/bin/bun'), '/opt/homebrew/bin/bun', '/usr/local/bin/bun'];
+  if (isWin) {
+    // `where` lists every match; the first real bun.exe outside our shim folder.
+    const { code, stdout } = await run('where', ['bun'], { timeout: 3000 });
+    const found = stdout.split(/\r?\n/).map((l) => l.trim()).find((l) => /\.exe$/i.test(l) && !l.toLowerCase().startsWith(shimDir().toLowerCase()));
+    if (code === 0 && found) candidates.unshift(found);
+  } else {
+    const { code, stdout } = await run('which', ['bun'], { timeout: 3000 });
+    if (code === 0 && stdout.trim() && !stdout.trim().startsWith(shimDir())) candidates.unshift(stdout.trim());
+  }
   for (const bin of candidates) {
     if (!existsSync(bin)) continue;
     const v = await run(bin, ['--version'], { timeout: 5000 });
     const version = v.stdout.trim();
     if (v.code === 0 && VERSION.test(version) && !out.some((o) => o.version === version)) {
-      out.push({ version, source: 'system', binDir: bin.replace(/\/bun$/, '') });
+      out.push({ version, source: 'system', binDir: isWin ? dirname(bin) : bin.replace(/\/bun$/, '') });
       break;
     }
   }
@@ -69,7 +78,7 @@ export async function listInstalled(): Promise<InstalledBun[]> {
 export async function install(version: string, progress: (p: RuntimeInstallProgress) => void): Promise<void> {
   if (!VERSION.test(version)) throw new Error(`Invalid version ${version}`);
   const target = join(bunDir(), version);
-  if (existsSync(join(target, 'bun'))) return;
+  if (existsSync(join(target, exe('bun')))) return;
   const base = `https://github.com/oven-sh/bun/releases/download/bun-v${version}`;
   const tmp = join(bunDir(), `.tmp-${version}-${Date.now()}`);
   mkdirSync(tmp, { recursive: true });
@@ -84,13 +93,17 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
       progress({ version, phase: 'download', received, total });
     });
     progress({ version, phase: 'extract', received, total });
-    const { code, stderr } = await run('/usr/bin/ditto', ['-x', '-k', archive, tmp], { timeout: 120_000 });
+    // Windows 10+ ships bsdtar as tar.exe, which unpacks zips (no ditto there).
+    const { code, stderr } = isWin
+      ? await run(TAR, ['-xf', archive, '-C', tmp], { timeout: 120_000 })
+      : await run('/usr/bin/ditto', ['-x', '-k', archive, tmp], { timeout: 120_000 });
     if (code !== 0) throw new Error(`unzip: ${stderr.trim()}`);
     mkdirSync(target, { recursive: true });
-    renameSync(join(tmp, ASSET, 'bun'), join(target, 'bun'));
-    // `bunx` is the same binary under another name, as the official installer does.
-    symlinkSync('bun', join(target, 'bunx'));
-    const check = await run(join(target, 'bun'), ['--version'], { timeout: 10_000 });
+    renameSync(join(tmp, ASSET, exe('bun')), join(target, exe('bun')));
+    // `bunx` is the same binary under another name, as the official installer does (a copy on Windows: no symlinks).
+    if (isWin) copyFileSync(join(target, 'bun.exe'), join(target, 'bunx.exe'));
+    else symlinkSync('bun', join(target, 'bunx'));
+    const check = await run(join(target, exe('bun')), ['--version'], { timeout: 10_000 });
     if (check.stdout.trim() !== version) {
       rmSync(target, { recursive: true, force: true });
       throw new Error(`Installed binary reports ${check.stdout.trim() || check.stderr.trim()}`);
@@ -112,6 +125,14 @@ export function uninstall(version: string): void {
 export function writeShims(defaultBin: string | null): void {
   const dir = shimDir();
   mkdirSync(dir, { recursive: true });
+  if (isWin) {
+    const bun = defaultBin ? join(defaultBin, 'bun.exe') : null;
+    writeCmdShim(dir, 'bun', bun);
+    // A bunx.exe when the folder has one (ours does), else `bun x`.
+    if (defaultBin && existsSync(join(defaultBin, 'bunx.exe'))) writeCmdShim(dir, 'bunx', join(defaultBin, 'bunx.exe'));
+    else writeCmdShim(dir, 'bunx', bun, 'x');
+    return;
+  }
   for (const name of ['bun', 'bunx']) {
     const link = join(dir, name);
     try {

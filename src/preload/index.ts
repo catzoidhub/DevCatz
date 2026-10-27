@@ -29,6 +29,8 @@ const bridge = {
   onMonitor: (cb: (u: MonitorUpdate) => void) => on('herd:monitor', cb),
   /** Filesystem path of a dropped File (File.path is gone since Electron 32). */
   pathForFile: (file: File) => webUtils.getPathForFile(file),
+  /** `darwin` or `win32`: Windows stage 1 hides what is macOS-only so far (Catzoid #57). */
+  platform: process.platform,
 };
 
 export type HerdBridge = typeof bridge;

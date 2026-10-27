@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
 import { app } from 'electron';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AiProvider, ThemeMode } from '@shared/types';
 import { run } from './env';
+import { isWin } from './platform';
 
 /**
  * Settings shared by the Catzoid apps (DevCatz, DBCatz, later DialCatz): the theme and the AI connection
@@ -22,7 +23,7 @@ import { run } from './env';
  * CATZOID_SHARED_DIR and CATZOID_KEYCHAIN (a keychain file) point both elsewhere, for tests (same as DBCatz's copy).
  */
 
-export const SHARED_DIR = process.env.CATZOID_SHARED_DIR || join(homedir(), 'Library', 'Application Support', 'Catzoid');
+export const SHARED_DIR = process.env.CATZOID_SHARED_DIR || (isWin ? join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'Catzoid') : join(homedir(), 'Library', 'Application Support', 'Catzoid'));
 const FILE = join(SHARED_DIR, 'shared.json');
 const SERVICE = 'Catzoid AI';
 const ME = 'devcatz';
@@ -126,10 +127,53 @@ export const sharedExists = () => existsSync(FILE);
 
 const keyCache = new Map<AiProvider, { at: number; key: string }>();
 
+/**
+ * Windows (Catzoid #57, stage 1): the key encrypted with DPAPI for the current user (PowerShell's
+ * ConvertFrom-SecureString) in Catzoid/keys/<provider>.dpapi, so every Catzoid app of the same user can read it, as
+ * the Keychain item on macOS. The key goes in through stdin, never the command line.
+ */
+const keyFile = (provider: AiProvider) => join(SHARED_DIR, 'keys', `${provider}.dpapi`);
+const psQuote = (s: string) => `'${s.replace(/'/g, "''")}'`;
+function powershell(script: string, input = ''): Promise<{ code: number; out: string }> {
+  return new Promise((resolve) => {
+    const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    let out = '';
+    p.stdout.on('data', (d) => (out += d));
+    p.on('error', () => resolve({ code: 1, out: '' }));
+    p.on('close', (c) => resolve({ code: c ?? 1, out }));
+    p.stdin.end(input);
+  });
+}
+async function winKey(provider: AiProvider): Promise<string> {
+  if (!existsSync(keyFile(provider))) return '';
+  const r = await powershell(
+    `$s = ConvertTo-SecureString (Get-Content -Raw -Path ${psQuote(keyFile(provider))}).Trim(); ` +
+      '[Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))',
+  );
+  return r.code === 0 ? r.out.trim() : '';
+}
+async function setWinKey(provider: AiProvider, key: string): Promise<void> {
+  if (!key) {
+    rmSync(keyFile(provider), { force: true });
+    return;
+  }
+  mkdirSync(join(SHARED_DIR, 'keys'), { recursive: true });
+  const r = await powershell(
+    `$k = [Console]::In.ReadToEnd().Trim(); ConvertTo-SecureString $k -AsPlainText -Force | ConvertFrom-SecureString | Set-Content -NoNewline -Path ${psQuote(keyFile(provider))}`,
+    key,
+  );
+  if (r.code !== 0) throw new Error('Windows could not store the key');
+}
+
 /** The provider's API key from the shared Keychain item ('' when there is none). Cached for a minute. */
 export async function sharedKey(provider: AiProvider): Promise<string> {
   const hit = keyCache.get(provider);
   if (hit && Date.now() - hit.at < 60_000) return hit.key;
+  if (isWin) {
+    const key = await winKey(provider);
+    keyCache.set(provider, { at: Date.now(), key });
+    return key;
+  }
   const r = await run('/usr/bin/security', ['find-generic-password', '-s', SERVICE, '-a', provider, '-w', ...KEYCHAIN], { timeout: 15_000 });
   const key = r.code === 0 ? r.stdout.replace(/\n$/, '') : '';
   keyCache.set(provider, { at: Date.now(), key });
@@ -139,7 +183,10 @@ export async function sharedKey(provider: AiProvider): Promise<string> {
 /** Saves (or with '' removes) a provider's key in the shared Keychain item and lists it in shared.json. */
 export async function setSharedKey(provider: AiProvider, key: string): Promise<void> {
   const k = key.trim();
-  if (!k) {
+  if (isWin) {
+    if (/["\\\n\r]/.test(k)) throw new Error('That key has characters an API key does not have');
+    await setWinKey(provider, k);
+  } else if (!k) {
     await run('/usr/bin/security', ['delete-generic-password', '-s', SERVICE, '-a', provider, ...KEYCHAIN], { timeout: 15_000 });
   } else {
     if (/["\\\n\r]/.test(k)) throw new Error('That key has characters an API key does not have');

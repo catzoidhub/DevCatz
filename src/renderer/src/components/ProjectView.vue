@@ -37,6 +37,7 @@ import PopMenu, { type MenuItem } from './PopMenu.vue';
 import SiteTabLabel from './SiteTabLabel.vue';
 import { ICONS } from '../icons';
 import CatMood from './CatMood.vue';
+import { isWin, WIN_SITE_TABS } from '../platform';
 
 const props = defineProps<{ project: ProjectState; urlSuffix: string }>();
 
@@ -72,7 +73,7 @@ const s3Status = computed(() => {
   const s = state.value?.storage.find((x) => x.kind === (p.value.s3.service ?? p.value.storageService));
   return s?.installed && p.value.s3.service ? s.status : 'stopped';
 });
-const tabs = computed<Tab[]>(() => [
+const allTabs = computed<Tab[]>(() => [
   'overview',
   'env',
   'database',
@@ -87,6 +88,8 @@ const tabs = computed<Tab[]>(() => [
   'logs',
   'settings',
 ]);
+// Windows, stage 1: the tabs of macOS-only services stay hidden (Catzoid #57).
+const tabs = computed<Tab[]>(() => (isWin ? allTabs.value.filter((t) => WIN_SITE_TABS.has(t)) : allTabs.value));
 watch(hasWs, (on) => !on && tab.value === 'websocket' && (tab.value = 'overview'));
 watch(hasSearch, (on) => !on && tab.value === 'search' && (tab.value = 'overview'));
 /** Dot on the Search Engine tab: the engine the site uses. */

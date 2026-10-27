@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { connect } from 'node:net';
+import { isWin, joinPath, pathKey, splitPath } from './platform';
 
 /**
  * Apps launched from Finder get a bare PATH (/usr/bin:/bin:…), so `bun`,
@@ -23,6 +24,20 @@ stripAgentEnv(process.env);
 
 export async function loadShellEnv(): Promise<NodeJS.ProcessEnv> {
   if (shellEnv) return shellEnv;
+  if (isWin) {
+    // Windows gives a GUI app the user's full environment (Path from the registry): no login shell to ask.
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    const key = pathKey(env);
+    const home = env.USERPROFILE ?? '';
+    const extra = [`${home}\\.bun\\bin`, `${env.ProgramFiles ?? 'C:\\Program Files'}\\nodejs`, `${env.ProgramFiles ?? 'C:\\Program Files'}\\Git\\cmd`];
+    const parts = splitPath(env[key]);
+    for (const p of extra) if (!parts.some((x) => x.toLowerCase() === p.toLowerCase())) parts.push(p);
+    env[key] = joinPath(parts);
+    delete env.ELECTRON_RUN_AS_NODE;
+    delete env.ELECTRON_NO_ATTACH_CONSOLE;
+    shellEnv = stripAgentEnv(env);
+    return shellEnv;
+  }
   const shell = process.env.SHELL || '/bin/zsh';
   const marker = '__MRCATZ_HERD_ENV__';
   const output = await new Promise<string>((resolve) => {
@@ -132,6 +147,14 @@ export function isPortOpen(port: number, timeout = 400): Promise<boolean> {
 
 /** `name (pid 123)` of the process listening on a TCP port, if lsof can see it. */
 export async function portOwner(port: number): Promise<string | null> {
+  if (isWin) {
+    // netstat -ano: the PID listening on the port, then its image name.
+    const { stdout } = await run('netstat', ['-ano', '-p', 'TCP']);
+    const pid = stdout.split(/\r?\n/).map((l) => l.trim().split(/\s+/)).find((c) => c[3] === 'LISTENING' && c[1]?.endsWith(`:${port}`))?.[4];
+    if (!pid) return null;
+    const t = await run('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH']);
+    return `${t.stdout.match(/^"([^"]+)"/)?.[1] ?? 'process'} (pid ${pid})`;
+  }
   const { stdout } = await run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fpc']);
   const pid = stdout.match(/^p(\d+)/m)?.[1];
   const name = stdout.match(/^c(.+)$/m)?.[1];

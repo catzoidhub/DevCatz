@@ -1,4 +1,5 @@
 import { Menu, Tray, nativeImage } from 'electron';
+import { isWin } from './platform';
 import { join } from 'node:path';
 import type { AppState, GwKind, SearchKind, StorageAction, StorageKind, WaEngine, WsKind } from '@shared/types';
 import { dot, type DotColor } from './menuicons';
@@ -65,12 +66,18 @@ export class HerdTray {
   private pending: AppState | null = null;
 
   constructor(resources: string, private actions: TrayActions) {
-    this.idle = nativeImage.createFromPath(join(resources, 'trayTemplate.png'));
-    this.active = nativeImage.createFromPath(join(resources, 'trayActiveTemplate.png'));
-    this.idle.setTemplateImage(true);
-    this.active.setTemplateImage(true);
-    // A fixed GUID lets macOS remember where you ⌘-dragged the icon (e.g. next to Laravel Herd).
-    this.tray = new Tray(this.idle, TRAY_GUID);
+    if (isWin) {
+      // Windows: the app icon (a black template glyph would vanish on the dark taskbar); no GUID (macOS's placement).
+      this.idle = this.active = nativeImage.createFromPath(join(resources, 'icon-192.png')).resize({ width: 32, height: 32 });
+      this.tray = new Tray(this.idle);
+    } else {
+      this.idle = nativeImage.createFromPath(join(resources, 'trayTemplate.png'));
+      this.active = nativeImage.createFromPath(join(resources, 'trayActiveTemplate.png'));
+      this.idle.setTemplateImage(true);
+      this.active.setTemplateImage(true);
+      // A fixed GUID lets macOS remember where you ⌘-dragged the icon (e.g. next to Laravel Herd).
+      this.tray = new Tray(this.idle, TRAY_GUID);
+    }
     this.tray.setToolTip('DevCatz');
     this.tray.on('click', () => console.log('tray: icon clicked'));
   }

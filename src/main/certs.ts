@@ -5,10 +5,11 @@ import { join } from 'node:path';
 import { createSecureContext, type SecureContext } from 'node:tls';
 import forge from 'node-forge';
 import { run } from './env';
+import { isWin } from './platform';
 import { dataDir } from './store';
 
 const CA_NAME = 'DevCatz Local CA';
-const KEYCHAIN = join(homedir(), 'Library/Keychains/login.keychain-db');
+const KEYCHAIN = join(homedir(), 'Library/Keychains/login.keychain-db'); // macOS only
 
 function certsDir(): string {
   const dir = dataDir('certs');
@@ -140,9 +141,21 @@ export class CertManager {
     return this.leaf('localhost');
   }
 
+  /** SHA-1 thumbprint of the CA, as Windows' certificate store and the Keychain name it. */
+  private thumbprint(): string {
+    return forge.md.sha1
+      .create()
+      .update(forge.asn1.toDer(forge.pki.certificateToAsn1(forge.pki.certificateFromPem(readFileSync(this.caPath, 'utf8')))).getBytes())
+      .digest()
+      .toHex()
+      .toUpperCase();
+  }
+
   async isTrusted(): Promise<boolean> {
     if (!this.caExists()) return false;
     this.ensureCa();
+    // Windows: the CA in the current user's Trusted Root store (Chrome and Edge read it).
+    if (isWin) return (await run('certutil', ['-user', '-verifystore', 'Root', this.thumbprint()])).code === 0;
     // Verify a leaf against the user's trust settings (not against the CA directly).
     const probe = join(certsDir(), 'localhost.crt');
     this.leaf('localhost');
@@ -156,6 +169,11 @@ export class CertManager {
    */
   async trust(): Promise<{ ok: boolean; message: string }> {
     this.ensureCa();
+    if (isWin) {
+      // The user's own store, no admin: Windows shows its "Install this certificate?" confirmation.
+      const r = await run('certutil', ['-user', '-addstore', 'Root', this.caPath], { timeout: 120_000 });
+      return { ok: r.code === 0, message: (r.stderr || r.stdout).trim() };
+    }
     const { code, stderr } = await run(
       'security',
       ['add-trusted-cert', '-r', 'trustRoot', '-p', 'ssl', '-k', KEYCHAIN, this.caPath],
@@ -165,12 +183,11 @@ export class CertManager {
   }
 
   async untrust(): Promise<{ ok: boolean; message: string }> {
-    const fingerprint = forge.md.sha1
-      .create()
-      .update(forge.asn1.toDer(forge.pki.certificateToAsn1(forge.pki.certificateFromPem(readFileSync(this.caPath, 'utf8')))).getBytes())
-      .digest()
-      .toHex()
-      .toUpperCase();
+    const fingerprint = this.thumbprint();
+    if (isWin) {
+      const r = await run('certutil', ['-user', '-delstore', 'Root', fingerprint], { timeout: 120_000 });
+      return { ok: r.code === 0, message: (r.stderr || r.stdout).trim() };
+    }
     await run('security', ['remove-trusted-cert', this.caPath], { timeout: 120_000 });
     const { code, stderr } = await run('security', ['delete-certificate', '-Z', fingerprint, KEYCHAIN], { timeout: 120_000 });
     return { ok: code === 0, message: stderr.trim() };

@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { execCommand } from './detect';
 import { getShellEnv, isPortOpen, run } from './env';
+import { isWin, shellCommand } from './platform';
 import type { DbAction, DbStatus, ProjectState } from '@shared/types';
 
 type Log = (text: string) => void;
@@ -38,8 +39,11 @@ export async function dbStatus(project: ProjectState): Promise<DbStatus> {
 export function stream(cwd: string, command: string, log: Log, env: Record<string, string> = {}): Promise<number> {
   log(`$ ${command}`);
   return new Promise((resolve) => {
-    const child = spawn(process.env.SHELL || '/bin/zsh', ['-c', command], {
+    const [file, args] = shellCommand(command);
+    const child = spawn(file, args, {
       cwd,
+      windowsHide: true,
+      windowsVerbatimArguments: isWin,
       env: { ...getShellEnv(), FORCE_COLOR: '1', CI: '1', ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

@@ -31,6 +31,7 @@ import { ICONS, STAR } from './icons';
 import { siteStatus, stackTag } from './runtimes';
 import { backIndex, backList, canBack, canForward, forwardList, goBack, goForward, goTo, navApply, navPrune, navVisit, type NavEntry } from './nav';
 import type { ProjectState } from '@shared/types';
+import { isWin, WIN_SECTIONS } from './platform';
 
 const PANELS = ['node', 'bun', 'go', 'php', 'python'];
 
@@ -70,6 +71,8 @@ const RAIL: { id: AppSection; label: string; short: string; icon: 'projects' | '
   { id: 'expose', label: 'Expose: share a site on a public URL', short: 'Expose', icon: 'expose' },
   { id: 'monitoring', label: 'Monitoring', short: 'Monitor', icon: 'monitoring' },
 ];
+// Windows, stage 1: only the sections that work there so far (Catzoid #57).
+const railShown = isWin ? RAIL.filter((r) => WIN_SECTIONS.has(r.id)) : RAIL;
 /** Remembered per window (convenience only). */
 const section = ref<AppSection>(
   (() => {
@@ -493,7 +496,7 @@ async function park() {
       <!-- Scrolls (no bar) when the window is too short for every section. -->
       <div class="rail-scroll no-scrollbar flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto pb-3">
         <button
-          v-for="r in RAIL"
+          v-for="r in railShown"
           :key="r.id"
           class="rail-item relative shrink-0"
           :class="{ 'is-active': section === r.id }"

@@ -22,6 +22,7 @@ import { DB_TASK_LABELS, dbStatus, runDbAction, stream } from './database';
 import { detectPackageManager, readEnvFiles, readJson, readText, runScriptCommand, slugify, type PackageJson } from './detect';
 import { detectStack, isLinkableDir, isProjectDir } from './runtimes';
 import { getShellEnv, isListening, isPortOpen, portOwner, run } from './env';
+import { isMac, isWin, joinPath, pathKey, splitPath } from './platform';
 import { lookup } from 'node:dns/promises';
 import { ProcessManager } from './processes';
 import { captureScreenshot, screenshotTime } from './screenshots';
@@ -378,26 +379,33 @@ export class Herd extends EventEmitter {
     await this.refreshBuns();
     await this.refreshGos();
     await this.refreshPythons();
-    await this.refreshPhps();
-    await phps.writeCaBundle(this.certs.caPath).catch(() => undefined);
-    this.syncFpm();
+    // Windows, stage 1 (Catzoid #57): PHP-FPM, the DNS responder / resolver and the services below are macOS-only so far.
+    if (isMac) {
+      await this.refreshPhps();
+      await phps.writeCaBundle(this.certs.caPath).catch(() => undefined);
+      this.syncFpm();
+    }
     this.systemNode = await nodes.systemNode();
-    await this.dns.start(tld());
-    await this.checkResolution();
+    if (isMac) {
+      await this.dns.start(tld());
+      await this.checkResolution();
+    }
     this.caTrusted = await this.certs.isTrusted();
     this.cleanUrls = await cleanUrlsWorking();
     this.cleanHttp = await cleanHttpWorking();
     this.ipv4Free = !(await isListening('127.0.0.1', 443)) || cleanUrlsCoverIpv4();
     this.timers.push(setInterval(() => void this.pollPorts(), 1500));
-    this.timers.push(setInterval(() => void this.pollDatabases(), 5000));
     void this.pollPorts();
-    void this.pollDatabases();
-    this.storage.autoStart();
-    this.ws.autoStart();
-    this.search.autoStart();
-    this.dbs.autoStart();
-    this.monitor.start();
-    this.timers.push(setTimeout(() => void this.dbs.prefetchVersions(), 20_000));
+    if (isMac) {
+      this.timers.push(setInterval(() => void this.pollDatabases(), 5000));
+      void this.pollDatabases();
+      this.storage.autoStart();
+      this.ws.autoStart();
+      this.search.autoStart();
+      this.dbs.autoStart();
+      this.monitor.start();
+      this.timers.push(setTimeout(() => void this.dbs.prefetchVersions(), 20_000));
+    }
     // Runtime updates: shortly after launch, then every 6 hours.
     this.timers.push(setTimeout(() => void this.autoCheckUpdates(), 30_000));
     this.timers.push(setInterval(() => void this.autoCheckUpdates(), 6 * 3600_000));
@@ -2190,7 +2198,7 @@ export class Herd extends EventEmitter {
     if (stackNow?.subRuntimes?.includes('python')) dirs.push(join(pythons.pythonDir(), 'bin'));
     if (this.stacks.get(p.id)?.runtime === 'python') {
       if (py?.venv) {
-        dirs.unshift(join(p.path, py.venv, 'bin'));
+        dirs.unshift(join(p.path, py.venv, isWin ? 'Scripts' : 'bin'));
         pyEnv = { VIRTUAL_ENV: join(p.path, py.venv) };
       }
       dirs.push(join(pythons.pythonDir(), 'bin'));
@@ -2198,7 +2206,10 @@ export class Herd extends EventEmitter {
     }
     // The site's Redis DB index (any stack).
     const extra = { ...phpEnv, ...pyEnv, ...(this.redisEnv.get(p.id) ?? {}) };
-    return dirs.length ? { ...extra, PATH: `${dirs.join(':')}:${getShellEnv().PATH ?? ''}` } : extra;
+    if (!dirs.length) return extra;
+    // `Path` with `;` on Windows, `PATH` with `:` on macOS.
+    const key = pathKey(getShellEnv());
+    return { ...extra, [key]: joinPath([...dirs, ...splitPath(getShellEnv()[key])]) };
   }
 
   async nodeInstall(version: string): Promise<void> {
@@ -2448,6 +2459,8 @@ export class Herd extends EventEmitter {
   // -------------------------------------------------------------------- php
 
   async refreshPhps(): Promise<void> {
+    // Windows, stage 1: PHP (static-php.dev builds, FPM, Herd's and Homebrew's PHP) is macOS-only so far.
+    if (isWin) return;
     this.installedPhps = await phps.listInstalled();
     const def = store.settings.phpDefault;
     if (def && !this.installedPhps.some((i) => i.version === def)) store.updateSettings({ phpDefault: null });
@@ -3604,7 +3617,7 @@ export class Herd extends EventEmitter {
     this.systemNode = await nodes.systemNode();
     this.caTrusted = await this.certs.isTrusted();
     this.changed();
-    if (!r.ok && !this.caTrusted) throw new Error(r.message || 'Keychain refused the certificate');
+    if (!r.ok && !this.caTrusted) throw new Error(r.message || (isWin ? 'Windows did not add the certificate' : 'Keychain refused the certificate'));
     return this.caTrusted;
   }
 

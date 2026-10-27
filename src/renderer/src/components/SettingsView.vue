@@ -13,6 +13,7 @@ import DbServiceForm from './DbServiceForm.vue';
 import { DB_LOGO } from '../db';
 import { attempt, herd, navRequest, notify, state } from '../store';
 import { navVisit } from '../nav';
+import { isWin, WIN_SETTINGS_TABS } from '../platform';
 
 const s = computed(() => state.value!);
 const setUpdateNotifications = (on: boolean) => attempt(() => herd.updateSettings({ updateNotifications: on }));
@@ -120,7 +121,7 @@ const gwAutoStart = (kind: GwKind, on: boolean) => attempt(() => herd.gwSetAutoS
 const openGateway = (id: string) => (navRequest.value = { section: 'whatsapp', id });
 const svcActive = (st: string) => st === 'running' || st === 'starting';
 const openSection = (section: 'websocket' | 'search', id: string) => (navRequest.value = { section, id });
-const TABS = [
+const ALL_TABS = [
   { id: 'general', label: 'General' },
   { id: 'ai', label: 'AI' },
   { id: 'project', label: 'Project' },
@@ -135,6 +136,8 @@ const TABS = [
   { id: 'updates', label: 'Updates' },
   { id: 'about', label: 'About' },
 ] as const;
+// Windows, stage 1: tabs for macOS-only services stay hidden (Catzoid #57).
+const TABS = ALL_TABS.filter((t) => !isWin || WIN_SETTINGS_TABS.has(t.id));
 
 // ---- Mail: forwarding account (password kept encrypted in the main process)
 const fwd = ref<MailForwardConfig & { password: string }>({ host: '', port: 587, security: 'starttls', username: '', password: '', from: '' });
@@ -302,8 +305,8 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
       </div>
     </div>
 
-    <!-- Default domain (used by sites and storage domains) -->
-    <div v-if="tab === 'general'" class="card">
+    <!-- Default domain (used by sites and storage domains); other suffixes need macOS's /etc/resolver so far -->
+    <div v-if="tab === 'general' && !isWin" class="card">
       <div class="card-body">
         <h2 class="font-semibold">Default domain</h2>
         <p class="text-xs opacity-70">
@@ -365,13 +368,13 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           </span>
         </h2>
         <p class="text-xs opacity-70">
-          A local certificate authority signs a certificate for every <code>*.{{ s.domain.tld }}</code> site. Add it to your login keychain once
+          A local certificate authority signs a certificate for every <code>*.{{ s.domain.tld }}</code> site. Add it to {{ isWin ? 'your Trusted Root certificates' : 'your login keychain' }} once
           so browsers show no warning (Firefox uses its own store: import <code>ca.crt</code> there, or set
           <code>security.enterprise_roots.enabled</code>).
         </p>
         <div class="flex gap-2">
           <button v-if="!s.cert.caTrusted" class="btn btn-primary btn-sm" @click="trust">Trust certificate authority…</button>
-          <button v-else class="btn btn-sm btn-outline" @click="untrust">Remove from keychain</button>
+          <button v-else class="btn btn-sm btn-outline" @click="untrust">{{ isWin ? 'Remove from Windows' : 'Remove from keychain' }}</button>
           <button class="btn btn-ghost btn-sm" @click="herd.revealCa()">Show ca.crt</button>
         </div>
       </div>
@@ -397,6 +400,12 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <button class="btn btn-sm" @click="savePorts">Apply</button>
         </div>
 
+        <!-- Windows, stage 1: no port forwarding yet; sites are at https://<name>.localhost:<port>. -->
+        <p v-if="isWin" class="text-xs opacity-70">
+          Sites are served at <code>https://&lt;name&gt;.localhost:{{ s.settings.httpsPort }}</code>. Chrome, Edge and Firefox send every
+          <code>*.localhost</code> name to this PC by themselves.
+        </p>
+        <template v-if="!isWin">
         <div class="divider my-0" />
         <h3 class="font-medium">
           URLs without a port
@@ -418,6 +427,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <button v-if="!s.cleanUrls.installed" class="btn btn-sm btn-primary" @click="cleanUrls(true)">Enable clean URLs…</button>
           <button v-if="s.cleanUrls.installed || s.cleanUrls.configured" class="btn btn-sm btn-outline" @click="cleanUrls(false)">Disable</button>
         </div>
+        </template>
       </div>
     </div>
 

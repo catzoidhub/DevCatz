@@ -5,6 +5,7 @@ import { basename, join } from 'node:path';
 import type { BrowserInfo, BrowsersState } from '@shared/types';
 import { run } from './env';
 import { store } from './store';
+import { isWin } from './platform';
 
 /**
  * Web browsers for Settings → General → Browser: the ones installed here, the
@@ -135,6 +136,8 @@ function friendlyPath(path: string): string {
  * anything changed.
  */
 export async function refreshBrowsers(): Promise<boolean> {
+  // Windows, stage 1: links open in the system default browser; no list to pick from.
+  if (isWin) return false;
   const found = new Map<string, string>(); // name → path
   for (const p of await httpsHandlers().catch(() => [])) if (existsSync(p) && (await isBrowser(p))) found.set(nameOf(p), friendlyPath(p));
   for (const name of KNOWN)

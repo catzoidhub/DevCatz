@@ -9,6 +9,7 @@ import PythonView from './PythonView.vue';
 import { ICONS } from '../icons';
 import { STACK_ICONS } from '../stackicons';
 import { state } from '../store';
+import { isWin, WIN_RUNTIMES } from '../platform';
 
 /**
  * Runtimes (rail): the languages DevCatz installs and runs sites with. The
@@ -22,7 +23,7 @@ const updatesFor = (r: string) => s.value.updates.list.filter((u) => u.runtime =
 const sitesOn = (r: 'php' | 'go' | 'python' | 'node') => s.value.projects.filter((p) => p.stack.runtime === r).length;
 const plural = (n: number) => `${n} site${n === 1 ? '' : 's'}`;
 
-const items = computed(() => [
+const all = computed(() => [
   {
     id: 'php' as const,
     label: 'PHP',
@@ -69,6 +70,8 @@ const items = computed(() => [
     updates: updatesFor('go'),
   },
 ]);
+// Windows, stage 1: PHP is macOS-only so far (Catzoid #57).
+const items = computed(() => all.value.filter((r) => !isWin || WIN_RUNTIMES.has(r.id)));
 // Versions added or removed outside DevCatz (Laravel Herd uninstalled, Homebrew …) are picked up on opening the page.
 onMounted(() => void herd.refreshRuntimes().catch(() => undefined));
 </script>

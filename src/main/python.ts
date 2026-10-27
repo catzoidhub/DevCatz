@@ -4,6 +4,7 @@ import type { InstalledPython, PythonChoice, RemotePython, RuntimeInstallProgres
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { compare } from './node';
+import { exe, isWin, joinPath, pathKey, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -23,19 +24,21 @@ const versionsDir = () => join(pythonDir(), 'versions');
 
 /** uv on PATH, DevCatz's copy first. */
 export function uvPath(): string | null {
-  const own = join(uvDir(), 'uv');
+  const own = join(uvDir(), exe('uv'));
   if (existsSync(own)) return own;
   return null;
 }
 
 /** Environment for uv: Pythons go to DevCatz's folder, never a global one. */
 export function uvEnv(): Record<string, string> {
+  const env = getShellEnv();
   return {
     UV_PYTHON_INSTALL_DIR: versionsDir(),
     UV_PYTHON_PREFERENCE: 'managed',
     // Pythons uv installed are not put on PATH as python3.x shims.
     UV_PYTHON_INSTALL_BIN: '0',
-    PATH: `${uvDir()}:${getShellEnv().PATH ?? ''}`,
+    // `Path` on Windows (whatever case the environment uses), joined with `;`.
+    [pathKey(env)]: isWin ? joinPath([uvDir(), env[pathKey(env)] ?? '']) : `${uvDir()}:${env.PATH ?? ''}`,
   };
 }
 
@@ -53,31 +56,34 @@ export async function uvVersion(): Promise<string | null> {
 
 /** Downloads uv (and uvx) from its latest GitHub release, checksum-verified. */
 export async function installUv(progress: (p: RuntimeInstallProgress) => void): Promise<string> {
-  const triple = process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
+  const triple = isWin ? 'x86_64-pc-windows-msvc' : process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
+  // Windows builds are zips with uv.exe / uvx.exe at the root; macOS ones a tarball with a top folder.
+  const ext = isWin ? 'zip' : 'tar.gz';
   const res = await fetch('https://api.github.com/repos/astral-sh/uv/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
   if (!res.ok) throw new Error(`GitHub: HTTP ${res.status}`);
   const rel = (await res.json()) as { tag_name: string; assets: { name: string; browser_download_url: string; digest?: string }[] };
-  const asset = rel.assets.find((a) => a.name === `uv-${triple}.tar.gz`);
-  if (!asset?.digest?.startsWith('sha256:')) throw new Error('No uv build with a checksum for this Mac');
+  const asset = rel.assets.find((a) => a.name === `uv-${triple}.${ext}`);
+  if (!asset?.digest?.startsWith('sha256:')) throw new Error(`No uv build with a checksum for this ${isWin ? 'PC' : 'Mac'}`);
   const tmp = join(pythonDir(), `.uv-${Date.now()}`);
   mkdirSync(tmp, { recursive: true });
   try {
-    const archive = join(tmp, 'uv.tar.gz');
+    const archive = join(tmp, `uv.${ext}`);
     progress({ version: `uv ${rel.tag_name}`, phase: 'download', received: 0, total: 0 });
     await downloadVerified(asset.browser_download_url, archive, asset.digest.slice(7), (received, total) =>
       progress({ version: `uv ${rel.tag_name}`, phase: 'download', received, total }),
     );
     progress({ version: `uv ${rel.tag_name}`, phase: 'extract', received: 0, total: 0 });
-    const r = await run('tar', ['-xzf', archive, '-C', tmp, '--strip-components=1']);
+    // Windows 10+ ships bsdtar as tar.exe, which unpacks the .zip too.
+    const r = isWin ? await run(TAR, ['-xf', archive, '-C', tmp]) : await run(TAR, ['-xzf', archive, '-C', tmp, '--strip-components=1']);
     if (r.code !== 0) throw new Error(`Unpacking uv failed: ${r.stderr.trim()}`);
     mkdirSync(uvDir(), { recursive: true });
-    for (const exe of ['uv', 'uvx']) {
-      if (!existsSync(join(tmp, exe))) continue;
-      rmSync(join(uvDir(), exe), { force: true });
-      renameSync(join(tmp, exe), join(uvDir(), exe));
-      chmodSync(join(uvDir(), exe), 0o755);
+    for (const name of ['uv', 'uvx'].map(exe)) {
+      if (!existsSync(join(tmp, name))) continue;
+      rmSync(join(uvDir(), name), { force: true });
+      renameSync(join(tmp, name), join(uvDir(), name));
+      if (!isWin) chmodSync(join(uvDir(), name), 0o755);
     }
-    await run('xattr', ['-dr', 'com.apple.quarantine', uvDir()]);
+    if (!isWin) await run('xattr', ['-dr', 'com.apple.quarantine', uvDir()]);
     progress({ version: `uv ${rel.tag_name}`, phase: 'done', received: 0, total: 0 });
     return rel.tag_name;
   } finally {

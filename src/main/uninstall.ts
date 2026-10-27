@@ -1,9 +1,11 @@
 import { app, shell } from 'electron';
 import { existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { AiProvider, TaskProgress, UninstallPlan } from '@shared/types';
+import { spawn } from 'node:child_process';
 import { removeSystemLeftovers, systemLeftovers } from './cleanurls';
+import { isWin } from './platform';
 import { run } from './env';
 import { readShared, setSharedKey, SHARED_DIR } from './shared';
 
@@ -27,6 +29,11 @@ const OTHER_APPS = ['DBCatz', 'DialCatz', 'DoCatz'];
 /** The .app bundle this DevCatz runs from (null in a development build). */
 function appBundle(): string | null {
   if (!app.isPackaged) return null;
+  // Windows: the NSIS uninstaller next to DevCatz.exe removes the app (it runs once DevCatz has quit).
+  if (isWin) {
+    const u = join(dirname(process.execPath), `Uninstall ${app.getName()}.exe`);
+    return existsSync(u) ? u : null;
+  }
   const m = process.execPath.match(/^(.*?\.app)\//);
   return m ? m[1] : null;
 }
@@ -98,6 +105,9 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
   if (plan.homebrew) {
     const brew = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'].find((b) => existsSync(b));
     if (brew) await run(brew, ['uninstall', '--cask', 'devcatz'], { timeout: 300_000 });
+  } else if (plan.app && isWin) {
+    // Silent (/S) and after DevCatz is gone: the uninstaller cannot remove a running DevCatz.exe.
+    spawn(plan.app, ['/S'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
   } else if (plan.app) {
     await shell.trashItem(plan.app);
   }

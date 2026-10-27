@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { getShellEnv, run } from './env';
+import { isWin, killTree, shellCommand } from './platform';
 import { dataDir } from './store';
 import type { LogLine, ProcessStatus } from '@shared/types';
 
@@ -123,13 +124,16 @@ export class ProcessManager extends EventEmitter {
 
   /** One process of a site, in its own group; its exit settles the site's status once every process is gone. */
   private spawnChild(id: string, managed: Managed, spec: ProcessSpec): void {
-    const shell = process.env.SHELL || '/bin/zsh';
     const prefix = spec.label ? `[${spec.label}] ` : '';
     const tag = (text: string) => (prefix ? text.replace(/^(?=.)/gm, prefix) : text);
     this.log(id, 'sys', `${prefix}$ ${spec.command}${spec.label ? `  (in ${spec.cwd})` : ''}`);
-    const child = spawn(shell, ['-c', `exec ${spec.command}`], {
+    const [file, args] = shellCommand(spec.command, { exec: true });
+    const child = spawn(file, args, {
       cwd: spec.cwd,
-      detached: true,
+      // macOS: its own process group, stopped as a whole; Windows: taskkill /T follows the tree instead.
+      detached: !isWin,
+      windowsHide: true,
+      windowsVerbatimArguments: isWin,
       env: { ...getShellEnv(), FORCE_COLOR: '1', BROWSER: 'none', ...spec.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -239,8 +243,20 @@ export class ProcessManager extends EventEmitter {
       return 0;
     }
     let killed = 0;
-    const { stdout } = await run('ps', ['-A', '-o', 'pgid=']);
-    const live = new Set(stdout.split('\n').map((l) => Number(l.trim())));
+    const live = new Set<number>();
+    if (isWin) {
+      for (const pid of pids) {
+        try {
+          process.kill(pid, 0);
+          live.add(pid);
+        } catch {
+          /* gone */
+        }
+      }
+    } else {
+      const { stdout } = await run('ps', ['-A', '-o', 'pgid=']);
+      for (const l of stdout.split('\n')) live.add(Number(l.trim()));
+    }
     for (const pgid of pids) {
       if (live.has(pgid)) {
         killGroup(pgid, 'SIGTERM');
@@ -261,11 +277,14 @@ function safeKill(pid: number, signal: NodeJS.Signals): void {
 }
 
 function killGroup(pgid: number, signal: NodeJS.Signals): void {
-  safeKill(-pgid, signal);
+  if (isWin) killTree(pgid, signal);
+  else safeKill(-pgid, signal);
 }
 
 /** All descendants of pid (some tools start children in a new process group). */
 async function descendants(pid: number): Promise<number[]> {
+  // Windows: taskkill /T already ends the whole tree.
+  if (isWin) return [];
   const { stdout } = await run('ps', ['-A', '-o', 'pid=,ppid=']);
   const children = new Map<number, number[]>();
   for (const line of stdout.split('\n')) {
