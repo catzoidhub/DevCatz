@@ -131,6 +131,15 @@ function showWindow(target?: string): void {
   else win!.webContents.send('herd:navigate', target);
 }
 
+/**
+ * Windows: the minimize / maximize / close buttons sit on a neutral block in the theme's colours (on the page's own
+ * background they vanished in dark mode); repainted when the theme changes.
+ */
+function titleBarOverlay(): { color: string; symbolColor: string; height: number } {
+  return nativeTheme.shouldUseDarkColors ? { color: '#2b2d34', symbolColor: '#e5e7eb', height: 40 } : { color: '#e7e8ec', symbolColor: '#1f2937', height: 40 };
+}
+if (isWin) nativeTheme.on('updated', () => win && !win.isDestroyed() && win.setTitleBarOverlay(titleBarOverlay()));
+
 function createWindow(): void {
   win = new BrowserWindow({
     width: 1120,
@@ -143,7 +152,7 @@ function createWindow(): void {
       ? {
           // Windows: the page draws its own title strip; the system buttons sit over it on the right.
           titleBarStyle: 'hidden' as const,
-          titleBarOverlay: { color: '#00000000', symbolColor: nativeTheme.shouldUseDarkColors ? '#e5e7eb' : '#1f2937', height: 40 },
+          titleBarOverlay: titleBarOverlay(),
           backgroundColor: nativeTheme.shouldUseDarkColors ? '#1d1f24' : '#f6f7f9',
         }
       : {
@@ -574,6 +583,8 @@ function api(): HerdApi {
       const b = c && herd.dbs.binaryOf(c);
       if (!b) throw new Error('The server build is not installed');
       // SQLite: show the sqlite3 binary itself rather than all of /usr.
+      // Windows: SQLite is built into DevCatz (node:sqlite), nothing to show.
+      if (b.source === 'system' && isWin) throw new Error('SQLite is built into DevCatz on Windows');
       if (b.source === 'system') shell.showItemInFolder('/usr/bin/sqlite3');
       else await shell.openPath(b.root);
     },

@@ -83,7 +83,7 @@ export function run(
     execFile(
       cmd,
       args,
-      { cwd: opts.cwd, env: { ...getShellEnv(), ...opts.env }, timeout: opts.timeout ?? 60_000, maxBuffer: 16 * 1024 * 1024 },
+      { cwd: opts.cwd, env: { ...getShellEnv(), ...opts.env }, timeout: opts.timeout ?? 60_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
       (err, stdout, stderr) => {
         const code = err ? (typeof (err as NodeJS.ErrnoException & { code?: unknown }).code === 'number' ? (err as unknown as { code: number }).code : 1) : 0;
         resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
@@ -99,8 +99,8 @@ export function run(
 export function pipeCommands(a: [string, string[]], b: [string, string[]], env: Record<string, string> = {}, timeout = 30 * 60_000): Promise<void> {
   return new Promise((resolve, reject) => {
     const full = { ...getShellEnv(), ...env };
-    const pa = spawn(a[0], a[1], { env: full, stdio: ['ignore', 'pipe', 'pipe'] });
-    const pb = spawn(b[0], b[1], { env: full, stdio: ['pipe', 'ignore', 'pipe'] });
+    const pa = spawn(a[0], a[1], { env: full, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const pb = spawn(b[0], b[1], { env: full, stdio: ['pipe', 'ignore', 'pipe'], windowsHide: true });
     pa.stdout.pipe(pb.stdin);
     let errA = '';
     let errB = '';
@@ -112,7 +112,7 @@ export function pipeCommands(a: [string, string[]], b: [string, string[]], env: 
       pb.kill();
     }, timeout);
     const closed = (p: typeof pa | typeof pb) => new Promise<number | null>((res, rej) => (p.on('error', rej), p.on('close', res)));
-    const name = (p: string) => p.split('/').pop();
+    const name = (p: string) => p.split(/[\\/]/).pop();
     const last = (t: string) => t.trim().split('\n').slice(-3).join(' ');
     // Both must finish: a dump that fails half-way would otherwise look like a short but successful restore.
     Promise.all([closed(pa), closed(pb)])

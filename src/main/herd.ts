@@ -379,12 +379,10 @@ export class Herd extends EventEmitter {
     await this.refreshBuns();
     await this.refreshGos();
     await this.refreshPythons();
-    // Windows, stage 1 (Catzoid #57): PHP-FPM, the DNS responder / resolver and the services below are macOS-only so far.
-    if (isMac) {
-      await this.refreshPhps();
-      await phps.writeCaBundle(this.certs.caPath).catch(() => undefined);
-      this.syncFpm();
-    }
+    // Windows (Catzoid #57): PHP runs as php-cgi workers (fpm.ts); the DNS responder / resolver stay macOS-only.
+    await this.refreshPhps();
+    await phps.writeCaBundle(this.certs.caPath).catch(() => undefined);
+    this.syncFpm();
     this.systemNode = await nodes.systemNode();
     if (isMac) {
       await this.dns.start(tld());
@@ -396,15 +394,16 @@ export class Herd extends EventEmitter {
     this.ipv4Free = !(await isListening('127.0.0.1', 443)) || cleanUrlsCoverIpv4();
     this.timers.push(setInterval(() => void this.pollPorts(), 1500));
     void this.pollPorts();
+    this.timers.push(setInterval(() => void this.pollDatabases(), 5000));
+    void this.pollDatabases();
+    this.dbs.autoStart();
+    this.timers.push(setTimeout(() => void this.dbs.prefetchVersions(), 20_000));
+    // Windows (Catzoid #57): storage, WebSocket and search servers and the monitor are macOS-only so far.
     if (isMac) {
-      this.timers.push(setInterval(() => void this.pollDatabases(), 5000));
-      void this.pollDatabases();
       this.storage.autoStart();
       this.ws.autoStart();
       this.search.autoStart();
-      this.dbs.autoStart();
       this.monitor.start();
-      this.timers.push(setTimeout(() => void this.dbs.prefetchVersions(), 20_000));
     }
     // Runtime updates: shortly after launch, then every 6 hours.
     this.timers.push(setTimeout(() => void this.autoCheckUpdates(), 30_000));
@@ -2459,8 +2458,6 @@ export class Herd extends EventEmitter {
   // -------------------------------------------------------------------- php
 
   async refreshPhps(): Promise<void> {
-    // Windows, stage 1: PHP (static-php.dev builds, FPM, Herd's and Homebrew's PHP) is macOS-only so far.
-    if (isWin) return;
     this.installedPhps = await phps.listInstalled();
     const def = store.settings.phpDefault;
     if (def && !this.installedPhps.some((i) => i.version === def)) store.updateSettings({ phpDefault: null });
@@ -2476,7 +2473,7 @@ export class Herd extends EventEmitter {
             php: fit.php,
             // siteBinDir has a composer wrapper when DevCatz's Composer is installed; else Herd's / Homebrew's composer on PATH.
             composer: 'composer',
-            env: { ...phps.iniEnv(fit.version), PATH: `${phps.siteBinDir(fit)}:${getShellEnv().PATH ?? ''}` },
+            env: { ...phps.iniEnv(fit.version), [pathKey(getShellEnv())]: joinPath([phps.siteBinDir(fit), ...splitPath(getShellEnv()[pathKey(getShellEnv())])]) },
           }
         : null,
     );
@@ -2714,7 +2711,8 @@ export class Herd extends EventEmitter {
   async phpExtensions(version: string): Promise<PhpExtensions> {
     const inst = this.installedPhps.find((i) => i.version === version);
     if (!inst) throw new Error(`PHP ${version} is not installed`);
-    const supported = inst.source === 'mrcatz' && !version.startsWith('7.') && !version.startsWith('5.');
+    // Building PECL extensions is macOS-only so far (phpize toolchain).
+    const supported = !isWin && inst.source === 'mrcatz' && !version.startsWith('7.') && !version.startsWith('5.');
     if (!this.builtinCache.has(version)) this.builtinCache.set(version, await phpext.builtin(inst.php));
     return {
       version,

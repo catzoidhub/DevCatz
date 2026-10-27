@@ -39,6 +39,9 @@ import { ICONS } from '../icons';
 import CatMood from './CatMood.vue';
 import { isWin, WIN_SITE_TABS } from '../platform';
 
+/** What serves PHP sites: PHP-FPM on macOS, php-cgi workers (FastCGI) on Windows. */
+const FPM = isWin ? 'PHP (FastCGI)' : 'PHP-FPM';
+
 const props = defineProps<{ project: ProjectState; urlSuffix: string }>();
 
 type Tab = 'overview' | 'api' | 'logs' | 'env' | 'git' | 'mail' | 'whatsapp' | 'database' | 'storage' | 'websocket' | 'search' | 'docker' | 'settings';
@@ -360,7 +363,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
             <svg class="size-4" viewBox="0 0 20 20" :fill="isFav ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.5"><path d="M9.05 2.93c.3-.92 1.6-.92 1.9 0l1.26 3.88a1 1 0 0 0 .95.69h4.08c.97 0 1.37 1.24.59 1.81l-3.3 2.4a1 1 0 0 0-.37 1.11l1.27 3.89c.3.92-.76 1.68-1.54 1.11l-3.3-2.4a1 1 0 0 0-1.18 0l-3.3 2.4c-.78.57-1.83-.19-1.54-1.11l1.27-3.89a1 1 0 0 0-.37-1.11l-3.3-2.4c-.78-.57-.38-1.81.59-1.81h4.08a1 1 0 0 0 .95-.69l1.26-3.88Z" /></svg>
           </button>
           <span v-if="group" class="badge badge-outline badge-sm max-w-[10rem] shrink-0 truncate" title="Sidebar group (right-click the site to change)">{{ group }}</span>
-          <span class="badge badge-sm badge-soft shrink-0" :class="STATUS_BADGE[siteStatus(p)] ?? 'badge-ghost'" :title="p.served ? 'Served by PHP-FPM (always on)' : undefined">{{ siteStatus(p) }}</span>
+          <span class="badge badge-sm badge-soft shrink-0" :class="STATUS_BADGE[siteStatus(p)] ?? 'badge-ghost'" :title="p.served ? `Served by ${FPM} (always on)` : undefined">{{ siteStatus(p) }}</span>
           <span v-if="p.parkedFrom" class="badge badge-outline badge-sm" :title="p.parkedFrom">parked</span>
           <button
             v-if="p.worktreeOf"
@@ -376,7 +379,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
         </a>
       </div>
       <div class="ml-auto flex max-w-full flex-wrap justify-end gap-1.5">
-        <span v-if="!hasExtras(p)" class="badge badge-success badge-soft self-center" title="PHP sites are served by PHP-FPM all the time; nothing to start (enable the queue worker or scheduler in Settings)">Always on</span>
+        <span v-if="!hasExtras(p)" class="badge badge-success badge-soft self-center" :title="`PHP sites are served by ${FPM} all the time; nothing to start (enable the queue worker or scheduler in Settings)`">Always on</span>
         <template v-else>
         <div v-if="!active && worktrees.length" class="join">
           <button class="btn btn-primary btn-sm join-item" :disabled="(!command && p.stack.runtime !== 'php') || p.status === 'stopping'" @click="start">Start</button>
@@ -487,7 +490,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
             <li v-for="(v, k) in p.envOverrides" :key="k" class="truncate">{{ k }}=<span class="text-primary">{{ v }}</span></li>
           </ul>
           <div class="mt-1 text-xs opacity-70">
-            DevCatz passes these instead of the .env values to PHP-FPM, Vite, the queue worker and artisan, so subdomain routes work
+            DevCatz passes these instead of the .env values to {{ FPM }}, Vite, the queue worker and artisan, so subdomain routes work
             (<code>*.{{ p.domain }}</code> reaches this site). Your .env file itself is left unchanged.
           </div>
         </template>
@@ -569,7 +572,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
       <div class="card-body p-4">
           <div class="label-caps mb-2.5">{{ p.stack.runtime === 'php' ? 'Served by' : perApp ? 'Started as' : 'Dev command' }}</div>
           <div v-if="p.stack.runtime === 'php'" class="text-sm leading-relaxed opacity-80">
-            PHP-FPM {{ p.php.version ?? '(PHP not installed)' }}, always on.
+            {{ FPM }} {{ p.php.version ?? '(PHP not installed)' }}, always on.
             <template v-if="p.stack.apps.some((a) => a.framework === 'mix')"> Start runs Laravel Mix (<code>mix watch</code>, rebuilds public/ on change)</template>
             <template v-else-if="p.stack.apps.some((a) => a.kind === 'assets')"> Start runs Vite (HMR) on the same domain</template>
             <template v-if="p.queueWorker || p.scheduler">{{ p.stack.apps.some((a) => a.kind === 'assets') ? ',' : ' Start runs' }} {{ [p.queueWorker && 'the queue worker', p.scheduler && 'the scheduler'].filter(Boolean).join(' and ') }}</template><template v-if="p.stack.apps.some((a) => a.framework === 'mix' || a.kind === 'assets') || p.queueWorker || p.scheduler">.</template>
@@ -836,7 +839,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
                 <option value="">Auto: {{ p.php.version ?? 'not installed' }} ({{ p.php.spec ? `composer.json asks for ${p.php.spec}` : 'default' }})</option>
                 <option v-for="v in state?.php.installed ?? []" :key="v.version" :value="v.version">{{ v.version }}{{ v.source === 'herd' ? ' (Laravel Herd)' : '' }}</option>
               </select>
-              <span class="mt-1.5 block text-xs opacity-60">The site moves to that version's PHP-FPM pool right after saving.</span>
+              <span class="mt-1.5 block text-xs opacity-60">The site moves to that version's {{ FPM }} right after saving.</span>
             </label>
             <label v-if="usesPython(p.stack)" class="block">
               <span class="label-caps mb-1.5 block">Python version</span>
