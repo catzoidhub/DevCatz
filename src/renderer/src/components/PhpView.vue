@@ -7,6 +7,10 @@ import { ICONS } from '../icons';
 import UpdateButton from './UpdateButton.vue';
 import { attempt, herd, notify, state } from '../store';
 import CatMood from './CatMood.vue';
+import { isWin } from '../platform';
+
+/** What serves PHP sites: PHP-FPM on macOS, php-cgi workers (FastCGI) on Windows. */
+const FPM = isWin ? 'PHP (FastCGI)' : 'PHP-FPM';
 
 
 const s = computed(() => state.value!);
@@ -91,7 +95,7 @@ async function loadIni() {
 watch(iniVersion, loadIni, { immediate: true });
 async function saveIni() {
   if (!ini.value) return;
-  await attempt(() => herd.phpSetIni(iniVersion.value, { ...ini.value! }), `php.ini saved; PHP-FPM ${iniVersion.value} reloaded`);
+  await attempt(() => herd.phpSetIni(iniVersion.value, { ...ini.value! }), `php.ini saved; ${FPM} ${iniVersion.value} reloaded`);
   await loadIni();
 }
 /** CLI-only differences (max_execution_time is always 0 on the CLI) and equivalent spellings are not "different". */
@@ -124,8 +128,14 @@ const tab = ref<Tab>('installed');
 <template>
   <PageHeader title="PHP" :closable="false" tint="runtimes" :icon="ICONS.php">
     <p class="text-xs opacity-60">
-      Static PHP builds from static-php.dev (CLI + FPM, Laravel's usual extensions). PHP sites are served by one PHP-FPM pool per
-      version, always on; PHP installed by other tools such as Homebrew (e.g. 7.4 for older apps) is usable too.
+      <template v-if="isWin">
+        Official PHP builds from windows.php.net (NTS x64, Laravel's usual extensions turned on). PHP sites are served by a few
+        php-cgi workers per version (FastCGI), always on.
+      </template>
+      <template v-else>
+        Static PHP builds from static-php.dev (CLI + FPM, Laravel's usual extensions). PHP sites are served by one PHP-FPM pool per
+        version, always on; PHP installed by other tools such as Homebrew (e.g. 7.4 for older apps) is usable too.
+      </template>
     </p>
     <div class="no-drag mt-3 flex flex-wrap items-center gap-3">
       <div role="tablist" class="seg">
@@ -167,7 +177,7 @@ const tab = ref<Tab>('installed');
         <div class="overflow-x-auto rounded-box border border-base-300/60">
           <table class="table table-sm">
             <thead>
-              <tr><th>Version</th><th></th><th>PHP-FPM</th><th>Used by</th><th class="text-right">Actions</th></tr>
+              <tr><th>Version</th><th></th><th>{{ FPM }}</th><th>Used by</th><th class="text-right">Actions</th></tr>
             </thead>
             <tbody>
               <tr v-for="v in php.installed" :key="v.version + v.source">
@@ -253,7 +263,7 @@ const tab = ref<Tab>('installed');
           <textarea v-model="ini.extra" rows="3" class="textarea textarea-sm w-full font-mono" placeholder="xdebug.mode = debug" />
         </label>
         <div class="flex items-center gap-2">
-          <button class="btn btn-primary btn-sm" @click="saveIni">Save &amp; reload PHP-FPM</button>
+          <button class="btn btn-primary btn-sm" @click="saveIni">Save &amp; reload {{ FPM }}</button>
           <span class="text-xs opacity-60">Validated with <code>php</code> before saving; written to <code>conf.d/99-mrcatz.ini</code> (the bundled php.ini is untouched).</span>
         </div>
       </div>

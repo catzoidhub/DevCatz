@@ -6,6 +6,10 @@ import type { PhpExtCatalogItem, PhpExtension, PhpExtTask } from '@shared/types'
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { brewBin, etcDir, phpDir } from './php';
+import { isWin } from './platform';
+
+/** Windows: PECL builds need phpize + autotools (macOS only so far); the zip's own ext\*.dll are loaded by php.ts. */
+const NOT_ON_WINDOWS = 'Building PHP extensions is not available on Windows yet.';
 
 /**
  * PHP extensions beyond the ones compiled into static-php.dev's build: built
@@ -95,6 +99,7 @@ function stream(cmd: string, args: string[], cwd: string, log: (line: string) =>
 
 /** What a build needs: Xcode Command Line Tools, autoconf (from Homebrew when missing). */
 export async function buildProblem(): Promise<string | null> {
+  if (isWin) return NOT_ON_WINDOWS;
   const clt = await run('xcode-select', ['-p'], { timeout: 10_000 });
   if (clt.code !== 0) return 'Xcode Command Line Tools are needed to build extensions: run “xcode-select --install” in Terminal.';
   const ac = await run('/bin/sh', ['-c', 'command -v autoconf'], { env: buildEnv(), timeout: 10_000 });
@@ -120,6 +125,7 @@ interface Meta {
 
 /** Extensions DevCatz built for a PHP version. */
 export function listInstalled(version: string): PhpExtension[] {
+  if (isWin) return [];
   const dir = extDir(version);
   if (!existsSync(dir)) return [];
   const out: PhpExtension[] = [];
@@ -145,6 +151,7 @@ function iniText(file: string, meta: Meta, module: string): string {
 }
 
 export function setEnabled(version: string, module: string, on: boolean): void {
+  if (isWin) throw new Error(NOT_ON_WINDOWS);
   const from = iniFile(version, module, !on);
   const to = iniFile(version, module, on);
   if (existsSync(from)) renameSync(from, to);
@@ -156,6 +163,7 @@ export function setEnabled(version: string, module: string, on: boolean): void {
 }
 
 export function remove(version: string, module: string): void {
+  if (isWin) return;
   for (const f of [iniFile(version, module), iniFile(version, module, false), join(extDir(version), `${module}.so`), join(extDir(version), `${module}.json`)]) {
     if (existsSync(f)) unlinkSync(f);
   }
@@ -163,6 +171,7 @@ export function remove(version: string, module: string): void {
 
 /** Drops ini files whose module is gone (PHP uninstalled and reinstalled, folder cleaned up). */
 export function pruneIni(version: string): void {
+  if (isWin) return;
   const d = join(etcDir(version), 'conf.d');
   for (const f of readdirSync(d)) {
     const m = f.match(/^20-(.+)\.ini(\.disabled)?$/);
@@ -175,6 +184,7 @@ export function pruneIni(version: string): void {
  * extensions are copied over instead of rebuilt.
  */
 export function carryOver(from: string, to: string): string[] {
+  if (isWin) return [];
   const list = listInstalled(from);
   if (!list.length) return [];
   mkdirSync(extDir(to), { recursive: true });
@@ -261,6 +271,7 @@ export async function install(
   task: (t: Partial<PhpExtTask>) => void,
   log: (l: string) => void,
 ): Promise<PhpExtension> {
+  if (isWin) throw new Error(NOT_ON_WINDOWS);
   if (!VERSION.test(version)) throw new Error(`Invalid version ${version}`);
   if (!PKG.test(pkgName)) throw new Error('A PECL package name is letters, digits and _ only');
   const problem = await buildProblem();

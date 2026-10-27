@@ -47,7 +47,22 @@ function encodeParams(params: Record<string, string>): Buffer[] {
   return records;
 }
 
+/** Requests in flight per TCP port (Windows' php-cgi workers serve one at a time). */
+const busy = new Map<number, number>();
+
+/** `tcp://127.0.0.1:9100-9103` (Windows): the least busy port of the range; null for a Unix socket path. */
+function tcpTarget(socketPath: string): { host: string; port: number } | null {
+  const m = socketPath.match(/^tcp:\/\/([^:/]+):(\d+)(?:-(\d+))?$/);
+  if (!m) return null;
+  const first = Number(m[2]);
+  const last = Number(m[3] ?? m[2]);
+  let port = first;
+  for (let p = first + 1; p <= last; p++) if ((busy.get(p) ?? 0) < (busy.get(port) ?? 0)) port = p;
+  return { host: m[1], port };
+}
+
 export interface FastCgiOptions {
+  /** A Unix socket path (php-fpm), or `tcp://host:port[-lastPort]` (php-cgi workers on Windows). */
   socketPath: string;
   params: Record<string, string>;
   req: IncomingMessage;
@@ -59,7 +74,9 @@ export interface FastCgiOptions {
 /** Runs one request against PHP-FPM; resolves when the response is complete. */
 export function fastcgi({ socketPath, params, req, res, onStderr, timeoutMs = 300_000 }: FastCgiOptions): Promise<void> {
   return new Promise((resolve, reject) => {
-    const socket = connect(socketPath);
+    const tcp = tcpTarget(socketPath);
+    const socket = tcp ? connect(tcp) : connect(socketPath);
+    if (tcp) busy.set(tcp.port, (busy.get(tcp.port) ?? 0) + 1);
     let buf = Buffer.alloc(0);
     let headerBuf = Buffer.alloc(0);
     let headersSent = false;
@@ -68,6 +85,7 @@ export function fastcgi({ socketPath, params, req, res, onStderr, timeoutMs = 30
     const finish = (err?: Error) => {
       if (finished) return;
       finished = true;
+      if (tcp) busy.set(tcp.port, Math.max(0, (busy.get(tcp.port) ?? 1) - 1));
       socket.destroy();
       if (err) {
         if (!res.headersSent) reject(err);
