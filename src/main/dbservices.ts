@@ -256,7 +256,7 @@ export class DbServiceManager {
       if (!v)
         throw new Error(
           `${e.name} in ${root} does not run ${
-            // Windows: MySQL's and PostgreSQL's MSVC builds need the Visual C++ runtime.
+            // Windows: the MSVC builds (MySQL, PostgreSQL, MongoDB) need the Visual C++ runtime.
             isWin ? '(the Microsoft Visual C++ Redistributable x64 may be missing: https://aka.ms/vs/17/release/vc_redist.x64.exe)' : '(wrong architecture?)'
           }`,
         );

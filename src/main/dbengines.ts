@@ -7,7 +7,7 @@ import type { DbBinary, DbEngine, DbServiceConfig, TaskProgress } from '@shared/
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { brewBin } from './php';
-import { exe, isWin, TAR } from './platform';
+import { exe, isWin, TAR, moveDir } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -155,8 +155,8 @@ function latestPer<T extends { version: string }>(items: T[], key: (v: string) =
 const minor = (v: string) => v.split('.').slice(0, 2).join('.');
 const major = (v: string) => v.split('.')[0];
 
-/** Downloads, verifies and unpacks a tarball into `dest` (its single top folder stripped). */
-async function fetchTarball(b: RemoteBuild, dest: string, step: Step, signal: AbortSignal): Promise<void> {
+/** Downloads, verifies and unpacks a tarball into `dest` (its single top folder stripped; `exclude`: tar patterns left out). */
+async function fetchTarball(b: RemoteBuild, dest: string, step: Step, signal: AbortSignal, exclude: string[] = []): Promise<void> {
   const tmp = `${dest}.partial`;
   rmSync(tmp, { recursive: true, force: true });
   mkdirSync(tmp, { recursive: true });
@@ -173,12 +173,12 @@ async function fetchTarball(b: RemoteBuild, dest: string, step: Step, signal: Ab
     if (b.hash && digest !== b.hash.toLowerCase()) throw new Error(`Checksum mismatch (expected ${b.hash.slice(0, 12)}…, got ${digest.slice(0, 12)}…); download discarded`);
     step('Unpacking', { detail: dest });
     // Windows' bsdtar reads the .zip builds too.
-    const r = await run(TAR, [isWin ? '-xf' : '-xzf', archive, '-C', tmp, '--strip-components=1'], { timeout: 600_000 });
+    const r = await run(TAR, [isWin ? '-xf' : '-xzf', archive, '-C', tmp, '--strip-components=1', ...exclude.flatMap((x) => ['--exclude', x])], { timeout: 600_000 });
     if (r.code !== 0) throw new Error(`Unpacking failed: ${r.stderr.trim()}`);
     check(signal);
     if (!isWin) await run('xattr', ['-dr', 'com.apple.quarantine', tmp]);
     rmSync(dest, { recursive: true, force: true });
-    renameSync(tmp, dest);
+    await moveDir(tmp, dest);
   } finally {
     rmSync(archive, { force: true });
     rmSync(tmp, { recursive: true, force: true });
@@ -451,8 +451,9 @@ const mariadb: EngineDef = {
     const bind = ma > 10 || (ma === 10 && mi >= 11) ? '127.0.0.1,::1' : '127.0.0.1';
     return {
       command:
-        // Windows: TCP only, and --console (the log goes to a file in the data folder otherwise).
-        `${q(bin)} ${mysqlArgs(c, root, data)} --port=${c.port} --bind-address=${bind}${socket ? ` --socket=${q(socket)}` : ''}${isWin ? ' --console' : ''} ` +
+        // Windows: TCP only, and --console (the log goes to a file in the data folder otherwise); --skip-ssl because
+        // MariaDB 11.4+ makes its own TLS certificate at start, which fails there (and 127.0.0.1 needs none).
+        `${q(bin)} ${mysqlArgs(c, root, data)} --port=${c.port} --bind-address=${bind}${socket ? ` --socket=${q(socket)}` : ''}${isWin ? ' --console --skip-ssl' : ''} ` +
         `--pid-file=${q(join(data, 'devcatz.pid'))} ${c.disableBinLog ? '--skip-log-bin' : '--log-bin=mysql-bin'}`,
       env: {},
     };
@@ -467,6 +468,31 @@ const mariadb: EngineDef = {
 
 const PG_TRIPLE = isWin ? 'x86_64-pc-windows-msvc' : `${arch ? 'aarch64' : 'x86_64'}-apple-darwin`;
 export const psqlArgs = (c: DbServiceConfig, db = 'postgres') => ['-h', '127.0.0.1', '-p', String(c.port), '-U', c.user || 'root', '-d', db, '-v', 'ON_ERROR_STOP=1', '-X'];
+
+/**
+ * Windows: postgres.exe refuses to run with administrator rights (UAC off, or DevCatz run as administrator), and
+ * `pg_ctl` is what drops them (a restricted token). So the managed process is a small PowerShell loop: `pg_ctl start`
+ * (detached postgres, log to a file), then the log's new lines go to DevCatz's Logs until postmaster.pid is gone —
+ * `pg_ctl stop` (the engine's shutdown) ends both. -EncodedCommand keeps cmd.exe's quoting out of it.
+ */
+function pgWindowsCommand(c: DbServiceConfig, root: string, data: string): string {
+  const ps = (s: string) => `'${s.replace(/'/g, "''")}'`;
+  const log = join(data, 'devcatz-postgres.log');
+  const pid = join(data, 'postmaster.pid');
+  const opts = `-p ${c.port} -c listen_addresses=127.0.0.1,::1${c.configFile ? ` -c config_file="${c.configFile}"` : ''}`;
+  const script = [
+    `$log = ${ps(log)}; $pidFile = ${ps(pid)}`,
+    `$pos = if (Test-Path $log) { (Get-Item $log).Length } else { 0 }`,
+    `& ${ps(binOf(root, 'pg_ctl'))} start -w -t 60 -D ${ps(data)} -l $log -o ${ps(opts)}`,
+    `if ($LASTEXITCODE -ne 0) { if (Test-Path $log) { Get-Content $log -Tail 20 }; exit $LASTEXITCODE }`,
+    `while ($true) {`,
+    `  $fs = [IO.File]::Open($log, 'Open', 'Read', 'ReadWrite'); [void]$fs.Seek($pos, 'Begin'); $sr = New-Object IO.StreamReader($fs)`,
+    `  $t = $sr.ReadToEnd(); $pos = $fs.Position; $sr.Close(); if ($t) { [Console]::Out.Write($t) }`,
+    `  if (-not (Test-Path $pidFile)) { break }; Start-Sleep -Milliseconds 700`,
+    `}`,
+  ].join('\n');
+  return `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}`;
+}
 
 const postgresql: EngineDef = {
   name: 'PostgreSQL',
@@ -519,7 +545,7 @@ const postgresql: EngineDef = {
   },
   spec(c, root, data) {
     const conf = c.configFile ? ` -c config_file=${q(c.configFile)}` : '';
-    // Windows: TCP only (unix_socket_directories is empty there by default).
+    if (isWin) return { command: pgWindowsCommand(c, root, data), env: { LC_ALL: 'C' } };
     return {
       command: `${q(binOf(root, 'postgres'))} -D ${q(data)} -p ${c.port} -c listen_addresses=${q('127.0.0.1,::1')}${isWin ? '' : ' -c unix_socket_directories=/tmp'}${conf}`,
       env: { LC_ALL: 'C' },
@@ -680,18 +706,17 @@ const mongodb: EngineDef = {
   name: 'MongoDB',
   description: 'Document database (Community Server).',
   defaultPort: 27017,
-  sourceNote: 'Official Community Server builds from fastdl.mongodb.org (SHA-256)',
-  async requirement() {
-    return isWin ? notOnWindows('MongoDB') : null;
-  },
+  sourceNote: isWin ? 'Official Community Server Windows x64 ZIP from fastdl.mongodb.org (SHA-256)' : 'Official Community Server builds from fastdl.mongodb.org (SHA-256)',
   async builds() {
-    if (isWin) throw new Error(notOnWindows('MongoDB'));
-    return cached('mongodb', async () => {
+    // Windows: the same release list; its `windows` x86_64 ZIPs (mongodb-win32-x86_64-windows-<v>/bin/mongod.exe).
+    return cached(isWin ? 'mongodb-win' : 'mongodb', async () => {
       const d = await json<{ versions: MongoRelease[] }>('https://downloads.mongodb.org/full.json');
       const all: RemoteBuild[] = [];
+      const target = isWin ? 'windows' : 'macos';
+      const cpu = isWin ? 'x86_64' : arch ? 'arm64' : 'x86_64';
       for (const v of d.versions) {
         if (!v.production_release || Number(major(v.version)) < 6) continue;
-        const dl = v.downloads.find((x) => x.target === 'macos' && x.arch === (arch ? 'arm64' : 'x86_64') && (x.edition === 'base' || x.edition === 'targeted'));
+        const dl = v.downloads.find((x) => x.target === target && x.arch === cpu && (x.edition === 'base' || x.edition === 'targeted'));
         if (dl?.archive.sha256) all.push({ version: v.version, label: minor(v.version), source: 'download', url: dl.archive.url, hash: dl.archive.sha256, algo: 'sha256' });
       }
       return latestPer(all, minor);
@@ -699,11 +724,12 @@ const mongodb: EngineDef = {
   },
   installSteps: () => DOWNLOAD_STEPS,
   async install(b, dest, step, signal) {
-    await fetchTarball(b, dest, step, signal);
+    // Windows: the debug symbols (*.pdb) are most of the ZIP and never needed.
+    await fetchTarball(b, dest, step, signal, isWin ? ['*.pdb'] : []);
     return dest;
   },
   async version(root) {
-    const r = await run(join(root, 'bin/mongod'), ['--version'], { timeout: 15_000 });
+    const r = await run(binOf(root, 'mongod'), ['--version'], { timeout: 15_000 });
     return r.stdout.match(/db version v([\d.]+)/)?.[1] ?? null;
   },
   async init(_c, _root, data) {
@@ -711,26 +737,28 @@ const mongodb: EngineDef = {
   },
   spec(c, root, data) {
     const conf = c.configFile ? `--config ${q(c.configFile)} ` : '';
-    return { command: `${q(join(root, 'bin/mongod'))} ${conf}--dbpath ${q(data)} --port ${c.port} --bind_ip 127.0.0.1,::1 --ipv6`, env: {} };
+    // Windows: TCP only (mongod there has no Unix socket to turn off).
+    return { command: `${q(binOf(root, 'mongod'))} ${conf}--dbpath ${q(data)} --port ${c.port} --bind_ip 127.0.0.1,::1 --ipv6`, env: {} };
   },
+  // Windows: no `mongod --shutdown` there and no mongosh downloaded (macOS has none either), so no shutdown():
+  // DevCatz ends the process tree; the WiredTiger journal recovers on the next start.
 };
 
 // ------------------------------------------------------------------ Elasticsearch
 
-const ES_ARCH = arch ? 'aarch64' : 'x86_64';
+/** The build's platform suffix: `darwin-aarch64.tar.gz`, `windows-x86_64.zip`. */
+const ES_TARGET = isWin ? 'windows-x86_64.zip' : `darwin-${arch ? 'aarch64' : 'x86_64'}.tar.gz`;
 /** Per-instance ES_PATH_CONF, outside the data folder (Elasticsearch 9 refuses a config folder inside path.data). */
 const esConf = (c: DbServiceConfig) => dataDir('db-services', 'config', c.id);
 const elasticsearch: EngineDef = {
   name: 'Elasticsearch',
   description: 'Search and analytics engine (security off for local use).',
   defaultPort: 9200,
-  sourceNote: 'Official builds from artifacts.elastic.co with the bundled JDK (SHA-512)',
-  async requirement() {
-    return isWin ? notOnWindows('Elasticsearch') : null;
-  },
+  sourceNote: isWin
+    ? 'Official Windows x64 ZIP from artifacts.elastic.co with the bundled JDK (SHA-512)'
+    : 'Official builds from artifacts.elastic.co with the bundled JDK (SHA-512)',
   async builds() {
-    if (isWin) throw new Error(notOnWindows('Elasticsearch'));
-    return cached('elasticsearch', async () => {
+    return cached(isWin ? 'elasticsearch-win' : 'elasticsearch', async () => {
       const tags: string[] = [];
       const pages = await Promise.all(
         [1, 2].map((page) =>
@@ -740,13 +768,13 @@ const elasticsearch: EngineDef = {
         ),
       );
       for (const rel of pages) for (const r of rel) if (!r.prerelease && !r.draft && /^v\d+\.\d+\.\d+$/.test(r.tag_name)) tags.push(r.tag_name.slice(1));
-      // 7.17 is the last 7.x line with Apple silicon builds.
+      // 7.17 is the last 7.x line with Apple silicon builds (kept on Windows too: same list everywhere).
       const all = tags.filter((v) => Number(major(v)) >= 8 || minor(v) === '7.17').map((v) => ({ version: v }));
       return latestPer(all, major).map(({ version }) => ({
         version,
         label: major(version),
         source: 'download' as const,
-        url: `https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-${version}-darwin-${ES_ARCH}.tar.gz`,
+        url: `https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-${version}-${ES_TARGET}`,
         algo: 'sha512' as const,
       }));
     });
@@ -775,8 +803,9 @@ const elasticsearch: EngineDef = {
   spec(c, root, data) {
     const e = (k: string, v: string | number) => ` -E ${k}=${q(String(v))}`;
     return {
+      // Windows: bin\elasticsearch.bat, run through cmd.exe like every service command line.
       command:
-        q(join(root, 'bin/elasticsearch')) +
+        q(join(root, 'bin', isWin ? 'elasticsearch.bat' : 'elasticsearch')) +
         e('path.data', data) +
         e('path.logs', join(data, 'logs')) +
         e('http.port', c.port) +
@@ -788,6 +817,7 @@ const elasticsearch: EngineDef = {
       env: { ES_PATH_CONF: esConf(c), ES_JAVA_OPTS: '-Xms512m -Xmx512m' },
     };
   },
+  // Windows: no clean stop command; ending the tree (taskkill /T) takes the launcher's java child with it.
 };
 
 // ------------------------------------------------------------------ SQLite
