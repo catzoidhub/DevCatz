@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { EnvFileInfo, ProjectState } from '@shared/types';
 import { attempt, herd, notify } from '../store';
@@ -210,7 +211,7 @@ const varCount = computed(() => (locked.value ? saved.value : content.value).spl
 
     <div v-if="current?.exists" class="flex items-center gap-2 text-xs">
       <template v-if="!locked">
-        <button class="btn btn-primary btn-sm" :disabled="!dirty" @click="save">Save <kbd class="kbd kbd-xs">⌘S</kbd></button>
+        <button class="btn btn-primary btn-sm" :disabled="!dirty" @click="save">Save <kbd class="kbd kbd-xs">{{ keyLabel('mod+S') }}</kbd></button>
         <button class="btn btn-ghost btn-sm" :disabled="!dirty" @click="content = saved">Revert</button>
       </template>
       <span class="opacity-60">

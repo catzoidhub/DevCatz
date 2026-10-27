@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { currentOS, keyLabel, words } from '@shared/platform';
 import { computed, ref, watch } from 'vue';
 import { AI_FEATURES, AI_PROVIDERS, aiProvider, type AiFeature, type AiProvider, type AiSettingsPatch } from '@shared/types';
 import AiModelPicker from './AiModelPicker.vue';
@@ -103,7 +104,7 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
         <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5" :checked="ai.enabled" @change="save({ enabled: ($event.target as HTMLInputElement).checked })" />
         <span>
           Use AI in DevCatz
-          <span class="block text-xs opacity-60">Explains errors with one-click fixes, writes commit messages, helps with Docker, .env, search and webhooks, and takes plain-word commands (⌘K). Nothing is sent until you press an AI button; every one has <b>Preview what is sent</b>, and what DevCatz suggests to run waits for your click.</span>
+          <span class="block text-xs opacity-60">Explains errors with one-click fixes, writes commit messages, helps with Docker, .env, search and webhooks, and takes plain-word commands ({{ keyLabel('mod+K') }}). Nothing is sent until you press an AI button; every one has <b>Preview what is sent</b>, and what DevCatz suggests to run waits for your click.</span>
         </span>
       </label>
     </div>
@@ -126,7 +127,7 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
         <span class="w-28 shrink-0 pt-1.5 text-sm">API key</span>
         <div class="min-w-0 flex-1 space-y-1.5">
           <div v-if="hasKey && !replacing" class="flex items-center gap-2">
-            <span class="input input-sm flex min-w-0 flex-1 items-center gap-2 text-xs opacity-80"><span class="status status-success status-xs shrink-0" /><span class="truncate">Saved in the macOS Keychain, shared with Catzoid apps</span></span>
+            <span class="input input-sm flex min-w-0 flex-1 items-center gap-2 text-xs opacity-80"><span class="status status-success status-xs shrink-0" /><span class="truncate">Saved in {{ currentOS === 'mac' ? 'the macOS Keychain' : words.secretStore }}, shared with Catzoid apps</span></span>
             <button class="btn btn-sm" @click="replacing = true">Replace</button>
             <button class="btn btn-ghost btn-sm text-error" @click="removeKey">Remove</button>
           </div>
@@ -136,7 +137,7 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
             <button v-if="replacing" type="button" class="btn btn-ghost btn-sm" @click="replacing = false; keyInput = ''">Cancel</button>
           </form>
           <p class="text-xs opacity-60">
-            Kept only on this Mac (Keychain item “Catzoid AI”), never shown again or sent anywhere but {{ info.name }}.
+            Kept only on this Mac ({{ words.secretStore }} item “Catzoid AI”), never shown again or sent anywhere but {{ info.name }}.
             <a v-if="info.keyUrl" class="link" @click="herd.openUrl(info.keyUrl)">Get a key</a>
           </p>
         </div>

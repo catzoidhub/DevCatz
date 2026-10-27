@@ -16,6 +16,7 @@ import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './sto
 import { dataDir, store } from './store';
 import { githubLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { getPhpRuntime } from './websocket';
+import { currentOS, words } from '@shared/platform';
 
 /**
  * Expose: a public URL for a local site. Each share runs a small gateway on
@@ -162,7 +163,7 @@ export class ExposeManager {
     try {
       return safeStorage.decryptString(Buffer.from(token, 'base64'));
     } catch {
-      throw new Error('The stored token can no longer be read (Keychain changed): enter it again in Settings → Expose');
+      throw new Error(`The stored token can no longer be read (${words.secretStore} changed): enter it again in Settings → Expose`);
     }
   }
 
@@ -180,7 +181,7 @@ export class ExposeManager {
     const s = this.stored();
     if (input.token === null) delete s[provider];
     else {
-      if (input.token && !safeStorage.isEncryptionAvailable()) throw new Error('macOS Keychain encryption is not available');
+      if (input.token && !safeStorage.isEncryptionAvailable()) throw new Error(`${currentOS === 'mac' ? 'macOS Keychain' : words.secretStore} encryption is not available`);
       const token = input.token.trim() ? safeStorage.encryptString(input.token.trim()).toString('base64') : (s[provider]?.token ?? '');
       if (!token) throw new Error('Enter the token');
       if (provider === 'ngrok') s.ngrok = { token, domain: (input.domain ?? s.ngrok?.domain ?? '').trim() };

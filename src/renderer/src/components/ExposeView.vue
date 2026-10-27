@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import QRCode from 'qrcode';
 import type { ExposeRequest, ExposeShare, ExposeTool } from '@shared/types';
@@ -415,7 +416,7 @@ const installedTools = computed(() => TOOLS.filter((t) => expose.value?.tools[t.
                 <li>Requests reach the site with its own Host header, so routing, cookies and Vite HMR work as on this Mac.</li>
                 <li>Optional basic auth in front of it, and an expiry so a forgotten share stops by itself.</li>
                 <li>Every request is listed with headers and bodies; Replay sends a webhook again after you changed the code.</li>
-                <li>Several sites can be shared at once; the menu bar lists them with their URLs.</li>
+                <li>Several sites can be shared at once; the {{ words.tray }} lists them with their URLs.</li>
               </ul>
             </div>
           </div>

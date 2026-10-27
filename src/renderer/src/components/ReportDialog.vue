@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, ref, watch } from 'vue';
 import type { ReportKind, ReportPreview } from '@shared/types';
 import CatMood from './CatMood.vue';
@@ -140,7 +141,7 @@ const close = () => (reportDialog.value = null);
             <input v-model="email" type="email" class="input input-bordered input-sm w-full" placeholder="you@example.com" />
           </label>
           <p class="text-xs opacity-55">
-            Sent with the DevCatz version, macOS version, chip and a random install id — never your projects, .env values, keys, hosts or paths
+            Sent with the DevCatz version, {{ words.os }} version, chip and a random install id — never your projects, .env values, keys, hosts or paths
             (they are removed from the message too).
             <a class="link" @click="showPreview">{{ preview ? 'Hide preview' : 'Preview what is sent' }}</a>
           </p>

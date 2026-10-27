@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, ref, watch } from 'vue';
 import type { UninstallPlan } from '@shared/types';
 import CatMood from './CatMood.vue';
@@ -88,7 +89,7 @@ const close = () => !busy.value && (uninstallDialog.value = false);
                 {{
                   plan.otherCatzoidApps.length
                     ? `Theme, AI connection and AI key are shared with ${plan.otherCatzoidApps.join(', ')}: keep them for those apps.`
-                    : 'Theme, AI connection and the AI key in Keychain. No other Catzoid app is installed.'
+                    : `Theme, AI connection and the AI key in ${words.secretStore}. No other Catzoid app is installed.`
                 }}
               </span>
             </span>

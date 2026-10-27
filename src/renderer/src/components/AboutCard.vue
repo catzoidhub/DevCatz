@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, onMounted, ref } from 'vue';
 import type { AboutInfo } from '@shared/types';
 import { attempt, herd, notify, reportDialog, state, uninstallDialog, updateDialog } from '../store';
@@ -51,7 +52,7 @@ function checkForUpdates() {
 function copyDetails() {
   const i = info.value;
   if (!i) return;
-  void navigator.clipboard.writeText(`DevCatz ${i.version} (${i.arch})\nmacOS ${i.macos}\nElectron ${i.electron} · Chromium ${i.chrome} · Node.js ${i.node}`);
+  void navigator.clipboard.writeText(`DevCatz ${i.version} (${i.arch})\n${words.os} ${i.macos}\nElectron ${i.electron} · Chromium ${i.chrome} · Node.js ${i.node}`);
   notify('success', 'Version details copied');
 }
 </script>
@@ -117,7 +118,7 @@ function copyDetails() {
         <button class="btn btn-ghost btn-xs" :disabled="!info" @click="copyDetails">Copy</button>
       </div>
       <dl v-if="info" class="selectable grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
-        <dt class="opacity-60">macOS</dt><dd class="font-mono text-xs leading-5">{{ info.macos }}</dd>
+        <dt class="opacity-60">{{ words.os }}</dt><dd class="font-mono text-xs leading-5">{{ info.macos }}</dd>
         <dt class="opacity-60">Electron</dt><dd class="font-mono text-xs leading-5">{{ info.electron }}</dd>
         <dt class="opacity-60">Chromium</dt><dd class="font-mono text-xs leading-5">{{ info.chrome }}</dd>
         <dt class="opacity-60">Node.js</dt><dd class="font-mono text-xs leading-5">{{ info.node }}</dd>

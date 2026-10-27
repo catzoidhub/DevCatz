@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { attempt, cloneRequest, dbGroupRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog } from './store';
 import UpdateDialog from './components/UpdateDialog.vue';
@@ -510,7 +511,7 @@ async function park() {
       </div>
       <!-- Settings stays put below the scrolling sections: a divider keeps the cut clean. -->
       <div class="mb-2 h-px w-12 shrink-0 bg-base-content/15" />
-      <button class="rail-item relative shrink-0" :class="{ 'is-active': section === 'settings' }" style="--rail-c: var(--c-settings)" title="Settings (⌘,)" @click="section = 'settings'">
+      <button class="rail-item relative shrink-0" :class="{ 'is-active': section === 'settings' }" style="--rail-c: var(--c-settings)" :title="`Settings (${keyLabel('mod+,')})`" @click="section = 'settings'">
         <span class="rail-icon"><svg class="size-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS.cog" /></svg></span>
         Settings
         <span v-if="updateDot" class="absolute top-1.5 right-4 size-2 rounded-full bg-primary ring-2 ring-base-200" :title="`DevCatz ${state?.appUpdate.version} is available`" />
@@ -682,7 +683,7 @@ async function park() {
           <div class="space-y-1">
             <h3 class="text-lg font-semibold tracking-tight">Send crash reports?</h3>
             <p class="text-sm opacity-70">
-              DevCatz just hit an error. With crash reports on, reports like this go to the Catzoid site so it gets fixed — the version, macOS and where
+              DevCatz just hit an error. With crash reports on, reports like this go to the Catzoid site so it gets fixed — the version, {{ words.os }} and where
               it happened; never projects, .env values, keys, hosts or paths. You can change this in Settings → General.
             </p>
           </div>
@@ -716,18 +717,18 @@ async function park() {
          clicks here would move the window instead. -->
     <div class="nav-history no-drag fixed top-3 left-[6.5rem] z-30 flex items-center gap-0.5">
       <PopMenu ref="backMenu" :items="backItems" :width="220">
-        <button class="btn btn-ghost btn-xs btn-square" :disabled="!canBack" title="Back (⌘[) · right-click for recent screens" @click.stop="goBack" @contextmenu.prevent.stop="canBack && backMenu?.toggle()">
+        <button class="btn btn-ghost btn-xs btn-square" :disabled="!canBack" :title="`Back (${keyLabel('mod+[')}) · right-click for recent screens`" @click.stop="goBack" @contextmenu.prevent.stop="canBack && backMenu?.toggle()">
           <svg class="size-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.8 4.2a.75.75 0 0 1 0 1.06L8.06 10l4.74 4.74a.75.75 0 1 1-1.06 1.06l-5.27-5.27a.75.75 0 0 1 0-1.06l5.27-5.27a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" /></svg>
         </button>
       </PopMenu>
       <PopMenu ref="forwardMenu" :items="forwardItems" :width="220">
-        <button class="btn btn-ghost btn-xs btn-square" :disabled="!canForward" title="Forward (⌘]) · right-click for recent screens" @click.stop="goForward" @contextmenu.prevent.stop="canForward && forwardMenu?.toggle()">
+        <button class="btn btn-ghost btn-xs btn-square" :disabled="!canForward" :title="`Forward (${keyLabel('mod+]')}) · right-click for recent screens`" @click.stop="goForward" @contextmenu.prevent.stop="canForward && forwardMenu?.toggle()">
           <svg class="size-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.2 4.2a.75.75 0 0 1 1.06 0l5.27 5.27a.75.75 0 0 1 0 1.06L8.26 15.8a.75.75 0 1 1-1.06-1.06L11.94 10 7.2 5.26a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
         </button>
       </PopMenu>
     </div>
     <!-- Ask DevCatz: a floating button bottom-right, in reach from every screen. -->
-    <button v-if="askOn && !askOpen" class="ask-fab no-drag" title="Ask DevCatz (⌘K): say what to do in plain words" aria-label="Ask DevCatz" @click="askOpen = true"><span><img :src="askMark" alt="" /></span></button>
+    <button v-if="askOn && !askOpen" class="ask-fab no-drag" :title="`Ask DevCatz (${keyLabel('mod+K')}): say what to do in plain words`" aria-label="Ask DevCatz" @click="askOpen = true"><span><img :src="askMark" alt="" /></span></button>
     <div v-if="toast" class="toast toast-end z-50" :class="{ 'is-beside-fab': askOn && !askOpen }">
       <div
         role="status"

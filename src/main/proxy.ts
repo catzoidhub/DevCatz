@@ -8,6 +8,7 @@ import type { Socket } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { createProxyServer } from 'http-proxy-3';
 import type { CertManager } from './certs';
+import { words } from '@shared/platform';
 
 /** Answered by the proxy itself; used to check that the clean-URL forward reaches us. */
 export const PING_PATH = '/__mrcatz-herd/ping';
@@ -358,7 +359,7 @@ export class Proxy {
         ? 'No site in DevCatz answers to this domain. Link the project (Create New Site) or check the spelling.'
         : state === 'starting'
           ? 'The dev server is not accepting connections yet. This page refreshes on its own.'
-          : 'Start it from the DevCatz window or the menu bar. This page refreshes on its own.';
+          : `Start it from the DevCatz window or the ${words.tray}. This page refreshes on its own.`;
     const pill = state === 'unknown' ? ['Not linked', '#f59e0b'] : state === 'starting' ? ['Starting', '#8b5cf6'] : ['Stopped', '#94a3b8'];
     const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

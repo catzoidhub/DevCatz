@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { BuildTarget, DbAction, PackageManager, ProjectState } from '@shared/types';
 import { attempt, herd, navRequest, notify, siteTabRequest, state } from '../store';
@@ -231,7 +232,7 @@ const startItems = computed<MenuItem[]>(() => [
 const openItems = computed<MenuItem[]>(() => [
   ...p.value.stack.apps.map((app) => ({ label: app.domain, hint: 'Open in browser', icon: ICONS.globe, action: () => void herd.openUrl(url(app.domain)) })),
   { label: 'Editor', icon: ICONS.code, action: () => void herd.openEditor(p.value.id) },
-  { label: 'Finder', icon: ICONS.folder, action: () => void herd.openFolder(p.value.id) },
+  { label: words.fileManager, icon: ICONS.folder, action: () => void herd.openFolder(p.value.id) },
   { label: 'Terminal', icon: ICONS.terminal, action: () => void herd.openTerminal(p.value.id) },
 ]);
 
@@ -902,7 +903,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <button class="btn btn-primary btn-sm" type="submit" :disabled="!!domainTaken" :title="domainTaken ?? 'Save (⌘S)'">Save <kbd class="kbd kbd-xs border-white/30 bg-white/15 text-inherit">⌘S</kbd></button>
+        <button class="btn btn-primary btn-sm" type="submit" :disabled="!!domainTaken" :title="domainTaken ?? `Save (${keyLabel('mod+S')})`">Save <kbd class="kbd kbd-xs border-white/30 bg-white/15 text-inherit">{{ keyLabel('mod+S') }}</kbd></button>
         <button class="btn btn-ghost btn-sm" type="button" @click="rescan">Re-detect stack</button>
         <div class="flex-1" />
         <button v-if="!p.parkedFrom" class="btn btn-error btn-outline btn-sm" type="button" @click="unlinking = true">Unlink…</button>

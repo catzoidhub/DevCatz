@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, ref, watch } from 'vue';
 import type { ProjectState, SiteOpenApi } from '@shared/types';
 import ConfirmDialog from './ConfirmDialog.vue';
@@ -75,7 +76,7 @@ async function add() {
           <code class="min-w-0 flex-1 truncate text-xs">{{ s.url ?? rel(s.file!) }}</code>
           <span v-if="site.stack.apps.length > 1" class="text-xs opacity-60">{{ appName(s.app) }}</span>
           <button v-if="s.url" class="btn btn-ghost btn-xs" @click="herd.openUrl(s.url)">Open</button>
-          <button v-else class="btn btn-ghost btn-xs" @click="herd.openapiReveal(site.id, s.file!)">Show in Finder</button>
+          <button v-else class="btn btn-ghost btn-xs" @click="herd.openapiReveal(site.id, s.file!)">{{ words.revealIn }}</button>
         </div>
         <p v-if="!laravel" class="text-xs opacity-60">DialCatz imports the routes from {{ info.specs.length === 1 ? 'this document' : 'these documents' }}.</p>
       </template>

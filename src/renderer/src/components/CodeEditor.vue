@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, ref, watch } from 'vue';
 import { highlightCode, type CodeLanguage } from '../highlight';
 
@@ -211,15 +212,15 @@ function onKey(e: KeyboardEvent) {
         <input ref="findInput" v-model="query" class="code-find-input" placeholder="Find" spellcheck="false" @input="go(0)" @keydown="findKey" />
         <button class="code-find-btn" :class="{ 'is-on': matchCase }" title="Match case" @click="matchCase = !matchCase">Aa</button>
         <span class="code-find-count" :class="{ 'text-error': query && !matches.length }">{{ query ? (matches.length ? `${current + 1} of ${matches.length}` : 'No results') : '' }}</span>
-        <button class="code-find-btn" title="Previous (⇧⏎)" :disabled="!matches.length" @click="go(current - 1)">↑</button>
+        <button class="code-find-btn" :title="`Previous (${keyLabel('shift+⏎')})`" :disabled="!matches.length" @click="go(current - 1)">↑</button>
         <button class="code-find-btn" title="Next (⏎)" :disabled="!matches.length" @click="go(current + 1)">↓</button>
-        <button v-if="!readonly" class="code-find-btn" :class="{ 'is-on': find.replace }" title="Replace (⌘⇧L)" @click="find.replace = !find.replace">⇄</button>
+        <button v-if="!readonly" class="code-find-btn" :class="{ 'is-on': find.replace }" :title="`Replace (${keyLabel('mod+shift+L')})`" @click="find.replace = !find.replace">⇄</button>
         <button class="code-find-btn" title="Close (Esc)" @click="closeFind">✕</button>
       </div>
       <div v-if="find.replace" class="code-find-row">
         <input ref="replaceInput" v-model="replacement" class="code-find-input" placeholder="Replace with" spellcheck="false" @keydown="replaceKey" />
         <button class="btn btn-xs" title="Replace this one and go to the next (⏎)" :disabled="!matches.length" @click="replaceOne">Replace</button>
-        <button class="btn btn-primary btn-xs" title="Replace every match (⌘⌥⏎)" :disabled="!matches.length" @click="replaceAll">All</button>
+        <button class="btn btn-primary btn-xs" :title="`Replace every match (${keyLabel('mod+alt+⏎')})`" :disabled="!matches.length" @click="replaceAll">All</button>
       </div>
     </div>
   </div>

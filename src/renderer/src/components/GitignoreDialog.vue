@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, onMounted, ref } from 'vue';
 import CodeEditor from './CodeEditor.vue';
 import CatMood from './CatMood.vue';
@@ -88,7 +89,7 @@ async function save() {
 
       <div class="flex items-center gap-2">
         <span class="text-xs opacity-60">
-          <template v-if="editing">{{ lines }} rule{{ lines === 1 ? '' : 's' }} · <kbd class="kbd kbd-xs">⌘S</kbd> saves · </template><kbd class="kbd kbd-xs">Esc</kbd> closes
+          <template v-if="editing">{{ lines }} rule{{ lines === 1 ? '' : 's' }} · <kbd class="kbd kbd-xs">{{ keyLabel('mod+S') }}</kbd> saves · </template><kbd class="kbd kbd-xs">Esc</kbd> closes
         </span>
         <span class="flex-1" />
         <button class="btn btn-ghost btn-sm" @click="emit('close')">{{ dirty ? 'Cancel' : 'Close' }}</button>

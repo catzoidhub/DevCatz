@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { currentOS, words } from '@shared/platform';
 import PageHeader from './PageHeader.vue';
 import AiSettings from './AiSettings.vue';
 import AboutCard from './AboutCard.vue';
@@ -259,7 +260,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <input type="checkbox" class="toggle toggle-primary toggle-sm" :checked="s.launchAtLogin" @change="setLogin(($event.target as HTMLInputElement).checked)" />
           <span>
             Launch at login
-            <span class="block text-xs opacity-60">Starts in the menu bar without a window.</span>
+            <span class="block text-xs opacity-60">Starts in the {{ words.tray }} without a window.</span>
           </span>
         </label>
         <label class="flex cursor-pointer items-center gap-3">
@@ -267,14 +268,14 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <span>
             Send crash reports
             <span class="block text-xs opacity-60">
-              When DevCatz crashes or hits an error, a report goes to {{ s.reports.site.replace('https://', '') }} — version, macOS, the error and where it
+              When DevCatz crashes or hits an error, a report goes to {{ s.reports.site.replace('https://', '') }} — version, {{ words.os }}, the error and where it
               happened; never projects, .env values, keys, hosts or paths. Off until you turn it on.
             </span>
           </span>
         </label>
                 <div>
           <button class="btn btn-sm btn-outline btn-error" @click="quitApp">Quit DevCatz</button>
-          <span class="ml-2 text-xs opacity-60">Stops all dev servers. Closing the window keeps the app in the menu bar.</span>
+          <span class="ml-2 text-xs opacity-60">Stops all dev servers. Closing the window keeps the app in the {{ words.tray }}.</span>
         </div>
         <p v-if="!s.packaged" class="text-xs text-warning">
           Development build: the login item would point at the dev Electron binary. Use the packaged app (<code>bun run package</code>) for this.
@@ -436,7 +437,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           </label>
         </div>
         <p class="text-xs opacity-70">
-          Checks every 6 hours for newer patch releases of installed PHP, Go, Bun and Node.js (same minor / major line) and shows a macOS
+          Checks every 6 hours for newer patch releases of installed PHP, Go, Bun and Node.js (same minor / major line) and shows a {{ words.os }}
           notification once per release. Updating installs the new version next to the old one and moves the default over.
         </p>
         <ul v-if="s.updates.list.length" class="space-y-1">
@@ -486,14 +487,14 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <div class="dropdown">
             <button type="button" tabindex="0" class="select select-sm flex w-64 items-center gap-2 text-left">
               <img v-if="s.editorIcons[chosenEditor ?? '']" :src="s.editorIcons[chosenEditor ?? '']" alt="" class="size-4 shrink-0" draggable="false" />
-              <span class="min-w-0 flex-1 truncate">{{ s.settings.editor ? s.settings.editor : `Auto (${s.editors[0] ?? 'Finder'})` }}</span>
+              <span class="min-w-0 flex-1 truncate">{{ s.settings.editor ? s.settings.editor : `Auto (${s.editors[0] ?? words.fileManager})` }}</span>
             </button>
             <ul tabindex="0" class="dropdown-content menu z-30 mt-1 w-64 rounded-box border border-base-300/70 bg-base-100 p-1.5 shadow-xl">
               <li>
                 <button type="button" class="flex items-center gap-2" :class="{ 'menu-active': !s.settings.editor }" @click="pickEditor('')">
                   <img v-if="s.editorIcons[s.editors[0] ?? '']" :src="s.editorIcons[s.editors[0] ?? '']" alt="" class="size-4 shrink-0" draggable="false" />
                   <span class="flex-1 truncate">Auto</span>
-                  <span class="text-xs opacity-50">{{ s.editors[0] ?? 'Finder' }}</span>
+                  <span class="text-xs opacity-50">{{ s.editors[0] ?? words.fileManager }}</span>
                 </button>
               </li>
               <li v-for="e in s.editors" :key="e">
@@ -505,11 +506,11 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
             </ul>
           </div>
 
-          <span class="text-sm opacity-70" title="Sites and service pages: Open in Browser, the menu bar, links in DevCatz">Browser</span>
+          <span class="text-sm opacity-70" :title="`Sites and service pages: Open in Browser, the ${words.tray}, links in DevCatz`">Browser</span>
           <div class="dropdown">
             <button type="button" tabindex="0" class="select select-sm flex w-64 items-center gap-2 text-left">
               <img v-if="chosenBrowser?.icon" :src="chosenBrowser.icon" alt="" class="size-4 shrink-0" draggable="false" />
-              <span class="min-w-0 flex-1 truncate">{{ s.settings.browser ? (chosenBrowser?.name ?? 'Not installed') : `System default (${s.browsers.systemDefault?.name ?? 'macOS'})` }}</span>
+              <span class="min-w-0 flex-1 truncate">{{ s.settings.browser ? (chosenBrowser?.name ?? 'Not installed') : `System default (${s.browsers.systemDefault?.name ?? words.os})` }}</span>
             </button>
             <ul tabindex="0" class="dropdown-content menu z-30 mt-1 w-64 rounded-box border border-base-300/70 bg-base-100 p-1.5 shadow-xl">
               <li>
@@ -844,7 +845,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <label class="flex cursor-pointer items-start gap-3">
             <input type="checkbox" class="toggle toggle-sm toggle-primary mt-0.5" :checked="s.settings.monitorMenuBar" @change="setS3({ monitorMenuBar: ($event.target as HTMLInputElement).checked })" />
             <span>
-              <span class="block text-sm">Show usage in the menu bar menu</span>
+              <span class="block text-sm">Show usage in the {{ words.tray }} menu</span>
               <span class="block text-xs opacity-60">“Monitor · CPU · memory for sites & services” under the sites line.</span>
             </span>
           </label>
@@ -857,7 +858,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <h2 class="flex-1 font-semibold">Alerts</h2>
           <input type="checkbox" class="toggle toggle-sm toggle-primary" :checked="s.settings.monitorAlerts" @change="setS3({ monitorAlerts: ($event.target as HTMLInputElement).checked })" />
         </div>
-        <p class="-mt-2 text-xs opacity-60">A macOS notification when a site or service stays above a limit, or the disk runs low. Each alert at most once an hour.</p>
+        <p class="-mt-2 text-xs opacity-60">A {{ words.os }} notification when a site or service stays above a limit, or the disk runs low. Each alert at most once an hour.</p>
         <div class="grid gap-4 sm:grid-cols-2" :class="{ 'pointer-events-none opacity-50': !s.settings.monitorAlerts }">
           <label class="block">
             <span class="label-caps mb-1 block">CPU above (%)</span>
@@ -1025,7 +1026,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           </div>
           <p class="text-xs opacity-60">
             Your own SMTP account (Gmail app password, Mailgun, Resend, Postmark …) so one caught mail can be forwarded to a real inbox and looked at in a real client.
-            The password is encrypted with the macOS Keychain.
+            The password is encrypted with {{ currentOS === 'mac' ? 'the macOS Keychain' : words.secretStore }}.
           </p>
           <div class="grid gap-4 sm:grid-cols-3">
             <label class="block sm:col-span-2">
@@ -1153,7 +1154,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
             <template v-else>cloudflared is installed from the Expose page when you first share a site.</template>
           </div>
         </div>
-        <p class="text-xs opacity-60">Cloudflare quick tunnels need no account. The providers below need one; their tokens are stored encrypted in the macOS Keychain.</p>
+        <p class="text-xs opacity-60">Cloudflare quick tunnels need no account. The providers below need one; their tokens are stored encrypted in {{ currentOS === 'mac' ? 'the macOS Keychain' : words.secretStore }}.</p>
       </div>
     </div>
     <div v-if="tab === 'expose'" class="card">

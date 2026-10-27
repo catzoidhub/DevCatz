@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { ref } from 'vue';
 import type { SearchBackup, SearchState } from '@shared/types';
 import { attempt, herd, notify } from '../store';
@@ -67,7 +68,7 @@ const size = (n: number) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `$
             <td class="text-xs">{{ new Date(b.createdAt).toLocaleString() }}</td>
             <td class="text-right whitespace-nowrap">
               <button class="btn btn-ghost btn-xs" :disabled="!!busy" @click="restoring = b">Restore…</button>
-              <button class="btn btn-ghost btn-xs" @click="herd.searchRevealBackup(service.kind, b.file)">Show in Finder</button>
+              <button class="btn btn-ghost btn-xs" @click="herd.searchRevealBackup(service.kind, b.file)">{{ words.revealIn }}</button>
               <button class="btn btn-ghost btn-xs text-error" @click="deleting = b">Delete</button>
             </td>
           </tr>

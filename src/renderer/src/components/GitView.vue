@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { currentOS, words } from '@shared/platform';
 import { computed, reactive, ref, watch } from 'vue';
 import type { GitAccount, GitHostKind, GitRepo, GitSshKey, ProjectState } from '@shared/types';
 import ConfirmDialog from './ConfirmDialog.vue';
@@ -283,7 +284,7 @@ const broken = reactive(new Set<string>());
       <template v-else-if="view.kind === 'add'">
         <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
           <h2 class="text-lg font-semibold tracking-tight">Connect an account</h2>
-          <div class="text-xs opacity-60">For repositories to clone, pull requests and SSH keys. The token is encrypted with your macOS Keychain.</div>
+          <div class="text-xs opacity-60">For repositories to clone, pull requests and SSH keys. The token is encrypted with your {{ currentOS === 'mac' ? 'macOS Keychain' : words.secretStore }}.</div>
         </header>
         <form class="mx-auto w-full max-w-xl flex-1 space-y-4 overflow-y-auto p-6" @submit.prevent="add">
           <div class="grid grid-cols-4 gap-2">

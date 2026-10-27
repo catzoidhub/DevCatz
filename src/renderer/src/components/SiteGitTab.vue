@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { GitFile, GitStatus, GitSyncAction, ProjectState } from '@shared/types';
 import GitDiff from './GitDiff.vue';
@@ -357,7 +358,7 @@ function openGitPage() {
                 Commit &amp; Push
               </button>
             </div>
-            <p class="text-[11px] opacity-50">⌘↩ commits.</p>
+            <p class="text-[11px] opacity-50">{{ keyLabel('mod+↩') }} commits.</p>
           </form>
 
           <!-- .gitignore -->

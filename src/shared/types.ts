@@ -1,3 +1,5 @@
+import { keyLabel } from './platform';
+
 export type PackageManager = 'bun' | 'pnpm' | 'yarn' | 'npm';
 
 export type Framework =
@@ -1783,7 +1785,7 @@ export const AI_FEATURES: { id: AiFeature; label: string; hint: string; sends: s
   { id: 'env', label: '.env helper', hint: 'Explains empty or odd keys against .env.example and suggests values pointing at DevCatz services.', sends: 'key names, whether each is set, .env.example values, DevCatz service addresses — never your .env values' },
   { id: 'search', label: 'Search playground', hint: 'Plain words become the engine’s query, filter and sort (Meilisearch, Typesense, OpenSearch …).', sends: 'the index’s settings (fields, filterable / sortable attributes) and your request' },
   { id: 'webhook', label: 'Webhooks (Expose)', hint: 'Explains a request that came in through a share and writes a handler for the site’s framework.', sends: 'that request’s method, path, headers (auth masked) and body' },
-  { id: 'ask', label: 'Ask DevCatz (⌘K)', hint: 'Plain-word commands (“start shop and its database”) turned into DevCatz actions you confirm.', sends: 'site and service names, domains, status and stack — no code, no .env' },
+  { id: 'ask', label: `Ask DevCatz (${keyLabel('mod+K')})`, hint: 'Plain-word commands (“start shop and its database”) turned into DevCatz actions you confirm.', sends: 'site and service names, domains, status and stack — no code, no .env' },
 ];
 
 export interface AiSettings {

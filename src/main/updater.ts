@@ -3,6 +3,7 @@ import electronUpdater, { CancellationToken, type ProgressInfo, type UpdateInfo 
 import type { AppUpdateState } from '@shared/types';
 import { siteBase } from './shared';
 import { store } from './store';
+import { words } from '@shared/platform';
 
 const { autoUpdater } = electronUpdater;
 
@@ -23,7 +24,7 @@ const nice = (e: unknown): string => {
   const m = (e as Error)?.message ?? String(e);
   if (/ENOTFOUND|EAI_AGAIN|ENETUNREACH|ECONNREFUSED|ETIMEDOUT|net::ERR_(INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT)/.test(m)) return 'No connection to the update server. Check the network and try again.';
   if (/sha512 checksum mismatch|checksum/i.test(m)) return 'The download was damaged (its checksum did not match), so it was thrown away. Try again.';
-  if (/code signature|signature/i.test(m)) return 'The update is not signed by the same developer as this DevCatz, so macOS refused it.';
+  if (/code signature|signature/i.test(m)) return `The update is not signed by the same developer as this DevCatz, so ${words.os} refused it.`;
   if (/HttpError: 404|404/.test(m)) return 'The update server has no DevCatz release yet.';
   if (/cancel/i.test(m)) return 'Cancelled';
   return m.split('\n')[0];

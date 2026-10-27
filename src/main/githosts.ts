@@ -6,6 +6,7 @@ import type { GitAccount, GitHostKind, GitPull, GitRepo, GitSshKey } from '@shar
 import { run } from './env';
 import type { GitCreds } from './git';
 import { store } from './store';
+import { currentOS, words } from '@shared/platform';
 
 /**
  * Hosting accounts (GitHub, GitLab, Gitea / Forgejo, Bitbucket) through their
@@ -139,7 +140,7 @@ const callAs = <T>(a: StoredAccount, method: string, path: string, body?: unknow
 
 /** Checks the token against the host, then keeps the account. */
 export async function addAccount(kind: GitHostKind, baseUrlIn: string, token: string, usernameIn: string): Promise<GitAccount> {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('macOS Keychain encryption is not available');
+  if (!safeStorage.isEncryptionAvailable()) throw new Error(`${currentOS === 'mac' ? 'macOS Keychain' : words.secretStore} encryption is not available`);
   const baseUrl = trimUrl(baseUrlIn || DEFAULT_URL[kind]);
   if (!/^https?:\/\/[^/]+/.test(baseUrl)) throw new Error('URL: https://host');
   const t = token.trim();

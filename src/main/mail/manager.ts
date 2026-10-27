@@ -8,6 +8,7 @@ import { dataDir, store, tld } from '../store';
 import { parseMail, snippetOf, type ParsedMail } from './mime';
 import { SmtpCatcher, sendMail, type Envelope } from './smtp';
 import { WEB_INBOX_HTML } from './webinbox';
+import { currentOS, words } from '@shared/platform';
 
 /**
  * The mail catcher: an SMTP server on 127.0.0.1:<mailPort> that keeps every
@@ -323,7 +324,7 @@ export class MailManager {
     const prev = this.forwardStored();
     let password = prev?.password ?? null;
     if (c.password) {
-      if (!safeStorage.isEncryptionAvailable()) throw new Error('macOS Keychain encryption is not available');
+      if (!safeStorage.isEncryptionAvailable()) throw new Error(`${currentOS === 'mac' ? 'macOS Keychain' : words.secretStore} encryption is not available`);
       password = safeStorage.encryptString(c.password).toString('base64');
     } else if (c.password === null) password = null;
     store.setExtra('mailForward', { host: c.host.trim(), port: c.port, security: c.security, username: c.username.trim(), from: c.from.trim(), password });

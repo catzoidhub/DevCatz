@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorUpdate } from '@shared/types';
 import Sparkline from './Sparkline.vue';
@@ -215,7 +216,7 @@ const minutesShown = 10;
                 v-if="sys.memPressure"
                 class="badge badge-soft badge-xs"
                 :class="sys.memPressure === 'normal' ? 'badge-success' : sys.memPressure === 'warn' ? 'badge-warning' : 'badge-error'"
-                title="macOS memory pressure"
+                :title="`${words.os} memory pressure`"
               >
                 {{ sys.memPressure }}
               </span>

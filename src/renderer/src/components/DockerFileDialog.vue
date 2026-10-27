@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyLabel, words } from '@shared/platform';
 import DockerFileEditor from './DockerFileEditor.vue';
 
 /**
@@ -24,7 +25,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string]; save: []; close
         </DockerFileEditor>
       </div>
       <div class="flex items-center gap-2">
-        <span class="text-xs opacity-60"><kbd class="kbd kbd-xs">⌘S</kbd> <slot name="save-hint">saves</slot> · <kbd class="kbd kbd-xs">Esc</kbd> closes</span>
+        <span class="text-xs opacity-60"><kbd class="kbd kbd-xs">{{ keyLabel('mod+S') }}</kbd> <slot name="save-hint">saves</slot> · <kbd class="kbd kbd-xs">Esc</kbd> closes</span>
         <span class="flex-1" />
         <slot name="actions" />
       </div>
