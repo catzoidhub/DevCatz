@@ -443,6 +443,11 @@ async function installWin(version: string, phpBin: string, pkg: string, task: (t
     writeFileSync(iniFile(version, module), iniText(moduleFile(version, module), meta, module));
     return { module, pkg, version: found.pv, zend, enabled: true };
   } finally {
-    rmSync(work, { recursive: true, force: true });
+    // Defender (or the php.exe that just loaded the DLL) can hold it for a moment: a leftover temp folder is no failure.
+    try {
+      rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+    } catch (e) {
+      log(`Temporary folder left behind: ${(e as Error).message}`);
+    }
   }
 }
