@@ -1225,6 +1225,42 @@ export class Herd extends EventEmitter {
     return { specs, install, hint, probed: probe && running };
   }
 
+  /** A starter OpenAPI 3 document in an app's folder, for stacks without a generator (or before one is added). */
+  async createOpenApi(id: string, format: 'yaml' | 'json', appDir?: string): Promise<string> {
+    const p = this.project(id);
+    const stack = this.stacks.get(id);
+    const apps = (stack?.apps ?? []).filter((a) => a.kind !== 'assets');
+    const app = apps.find((a) => a.dir === appDir) ?? apps.find((a) => a.domain) ?? apps[0];
+    const dir = join(p.path, !app || app.dir === '.' ? '' : app.dir);
+    if (relative(p.path, dir).startsWith('..')) throw new Error('Unknown app');
+    const file = join(dir, format === 'yaml' ? 'openapi.yaml' : 'swagger.json');
+    if (existsSync(file)) throw new Error(`${relative(p.path, file)} already exists`);
+    const pkg = readJson<PackageJson & { version?: string }>(join(dir, 'package.json'));
+    const composer = readJson<{ name?: string; version?: string; description?: string }>(join(dir, 'composer.json'));
+    const title = pkg?.name ?? composer?.name ?? app?.name ?? p.name;
+    const version = pkg?.version ?? composer?.version ?? '1.0.0';
+    const server = this.urlFor(p, app?.domain || undefined);
+    const doc = {
+      openapi: '3.0.3',
+      info: { title, version, description: `API of ${p.name}. Describe each route under paths; DialCatz imports them from this file.` },
+      servers: [{ url: server, description: 'Local (DevCatz)' }],
+      paths: {
+        '/health': {
+          get: {
+            summary: 'Health check (an example: replace it with your routes)',
+            operationId: 'health',
+            responses: { '200': { description: 'OK', content: { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string', example: 'ok' } } } } } } },
+          },
+        },
+      },
+      components: { schemas: {}, securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
+    };
+    writeFileSync(file, format === 'yaml' ? `# OpenAPI document of ${p.name} (created by DevCatz). DialCatz imports its routes.\n${toYaml(doc)}` : `${JSON.stringify(doc, null, 2)}\n`);
+    this.processes.log(id, 'sys', `[openapi] created ${relative(p.path, file)}`);
+    this.changed();
+    return file;
+  }
+
   /**
    * Adds an OpenAPI generator: Scramble for Laravel (`composer require dedoc/scramble --dev`, serves /docs/api.json
    * in the local environment) or @nestjs/swagger for NestJS (the package, and three lines in src/main.ts before
@@ -2459,6 +2495,13 @@ export class Herd extends EventEmitter {
 
   async refreshPhps(): Promise<void> {
     this.installedPhps = await phps.listInstalled();
+    // Windows: php.ini written before extensions moved to conf.d/20-<name>.ini still loads them itself: rewrite it once.
+    for (const p of this.installedPhps) {
+      if (isWin && p.source === 'mrcatz' && phps.iniNeedsUpgrade(p.version)) {
+        await phps.writeIni(p.php, p.version, phps.readIni(p.version)).catch((e) => console.error(`php.ini ${p.version}:`, e));
+        this.fpm.reload(p.version);
+      }
+    }
     const def = store.settings.phpDefault;
     if (def && !this.installedPhps.some((i) => i.version === def)) store.updateSettings({ phpDefault: null });
     const defInst = this.installedPhps.find((i) => i.version === store.settings.phpDefault) ?? this.installedPhps.find((i) => i.source === 'mrcatz') ?? null;
@@ -3958,4 +4001,26 @@ function gitignoreFor(stack: StackInfo | undefined): string {
   if (runtimes.has('python')) blocks.push('# Python\n.venv/\nvenv/\n__pycache__/\n*.py[cod]\n.pytest_cache/\n.mypy_cache/\n.ruff_cache/\n*.egg-info/\ninstance/\ndb.sqlite3');
   if (runtimes.has('go')) blocks.push('# Go\nbin/\ntmp/\n*.exe\n*.test\n*.out');
   return `${blocks.join('\n\n')}\n`;
+}
+
+/** Minimal YAML for plain JSON data (objects, arrays, strings, numbers, booleans): enough for a starter OpenAPI file. */
+function toYaml(value: unknown, indent = ''): string {
+  const scalar = (v: unknown) =>
+    typeof v === 'string' ? (/^[\w./ -]*$/.test(v) && !/^(true|false|null|yes|no|on|off|~|-?\d[\d.]*)$/i.test(v) && v.trim() === v && v !== '' ? v : JSON.stringify(v)) : String(v);
+  const lines: string[] = [];
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (item && typeof item === 'object') lines.push(`${indent}-${toYaml(item, `${indent}  `).replace(/^\s*/, ' ')}`);
+      else lines.push(`${indent}- ${scalar(item)}\n`);
+    }
+    return lines.join('');
+  }
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    const key = /^[\w./-]+$/.test(k) && !/^\d+$/.test(k) ? k : JSON.stringify(k);
+    if (v && typeof v === 'object') {
+      const empty = Array.isArray(v) ? !v.length : !Object.keys(v).length;
+      lines.push(empty ? `${indent}${key}: ${Array.isArray(v) ? '[]' : '{}'}\n` : `${indent}${key}:\n${toYaml(v, `${indent}  `)}`);
+    } else lines.push(`${indent}${key}: ${scalar(v)}\n`);
+  }
+  return lines.join('');
 }

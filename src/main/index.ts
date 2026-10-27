@@ -753,6 +753,7 @@ function api(): HerdApi {
       shell.showItemInFolder(String(file));
     },
     addOpenApi: (siteId, kind) => herd.addOpenApi(String(siteId), kind === 'nest-swagger' ? 'nest-swagger' : 'scramble'),
+    createOpenApi: (siteId, format, app) => herd.createOpenApi(String(siteId), format === 'json' ? 'json' : 'yaml', typeof app === 'string' ? app : undefined),
     dialcatzOpen: (siteId) => {
       if (!herd.find(String(siteId))) throw new Error('This site is gone');
       return herd.dialcatz.open(String(siteId));

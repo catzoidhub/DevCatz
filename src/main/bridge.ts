@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { app } from 'electron';
 import type { AppInfo, ProjectConfig, SiteOpenApi, StackInfo } from '@shared/types';
 
@@ -77,7 +77,8 @@ export function specFiles(p: ProjectConfig, stack: StackInfo | undefined): { app
       if (st.isDirectory()) {
         if (depth < 3 && !SKIP.has(e)) walk(abs, depth + 1);
       } else if (SPEC_NAME.test(e) && st.size < 20 * 1024 * 1024) {
-        const rel = relative(p.path, abs);
+        // Forward slashes on Windows too, so app folders (`api`, `apps/web`) compare the same way.
+        const rel = relative(p.path, abs).split(sep).join('/');
         // The app whose folder holds it (the deepest match), else the site's first app.
         const owner = [...(stack?.apps ?? [])].filter((a) => a.dir === '.' || rel.startsWith(`${a.dir}/`)).sort((a, b) => b.dir.length - a.dir.length)[0];
         out.push({ app: owner?.dir ?? '.', file: abs });

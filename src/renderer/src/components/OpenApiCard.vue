@@ -35,7 +35,7 @@ const laravel = computed(() => props.site.stack.apps.some((a) => a.framework ===
 const importable = computed(() => laravel.value || !!info.value?.specs.length);
 const notYet = computed(() => (importable.value ? null : info.value ? 'Nothing to import yet: this site has no OpenAPI document (add one below)' : 'Looking for the API…'));
 
-const rel = (file: string) => (file.startsWith(`${props.site.path}/`) ? file.slice(props.site.path.length + 1) : file);
+const rel = (file: string) => (file.startsWith(props.site.path) && /[\\/]/.test(file[props.site.path.length] ?? '') ? file.slice(props.site.path.length + 1) : file);
 const appName = (dir: string) => props.site.stack.apps.find((a) => a.dir === dir)?.name ?? dir;
 
 const asking = ref(false);
@@ -44,6 +44,21 @@ const WHAT = {
   scramble: { title: 'Add Scramble to this Laravel site?', text: 'Runs composer require dedoc/scramble --dev. Scramble describes your routes, requests and responses by reading the code — no annotations — and serves the document at /docs/api.json (and a viewer at /docs/api) in the local environment.', button: 'Add Scramble' },
   'nest-swagger': { title: 'Add @nestjs/swagger to this NestJS site?', text: 'Installs @nestjs/swagger and adds three lines to src/main.ts, before app.listen, that serve the document at /docs-json (and a viewer at /docs). Review the change in Git afterwards.', button: 'Add @nestjs/swagger' },
 } as const;
+// A starter document by hand, for any stack: openapi.yaml or swagger.json in the chosen app's folder.
+const apiApps = computed(() => props.site.stack.apps.filter((a) => a.kind !== 'assets'));
+const createApp = ref('');
+watch(apiApps, (a) => (createApp.value = (a.find((x) => x.domain) ?? a[0])?.dir ?? '.'), { immediate: true });
+const creating = ref<'yaml' | 'json' | null>(null);
+async function create(format: 'yaml' | 'json') {
+  creating.value = format;
+  const file = await attempt(() => herd.createOpenApi(props.site.id, format, createApp.value));
+  creating.value = null;
+  if (!file) return;
+  notify('success', `${rel(file)} created — describe your routes in it; DialCatz imports them`);
+  await load(false);
+  await herd.openapiReveal(props.site.id, file);
+}
+
 async function add() {
   if (!info.value?.install) return;
   asking.value = false;
@@ -91,11 +106,27 @@ async function add() {
             <p v-else-if="info.install && !laravel" class="text-xs opacity-70">DialCatz needs one to import this site's routes; DevCatz can add it.</p>
           </div>
         </div>
-        <div v-if="info.install" class="flex justify-end">
-          <button class="btn btn-sm btn-primary" :disabled="adding || !!site.dbTask" @click="asking = true">
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <select v-if="apiApps.length > 1" v-model="createApp" class="select select-sm w-auto" title="The app whose folder gets the file">
+            <option v-for="a in apiApps" :key="a.dir" :value="a.dir">{{ a.name }}{{ a.dir === '.' ? '' : ` (${a.dir})` }}</option>
+          </select>
+          <button
+            class="btn btn-sm"
+            :class="{ 'btn-primary': !info.install }"
+            :disabled="!!creating"
+            title="A starter OpenAPI 3 document: this app's name and local URL, one example path to replace with your routes"
+            @click="create('yaml')"
+          >
+            <span v-if="creating === 'yaml'" class="loading loading-spinner loading-xs" />Create openapi.yaml
+          </button>
+          <button class="btn btn-sm" :disabled="!!creating" title="The same starter document in JSON (OpenAPI 3)" @click="create('json')">
+            <span v-if="creating === 'json'" class="loading loading-spinner loading-xs" />Create swagger.json
+          </button>
+          <button v-if="info.install" class="btn btn-sm btn-primary" :disabled="adding || !!site.dbTask" @click="asking = true">
             <span v-if="adding" class="loading loading-spinner loading-xs" />{{ WHAT[info.install].button }}
           </button>
         </div>
+        <p v-if="info.install" class="text-right text-xs opacity-60">{{ WHAT[info.install].button.replace('Add ', '') }} writes the document from your code; a file is written by hand.</p>
       </template>
       <div v-else class="flex items-center gap-2 text-sm opacity-60"><span class="loading loading-spinner loading-sm" />Looking…</div>
     </div>
