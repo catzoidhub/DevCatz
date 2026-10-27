@@ -355,7 +355,7 @@ const openBinaries = (id: string) => attempt(() => herd.dbOpenBinaries(id));
 
       <template v-else-if="selected">
       <!-- Header (window drag area, like a site's) -->
-      <header class="drag border-b border-base-300/60 px-6 pt-5 pb-3">
+      <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-3">
         <div class="flex flex-wrap items-center gap-3">
           <img :src="DB_LOGO[selected.engine]" alt="" class="size-11 rounded-xl bg-white p-1.5 ring-1 ring-base-content/10" draggable="false" />
           <div class="min-w-0">

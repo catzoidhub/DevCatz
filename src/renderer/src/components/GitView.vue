@@ -201,7 +201,7 @@ const broken = reactive(new Set<string>());
     <main class="flex min-w-0 flex-1 flex-col bg-base-100">
       <!-- Sites -->
       <template v-if="view.kind === 'sites'">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <h2 class="text-lg font-semibold tracking-tight">Sites</h2>
           <div class="text-xs opacity-60">Branch, changes and commits to push / pull of every site (refreshed every 20 s).</div>
         </header>
@@ -241,7 +241,7 @@ const broken = reactive(new Set<string>());
 
       <!-- SSH keys -->
       <template v-else-if="view.kind === 'keys'">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <h2 class="text-lg font-semibold tracking-tight">SSH keys</h2>
           <div class="text-xs opacity-60">Keys in ~/.ssh, used for git@… remotes. Add one to an account so pushes over SSH work.</div>
         </header>
@@ -282,7 +282,7 @@ const broken = reactive(new Set<string>());
 
       <!-- Add account -->
       <template v-else-if="view.kind === 'add'">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <h2 class="text-lg font-semibold tracking-tight">Connect an account</h2>
           <div class="text-xs opacity-60">For repositories to clone, pull requests and SSH keys. The token is encrypted with your {{ currentOS === 'mac' ? 'macOS Keychain' : words.secretStore }}.</div>
         </header>
@@ -320,7 +320,7 @@ const broken = reactive(new Set<string>());
 
       <!-- Account -->
       <template v-else-if="account">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <div class="flex items-center gap-3">
             <img v-if="account.avatarUrl && !broken.has(account.id)" :src="account.avatarUrl" alt="" class="size-11 rounded-full bg-base-300/70" draggable="false" @error="broken.add(account.id)" />
             <span v-else class="grid size-11 place-items-center rounded-full bg-base-300/70"><svg class="size-6" viewBox="0 0 24 24" :style="{ color: ICON(account.kind).color }"><path :d="ICON(account.kind).d" fill="currentColor" /></svg></span>

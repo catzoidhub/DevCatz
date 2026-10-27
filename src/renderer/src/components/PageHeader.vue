@@ -19,7 +19,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <header class="drag flex items-start gap-3 border-b border-base-300/60 px-6 pt-5 pb-4">
+  <header class="drag win-top flex items-start gap-3 border-b border-base-300/60 px-6 pt-5 pb-4">
     <div class="min-w-0 flex-1">
       <!-- Icon and title on one line, centred on each other; the slot (tabs, text) goes below. -->
       <div class="flex items-center gap-3">

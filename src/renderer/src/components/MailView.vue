@@ -278,7 +278,7 @@ onBeforeUnmount(() => timer && clearTimeout(timer));
     <main class="flex min-w-0 flex-1 flex-col bg-base-100">
       <!-- Message -->
       <template v-if="msg">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-3">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-3">
           <div class="flex items-start gap-3">
             <div class="min-w-0 flex-1">
               <h2 class="truncate text-lg font-semibold tracking-tight">{{ msg.subject || '(no subject)' }}</h2>
@@ -344,7 +344,7 @@ onBeforeUnmount(() => timer && clearTimeout(timer));
 
       <!-- Nothing selected: the catcher itself -->
       <template v-else>
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <div class="flex flex-wrap items-center gap-3">
             <div class="min-w-0 flex-1">
               <h2 class="flex items-center gap-2 text-lg font-semibold tracking-tight">

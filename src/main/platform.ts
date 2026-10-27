@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { cpSync, renameSync, rmSync } from 'node:fs';
 import { delimiter } from 'node:path';
 
 /**
@@ -48,4 +49,22 @@ export function killTree(pid: number, signal: NodeJS.Signals = 'SIGTERM'): void 
       /* already gone */
     }
   }
+}
+
+/**
+ * Moves a freshly unpacked folder into place. On Windows, Defender scans new .exe / .dll files and keeps them locked for
+ * a moment (EPERM / EBUSY on rename): try again for ~15 s, then copy and delete instead.
+ */
+export async function moveDir(from: string, to: string): Promise<void> {
+  if (!isWin) return renameSync(from, to);
+  for (let i = 0; i < 30; i++) {
+    try {
+      return renameSync(from, to);
+    } catch (e) {
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes((e as NodeJS.ErrnoException).code ?? '')) throw e;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  cpSync(from, to, { recursive: true });
+  rmSync(from, { recursive: true, force: true });
 }

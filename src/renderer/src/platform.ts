@@ -3,6 +3,8 @@
  * On Windows so far: sites (Node.js, Bun, Go, Python, PHP), Runtimes for those, Git, the proxy and the local CA; stage 3 adds Database.
  */
 export const isWin = window.herd.platform === 'win32';
+// `html.is-win`: CSS for Windows only, e.g. `.win-top` (room above a page's header for the window buttons).
+if (isWin) document.documentElement.classList.add('is-win');
 
 /** Rail sections and Settings tabs Windows has so far. */
 export const WIN_SECTIONS = new Set(['projects', 'runtimes', 'database', 'git', 'settings']);

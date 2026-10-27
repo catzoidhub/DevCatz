@@ -154,7 +154,7 @@ const openMail = () => (navRequest.value = { section: 'mail' });
 
 <template>
   <template v-if="g && !g.installed">
-    <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+    <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
       <div class="flex items-center gap-3">
         <img :src="GW_LOGO[g.kind]" alt="" class="size-11 rounded-xl bg-white p-1 ring-1 ring-base-content/10" draggable="false" />
         <div class="min-w-0">
@@ -180,7 +180,7 @@ const openMail = () => (navRequest.value = { section: 'mail' });
   </template>
 
   <template v-else-if="g?.installed && g.config">
-    <header class="drag border-b border-base-300/60 px-6 pt-5 pb-3">
+    <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-3">
       <div class="flex flex-wrap items-center gap-3">
         <img :src="GW_LOGO[g.kind]" alt="" class="size-11 rounded-xl bg-white p-1 ring-1 ring-base-content/10" draggable="false" />
         <div class="min-w-0 flex-1">

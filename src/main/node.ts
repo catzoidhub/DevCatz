@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { checksumFor, downloadVerified } from './download';
 import type { InstalledNode, NodeInstallProgress, RemoteNode } from '@shared/types';
 import { getShellEnv, run } from './env';
-import { exe, isWin, pathKey, splitPath, TAR } from './platform';
+import { exe, isWin, pathKey, splitPath, TAR, moveDir } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -123,7 +123,7 @@ export async function install(version: string, progress: (p: NodeInstallProgress
     // Windows 10+ ships bsdtar as tar.exe, which unpacks the .zip too.
     const { code, stderr } = await run(TAR, [isWin ? '-xf' : '-xzf', archive, '-C', tmp], { timeout: 180_000 });
     if (code !== 0) throw new Error(`tar: ${stderr.trim()}`);
-    renameSync(join(tmp, name), target);
+    await moveDir(join(tmp, name), target);
     progress({ version, phase: 'done', received, total });
   } finally {
     rmSync(tmp, { recursive: true, force: true });

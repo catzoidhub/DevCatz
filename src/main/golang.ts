@@ -4,7 +4,7 @@ import type { GoChoice, InstalledGo, RemoteGo, RuntimeInstallProgress } from '@s
 import { downloadVerified } from './download';
 import { run } from './env';
 import { compare, shimDir, writeCmdShim } from './node';
-import { exe, isWin, TAR } from './platform';
+import { exe, isWin, TAR, moveDir } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -115,7 +115,7 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
     const { code, stderr } = await run(TAR, [isWin ? '-xf' : '-xzf', archive, '-C', tmp], { timeout: 300_000 });
     if (code !== 0) throw new Error(`tar: ${stderr.trim()}`);
     mkdirSync(target, { recursive: true });
-    renameSync(join(tmp, 'go'), join(target, 'go'));
+    await moveDir(join(tmp, 'go'), join(target, 'go'));
     progress({ version, phase: 'done', received, total });
   } finally {
     rmSync(tmp, { recursive: true, force: true });

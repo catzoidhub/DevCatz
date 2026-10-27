@@ -227,7 +227,7 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.searchUninstal
 
     <main class="flex min-w-0 flex-1 flex-col bg-base-100">
       <template v-if="selected && !selected.installed">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <div class="flex items-center gap-3">
             <img :src="LOGO[selected.kind]" alt="" class="size-11 rounded-xl bg-white p-1 ring-1 ring-base-content/10" draggable="false" />
             <div class="min-w-0">
@@ -253,7 +253,7 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.searchUninstal
       </template>
 
       <template v-else-if="selected?.installed && selected.config && selected.urls">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-3">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-3">
           <div class="flex flex-wrap items-center gap-3">
             <img :src="LOGO[selected.kind]" alt="" class="size-11 rounded-xl bg-white p-1 ring-1 ring-base-content/10" draggable="false" />
             <div class="min-w-0 flex-1">

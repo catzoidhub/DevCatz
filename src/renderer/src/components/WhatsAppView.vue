@@ -394,7 +394,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
       <GatewayEngineView v-if="gwPage" :kind="gwPage" />
       <!-- Engine, not installed -->
       <template v-else-if="selected && !selected.installed">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <div class="flex items-center gap-3">
             <img :src="LOGO[selected.engine]" alt="" class="size-11 rounded-xl bg-white p-1 ring-1 ring-base-content/10" draggable="false" />
             <div class="min-w-0">
@@ -420,7 +420,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
 
       <!-- Engine, installed -->
       <template v-else-if="selected?.installed && selected.config">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-3">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-3">
           <div class="flex flex-wrap items-center gap-3">
             <img :src="LOGO[selected.engine]" alt="" class="size-11 rounded-xl bg-white p-1 ring-1 ring-base-content/10" draggable="false" />
             <div class="min-w-0 flex-1">
@@ -670,7 +670,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
 
       <!-- Inspector -->
       <template v-else-if="page === 'inspector'">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <div class="flex flex-wrap items-center gap-3">
             <div class="min-w-0 flex-1">
               <h2 class="text-lg font-semibold tracking-tight">Inspector</h2>
@@ -712,7 +712,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
 
       <!-- Webhooks -->
       <template v-else-if="page === 'webhooks'">
-        <header class="drag border-b border-base-300/60 px-6 pt-5 pb-4">
+        <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <div class="flex flex-wrap items-center gap-3">
             <div class="min-w-0 flex-1">
               <h2 class="text-lg font-semibold tracking-tight">Webhooks to sites</h2>

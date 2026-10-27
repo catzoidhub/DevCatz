@@ -8,7 +8,7 @@ import { downloadVerified } from './download';
 import { spawn } from 'node:child_process';
 import { getShellEnv, run } from './env';
 import { compare, shimDir } from './node';
-import { isWin, TAR } from './platform';
+import { isWin, TAR, moveDir } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -240,7 +240,7 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
     const check = await run(join(tmp, 'bin/php'), ['-n', '-r', 'echo PHP_VERSION;'], { timeout: 15_000 });
     if (check.stdout.trim() !== version) throw new Error(`Downloaded binary reports "${check.stdout.trim() || check.stderr.trim()}", expected ${version}`);
     writeFileSync(join(tmp, 'SHA256SUMS'), sums.join('\n') + '\n');
-    renameSync(tmp, target);
+    await moveDir(tmp, target);
     progress({ version, phase: 'done', received: done, total: done });
     return version;
   } finally {
@@ -299,7 +299,7 @@ async function installWin(version: string, progress: (p: RuntimeInstallProgress)
     }
     if (check.stdout.trim() !== version) throw new Error(`Downloaded binary reports "${check.stdout.trim() || check.stderr.trim()}", expected ${version}`);
     writeFileSync(join(tmp, 'SHA256SUMS'), `${digest}  ${file}\n`);
-    renameSync(tmp, target);
+    await moveDir(tmp, target);
     progress({ version, phase: 'done', received: size, total: size });
     return version;
   } finally {

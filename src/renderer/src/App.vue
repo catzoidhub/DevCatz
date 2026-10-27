@@ -666,7 +666,8 @@ async function park() {
     </section>
     <section v-else-if="section === 'settings'" class="flex min-w-0 flex-1 flex-col bg-base-100">
       <!-- Room for back / forward above the header (the strip moves the window). -->
-      <div class="drag title-strip h-10 shrink-0"><span class="nav-hole" aria-hidden="true" /></div>
+      <!-- Windows: PageHeader's win-top already leaves the room above. -->
+      <div v-if="!isWin" class="drag title-strip h-10 shrink-0"><span class="nav-hole" aria-hidden="true" /></div>
       <SettingsView :closable="false" :focus="settingsFocus" />
     </section>
     <section v-else class="flex min-w-0 flex-1 flex-col bg-base-100">

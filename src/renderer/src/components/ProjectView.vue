@@ -346,8 +346,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
 
 <template>
   <!-- Header -->
-  <!-- Windows: room above for the minimize / maximize / close buttons (title bar overlay, 40 px) on the right. -->
-  <header class="drag border-b border-base-300/60 px-6 pb-3" :class="isWin ? 'pt-12' : 'pt-5'">
+  <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-3">
     <!-- A narrow window puts the buttons on a line of their own instead of over the title. -->
     <div class="flex flex-wrap items-start gap-x-3 gap-y-2">
       <div class="min-w-[14rem] flex-1 basis-[18rem]">
