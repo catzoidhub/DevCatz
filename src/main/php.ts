@@ -437,6 +437,15 @@ function winBaseIni(phpBin: string): string {
   ].join('\r\n');
 }
 
+/** Windows: a php.ini from before the per-extension conf.d files (it has `extension=` lines of its own). */
+export function iniNeedsUpgrade(version: string): boolean {
+  try {
+    return /^\s*(zend_)?extension\s*=/m.test(readFileSync(join(etcDir(version), 'php.ini'), 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
 /** Windows: turns the usual extensions on once (an extension switched off keeps its ".ini.disabled"). */
 function winDefaultExtensions(phpBin: string, version: string): void {
   const ext = join(dirname(phpBin), 'ext');

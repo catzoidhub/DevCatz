@@ -150,7 +150,7 @@ const expanded = ref<string | null>(null);
 
 const KIND_LABEL: Record<MonitorKind, string> = {
   site: 'Site',
-  php: 'PHP-FPM',
+  php: words.phpServer,
   database: 'Database',
   storage: 'Storage',
   websocket: 'WebSocket',
@@ -380,7 +380,7 @@ const minutesShown = 10;
       </div>
 
       <p class="text-xs opacity-60">
-        CPU is per core (100% = one core busy); memory is each process tree’s footprint, like Activity Monitor. PHP-FPM pools are shared by the PHP sites listed
+        CPU is per core (100% = one core busy); memory is each process tree’s footprint, like Activity Monitor. {{ words.phpServer }} pools are shared by the PHP sites listed
         under them.
         <template v-if="latest?.capabilities.blockIoHint"><br /><span class="text-warning">{{ latest.capabilities.blockIoHint }}</span></template>
         <br />Alerts and the sampling rate: Settings → Monitoring.

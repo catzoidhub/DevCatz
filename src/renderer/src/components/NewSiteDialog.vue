@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { FolderPreview, GitRepo, HerdSite, PackageManager } from '@shared/types';
 import { ICONS } from '../icons';
@@ -412,7 +413,7 @@ async function create() {
             {{ !phpInstalled.length ? 'PHP is not installed yet.' : `composer.json asks for PHP ${preview.autoPhp.spec}, which is not installed.` }}
             <RuntimeInstallButton kind="php" :spec="preview.autoPhp.spec" @installed="refreshPreview" />
           </span>
-          <span v-else class="text-xs opacity-60">Served by PHP-FPM, always on; Start only runs Vite / queue / scheduler.</span>
+          <span v-else class="text-xs opacity-60">Served by {{ words.phpServer }}, always on; Start only runs Vite / queue / scheduler.</span>
         </label>
 
         <label v-if="isGo" class="block">

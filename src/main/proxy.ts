@@ -289,7 +289,7 @@ export class Proxy {
       if (v !== undefined) params[`HTTP_${k.toUpperCase().replace(/-/g, '_')}`] = Array.isArray(v) ? v.join(', ') : v;
     }
     fastcgi({ socketPath: php.socket, params, req, res, onStderr: (t) => console.warn(`php ${route.domain}:`, t.trim()) }).catch((err) =>
-      this.page(res, { ...route, running: true }, `PHP-FPM: ${(err as Error).message}`, String(req.headers.host ?? '')),
+      this.page(res, { ...route, running: true }, `${words.phpServer}: ${(err as Error).message}`, String(req.headers.host ?? '')),
     );
   }
 

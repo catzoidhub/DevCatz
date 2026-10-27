@@ -3,6 +3,7 @@ import { isWin } from './platform';
 import { join } from 'node:path';
 import type { AppState, GwKind, SearchKind, StorageAction, StorageKind, WaEngine, WsKind } from '@shared/types';
 import { dot, type DotColor } from './menuicons';
+import { words } from '@shared/platform';
 
 /** Where the window opens: the sites list, Settings, or the "new site" dialog. */
 export type NavTarget = 'sites' | 'settings' | 'new-site' | 'storage' | 'database' | 'websocket' | 'search' | 'monitoring' | 'mail' | 'whatsapp' | 'expose' | 'node' | 'bun' | 'go' | 'php' | 'update:check' | 'update:show';
@@ -142,7 +143,8 @@ export class HerdTray {
       { label: running ? `Sites (${running}/${total} running)` : 'Sites', click: act('sites', () => a.show('sites')) },
       { label: 'Create New Site…', click: act('new-site', () => a.show('new-site')) },
       ...(this.monitorLine ? [{ label: this.monitorLine, click: act('monitoring', () => a.show('monitoring')) }] : []),
-      {
+      // Windows: no mail catcher, object storage or DNS yet (those sections are hidden there).
+      ...(isWin ? [] : [{
         label: state.mail.running ? `Mail · ${state.mail.unread ? `${state.mail.unread} new` : `${state.mail.count} caught`}` : 'Mail · catcher off',
         icon: dot(...DOT[state.mail.running ? 'running' : 'stopped']),
         submenu: [
@@ -151,7 +153,7 @@ export class HerdTray {
             ? { label: 'Stop Mail Server', click: act('mail-stop', () => a.mailAction('stop')) }
             : { label: 'Start Mail Server', click: act('mail-start', () => a.mailAction('start')) },
         ],
-      },
+      }]),
       ...wa.map((w) => {
         const on = w.status === 'running' || w.status === 'starting';
         const linked = w.sessions.filter((x) => x.status === 'connected').length;
@@ -199,11 +201,11 @@ export class HerdTray {
       { type: 'separator' },
       // Like Laravel Herd's nginx / dnsmasq / PHP-FPM rows: a status dot icon + name · state.
       { label: 'Services', enabled: false },
-      status(state.services.proxy ? 'running' : 'down', 'Proxy (nginx)', undefined, act('services', () => a.show('settings'))),
-      status(state.services.dns, 'DNS (dnsmasq)', state.services.dns === 'not-needed' ? 'not needed for .localhost' : undefined, act('services', () => a.show('settings'))),
+      status(state.services.proxy ? 'running' : 'down', isWin ? 'Proxy' : 'Proxy (nginx)', undefined, act('services', () => a.show('settings'))),
+      ...(isWin ? [] : [status(state.services.dns, 'DNS (dnsmasq)', state.services.dns === 'not-needed' ? 'not needed for .localhost' : undefined, act('services', () => a.show('settings')))]),
       ...(fpm.length
-        ? fpm.map((f) => status(f.running ? 'running' : 'down', `PHP-FPM ${f.version}`, `${f.sites.length} site${f.sites.length === 1 ? '' : 's'}`, act('services', () => a.show('php'))))
-        : [status('not-needed', 'PHP-FPM', 'no PHP sites', act('services', () => a.show('php')))]),
+        ? fpm.map((f) => status(f.running ? 'running' : 'down', `${words.phpServer} ${f.version}`, `${f.sites.length} site${f.sites.length === 1 ? '' : 's'}`, act('services', () => a.show('php'))))
+        : [status('not-needed', words.phpServer, 'no PHP sites', act('services', () => a.show('php')))]),
       { label: 'Restart Services', click: act('restart-services', () => a.restartServices()) },
       { type: 'separator' },
       // Database services: status and start/stop per instance.
@@ -226,8 +228,8 @@ export class HerdTray {
         : [{ label: 'Set up a database…', click: act('database', () => a.show('database')) }]),
       { type: 'separator' },
       // Object storage: status and controls per installed service.
-      { label: 'Object Storage', enabled: false },
-      ...(storage.length
+      ...(isWin ? [] : [{ label: 'Object Storage', enabled: false }]),
+      ...(isWin ? [] : storage.length
         ? storage.map((s) => {
             const on = s.status === 'running' || s.status === 'starting';
             return {
@@ -245,7 +247,7 @@ export class HerdTray {
             };
           })
         : [{ label: 'Set up storage…', click: act('storage', () => a.show('storage')) }]),
-      { type: 'separator' },
+      ...(isWin ? [] : [{ type: 'separator' as const }]),
       // WebSocket servers: only the installed ones (nothing when none is).
       ...(ws.length
         ? [

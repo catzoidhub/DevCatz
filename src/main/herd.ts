@@ -132,6 +132,7 @@ import type {
   RuntimeNeed,
 } from '@shared/types';
 import { isPhpFramework } from '@shared/types';
+import { words } from '@shared/platform';
 
 /** LTS codenames for `lts/<name>` specs before nodejs.org has been asked. */
 const NO_NODE = 'Node.js is not installed. Install it from the site\'s Overview (Install Node.js) or the Node.js page (sidebar), then try again.';
@@ -2562,7 +2563,7 @@ export class Herd extends EventEmitter {
       this.processes.log(id, 'sys', msg);
       throw new Error(msg);
     }
-    this.processes.log(id, 'sys', `Using PHP ${php.version} (${php.reason}${php.source === 'herd' ? ', Laravel Herd build' : ''}); served by PHP-FPM, always on`);
+    this.processes.log(id, 'sys', `Using PHP ${php.version} (${php.reason}${php.source === 'herd' ? ', Laravel Herd build' : ''}); served by ${words.phpServer}, always on`);
     if (stack.depsMissing) {
       const msg = 'vendor/ is missing: use "Install dependencies" (composer install) first.';
       this.processes.log(id, 'sys', msg);
@@ -2594,7 +2595,7 @@ export class Herd extends EventEmitter {
       else specs.push({ label: 'reverb', cwd: p.path, command: `php artisan reverb:start --host=127.0.0.1 --port=${this.reverbPort(p)}`, env: base });
     }
     if (!specs.length) {
-      this.processes.log(id, 'sys', 'Nothing to start: the site is served by PHP-FPM all the time. (Enable the queue worker or scheduler in Settings.)');
+      this.processes.log(id, 'sys', `Nothing to start: the site is served by ${words.phpServer} all the time. (Enable the queue worker or scheduler in Settings.)`);
       return;
     }
     this.processes.startMany(id, specs);
@@ -3728,7 +3729,7 @@ export class Herd extends EventEmitter {
     }
     for (const f of this.fpm.pids()) {
       const names = f.sites.map((id) => this.find(id)?.name ?? id);
-      out.push({ id: `php:${f.version}`, kind: 'php', name: `PHP-FPM ${f.version}`, detail: names.join(', ') || 'no sites', active: true, pids: [f.pid], dataDirs: [], link: null });
+      out.push({ id: `php:${f.version}`, kind: 'php', name: `${words.phpServer} ${f.version}`, detail: names.join(', ') || 'no sites', active: true, pids: [f.pid], dataDirs: [], link: null });
     }
     for (const d of this.dbs.state()) {
       if (d.pending) continue;

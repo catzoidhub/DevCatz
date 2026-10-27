@@ -9,6 +9,7 @@ import { etcDir, iniEnv } from './php';
 import { compare } from './node';
 import { isWin, killTree } from './platform';
 import { dataDir } from './store';
+import { words } from '@shared/platform';
 
 /** Windows: one `php-cgi -b` per port; each serves one request at a time. */
 interface Worker {
@@ -179,7 +180,7 @@ export class FpmManager {
     child.on('exit', (code, signal) => {
       pool.child = null;
       if (!pool.stopping) {
-        pool.error = `PHP-FPM ${v} exited (${signal ?? `code ${code}`}); see logs/php-fpm-${v}.log`;
+        pool.error = `${words.phpServer} ${v} exited (${signal ?? `code ${code}`}); see logs/php-fpm-${v}.log`;
         // Crash loop guard: retry once after a pause.
         setTimeout(() => {
           if (!pool.child && !pool.stopping && this.pools.get(v) === pool) this.start(pool);

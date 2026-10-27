@@ -25,6 +25,8 @@ export function wordsFor(os: OS) {
     /** Where the app keeps its data, for hints and placeholders (`<appData>/DevCatz`). */
     appData: os === 'mac' ? '~/Library/Application Support' : os === 'windows' ? '%APPDATA%' : '~/.config',
     sep: os === 'windows' ? '\\' : '/',
+    /** What serves PHP sites: PHP-FPM pools on macOS, php-cgi FastCGI workers on Windows. */
+    phpServer: os === 'windows' ? 'PHP (FastCGI)' : 'PHP-FPM',
     installGit: os === 'mac' ? 'run xcode-select --install in Terminal' : os === 'windows' ? 'install Git for Windows from git-scm.com' : 'install git with your package manager',
   };
 }

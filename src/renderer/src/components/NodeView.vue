@@ -80,7 +80,7 @@ const tab = ref<Tab>('installed');
       <div class="card-body">
         <div class="flex items-center gap-2">
           <h2 class="flex-1 font-semibold">Installed</h2>
-          <span class="text-xs opacity-60">Shell: {{ n.system ?? 'no node on PATH' }}</span>
+          <span class="text-xs opacity-60">{{ isWin ? 'On your Path' : 'Shell' }}: {{ n.system ?? (isWin ? 'no other node' : 'no node on PATH') }}</span>
         </div>
 
         <div class="overflow-x-auto rounded-box border border-base-300/60">
@@ -117,7 +117,7 @@ const tab = ref<Tab>('installed');
         <div class="flex items-center gap-2 text-xs">
           <span class="opacity-70">Default:</span>
           <select class="select select-xs w-52" :value="n.defaultVersion ?? ''" @change="setDefault(($event.target as HTMLSelectElement).value || null)">
-            <option value="">Shell's node ({{ n.system ?? 'none' }})</option>
+            <option value="">{{ isWin ? 'The node on your Path' : "Shell's node" }} ({{ n.system ?? 'none' }})</option>
             <option v-for="v in n.installed" :key="v.version" :value="v.version">{{ v.version }}</option>
           </select>
         </div>

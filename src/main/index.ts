@@ -23,6 +23,7 @@ import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3Upload
 import { uninstall, uninstallPlan, UNINSTALL_STEPS } from './uninstall';
 import { isMac, isWin } from './platform';
 import { openWeb, refreshBrowsers, refreshEditorIcons } from './browsers';
+import { words } from '@shared/platform';
 
 app.setName('DevCatz');
 
@@ -926,7 +927,7 @@ function api(): HerdApi {
         defaultId: 1,
         cancelId: 1,
         message: `Uninstall PHP ${version}?`,
-        detail: 'Its PHP-FPM pool stops; sites using it fall back to another installed version.',
+        detail: `Its ${words.phpServer} ${isWin ? 'workers stop' : 'pool stops'}; sites using it fall back to another installed version.`,
       });
       if (response === 0) await herd.phpUninstall(version);
     },

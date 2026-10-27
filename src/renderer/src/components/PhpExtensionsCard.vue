@@ -125,7 +125,7 @@ async function remove(module: string) {
                 <span class="font-medium">{{ c.title }}</span>
                 <span v-if="c.brew && !isWin" class="badge badge-ghost badge-xs" :title="`Uses Homebrew: ${c.brew.join(', ')} (installed when missing)`">brew</span>
               </div>
-              <div class="truncate text-xs opacity-60" :title="c.description">{{ c.description }}</div>
+              <div class="truncate text-xs opacity-60" :title="c.description">{{ isWin ? c.description.replace(/ \(long build[^)]*\)/, '') : c.description }}</div>
             </div>
             <span v-if="isBuiltin(c.pkg)" class="text-xs opacity-60" title="Compiled into this PHP">built in</span>
             <span v-else-if="has(c.pkg)" class="text-xs opacity-60">installed</span>

@@ -1,3 +1,4 @@
+import { words } from '@shared/platform';
 import { isPhpFramework, isPythonFramework, type BunChoice, type NodeChoice, type ProjectState, type StackInfo } from '@shared/types';
 import { STACK_ICONS, type StackIcon } from './stackicons';
 
@@ -100,7 +101,7 @@ export function appCommand(p: ProjectState, app: ProjectState['stack']['apps'][n
   const single = !runsPerApp(p) && p.stack.apps.length === 1 && !p.devCommand;
   if ((runsPerApp(p) || single) && app.managedPort && app.flagCommand && app.port) return app.flagCommand.replace('{port}', String(app.port));
   if (p.stack.layout === 'folders' && app.command) return app.command.replace(/^env (?:\S+=\S+ )+/, '');
-  if (isPhpFramework(app.framework)) return `PHP-FPM ${p.php.version ?? ''} (always on)`;
+  if (isPhpFramework(app.framework)) return `${words.phpServer} ${p.php.version ?? ''} (always on)`;
   if (app.framework === 'mix') return app.command ?? 'npx mix watch';
   if (app.kind === 'assets') {
     const pm = p.stack.packageManager ?? 'npm';
