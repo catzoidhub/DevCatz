@@ -13,3 +13,6 @@ export const WIN_SETTINGS_TABS = new Set(['general', 'ai', 'project', 'database'
 export const WIN_SITE_TABS = new Set(['overview', 'env', 'database', 'api', 'git', 'docker', 'logs', 'settings']);
 /** Runtimes pages on Windows. */
 export const WIN_RUNTIMES = new Set(['node', 'bun', 'go', 'python', 'php']);
+
+/** This computer's build id on the Catzoid site (`<site>/download/<app>/<id>`): mac-arm64, mac-x64 or win-x64. */
+export const downloadPlatform = isWin ? 'win-x64' : window.herd.arch === 'arm64' ? 'mac-arm64' : 'mac-x64';

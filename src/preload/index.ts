@@ -31,6 +31,8 @@ const bridge = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   /** `darwin` or `win32`: Windows stage 1 hides what is macOS-only so far (Catzoid #57). */
   platform: process.platform,
+  /** `arm64` or `x64`: which build of a Catzoid app fits this computer. */
+  arch: process.arch,
 };
 
 export type HerdBridge = typeof bridge;

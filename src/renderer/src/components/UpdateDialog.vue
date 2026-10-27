@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import CatMood from './CatMood.vue';
 import { attempt, herd, state, updateDialog } from '../store';
 import devcatzLogo from '../assets/logos/devcatz.svg';
+import { downloadPlatform } from '../platform';
 
 /**
  * DevCatz's update (Catzoid #54): What's New (the notes of every version since the installed one), then the download
@@ -148,7 +149,7 @@ const close = () => (updateDialog.value = false);
             <button type="button" class="btn btn-primary btn-sm" @click="restart">Restart now</button>
           </template>
           <template v-else-if="u.status === 'error'">
-            <button type="button" class="btn btn-ghost btn-sm" @click="herd.openUrl(`${site}/download/devcatz`)">Download from the site</button>
+            <button type="button" class="btn btn-ghost btn-sm" @click="herd.openUrl(`${site}/download/devcatz/${downloadPlatform}`)">Download from the site</button>
             <button type="button" class="btn btn-ghost btn-sm" @click="close">Close</button>
             <button type="button" class="btn btn-primary btn-sm" @click="u.version ? download() : check()">Retry</button>
           </template>

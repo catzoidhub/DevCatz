@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, renameSync, writeFileSync, chmodSync } from 'nod
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { DbServiceState, TaskProgress } from '@shared/types';
-import { installCatzoidApp, installSteps } from './companion';
+import { installCatzoidApp, installSteps, catzoidAppPaths, findCatzoidApp, openCatzoidApp } from './companion';
 import { run } from './env';
 
 /**
@@ -21,7 +21,7 @@ import { run } from './env';
 
 export const DBCATZ_REPO = 'catzoidhub/DBCatz';
 export const DBCATZ_RELEASES = `https://github.com/${DBCATZ_REPO}/releases/latest`;
-const APP_PATHS = ['/Applications/DBCatz.app', join(homedir(), 'Applications', 'DBCatz.app')];
+const APP_PATHS = catzoidAppPaths('DBCatz');
 const BUNDLE_ID = 'com.mrcatz.dbcatz';
 
 /** What DBCatz reads (DevCatzService / DevCatzServicesFile in DBCatz's types). */
@@ -60,16 +60,7 @@ export class DbCatz {
    * app Launch Services opens dbcatz:// links with, then Spotlight by bundle id.
    */
   async locate(): Promise<string | null> {
-    const usable = (p: string | null | undefined): p is string => !!p && !p.includes('/.Trash/') && existsSync(join(p, 'Contents', 'Info.plist'));
-    let path: string | null = APP_PATHS.find((p) => existsSync(p)) ?? null;
-    if (!path) {
-      const handler = await app.getApplicationInfoForProtocol('dbcatz://open').catch(() => null);
-      if (usable(handler?.path) && /DBCatz/i.test(handler.path)) path = handler.path;
-    }
-    if (!path) {
-      const r = await run('mdfind', [`kMDItemCFBundleIdentifier == '${BUNDLE_ID}'`], { timeout: 10_000 });
-      path = r.stdout.split('\n').map((l) => l.trim()).find(usable) ?? null;
-    }
+    const path = await findCatzoidApp('DBCatz', 'dbcatz', BUNDLE_ID);
     if (path !== this.found) {
       this.found = path;
       this.onChange();
@@ -142,9 +133,8 @@ export class DbCatz {
   async open(connId: string | null, database?: string): Promise<boolean> {
     const path = await this.locate();
     if (!path) return false;
-    // `open -a` hands the link to this very copy, whichever app Launch Services picked for dbcatz://.
-    const r = await run('open', ['-a', path, this.link(connId, database)], { timeout: 30_000 });
-    if (r.code !== 0) await shell.openExternal(this.link(connId, database));
+    // On a Mac `open -a` hands the link to this very copy; on Windows the .exe gets it.
+    await openCatzoidApp(path, this.link(connId, database));
     return true;
   }
 

@@ -35,7 +35,8 @@ export const LEGACY_MINORS = ['7.4', '7.3', '7.2', '7.1', '7.0', '5.6'];
 const BREW_TAP = 'shivammathur/php';
 const BREW_PREFIXES = ['/opt/homebrew', '/usr/local'];
 /** Windows builds: current release of each minor in releases.json, older patches under archives/ (SHA-1 only). */
-const WIN_BASE = 'https://windows.php.net/downloads/releases';
+// windows.php.net redirects here; its own address is unreachable over IPv4 from some networks (seen 2026-10-27).
+const WIN_BASE = 'https://downloads.php.net/~windows/releases';
 
 export function brewBin(): string | null {
   return BREW_PREFIXES.map((p) => join(p, 'bin/brew')).find((b) => existsSync(b)) ?? null;

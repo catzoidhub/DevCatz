@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { app, shell } from 'electron';
 import type { DbCatzState, TaskProgress } from '@shared/types';
-import { installCatzoidApp, installSteps } from './companion';
+import { installCatzoidApp, installSteps, catzoidAppPaths, findCatzoidApp, openCatzoidApp } from './companion';
 import { run } from './env';
 
 /**
@@ -15,7 +15,7 @@ import { run } from './env';
  */
 
 export const DIALCATZ_REPO = 'catzoidhub/DialCatz';
-const APP_PATHS = ['/Applications/DialCatz.app', join(homedir(), 'Applications', 'DialCatz.app')];
+const APP_PATHS = catzoidAppPaths('DialCatz');
 const BUNDLE_ID = 'com.mrcatz.dialcatz';
 
 export class DialCatz {
@@ -28,16 +28,7 @@ export class DialCatz {
 
   /** Where DialCatz is: the usual folders, the app that opens dialcatz:// links, then Spotlight by bundle id. */
   async locate(): Promise<string | null> {
-    const usable = (p: string | null | undefined): p is string => !!p && !p.includes('/.Trash/') && existsSync(join(p, 'Contents', 'Info.plist'));
-    let path: string | null = APP_PATHS.find((p) => existsSync(p)) ?? null;
-    if (!path) {
-      const handler = await app.getApplicationInfoForProtocol('dialcatz://open').catch(() => null);
-      if (usable(handler?.path) && /DialCatz/i.test(handler.path)) path = handler.path;
-    }
-    if (!path) {
-      const r = await run('mdfind', [`kMDItemCFBundleIdentifier == '${BUNDLE_ID}'`], { timeout: 10_000 });
-      path = r.stdout.split('\n').map((l) => l.trim()).find(usable) ?? null;
-    }
+    const path = await findCatzoidApp('DialCatz', 'dialcatz', BUNDLE_ID);
     if (path !== this.found) {
       this.found = path;
       this.onChange();
@@ -59,9 +50,8 @@ export class DialCatz {
     const link = this.link(siteId);
     const path = await this.locate();
     if (!path) return false;
-    // `open -a` hands the link to this very copy, whichever app Launch Services picked for dialcatz://.
-    const r = await run('open', ['-a', path, link], { timeout: 30_000 });
-    if (r.code !== 0) await shell.openExternal(link);
+    // On a Mac `open -a` hands the link to this very copy; on Windows the .exe gets it.
+    await openCatzoidApp(path, link);
     return true;
   }
 
