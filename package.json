@@ -1,7 +1,7 @@
 {
   "name": "devcatz",
   "productName": "DevCatz",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "GPL-3.0-only",
   "private": true,
   "description": "Local development environment for JavaScript, Go and PHP/Laravel projects on macOS: sites on *.localhost with HTTPS, runtimes, databases and Docker",
