@@ -1597,7 +1597,10 @@ button.dv-card-head:hover {
   box-shadow: 0 6px 18px -4px color-mix(in oklch, var(--color-primary) 65%, transparent), 0 0 0 1px color-mix(in oklch, white 18%, transparent) inset;
   transition: transform 140ms ease;
 }
-/* A streak of light sweeps across now and then (the floating button and the palette's mark). */
+/*
+ * A streak of light sweeps across once and the cat hops (the floating button on hover; the palette's mark when it
+ * opens). Never looping while idle: an endless animation kept the window repainting (~10% CPU, Catzoid family rule).
+ */
 .ask-mark {
   position: relative;
   overflow: hidden;
@@ -1609,18 +1612,21 @@ button.dv-card-head:hover {
   inset: -40%;
   background: linear-gradient(115deg, transparent 38%, rgb(255 255 255 / 0.65) 50%, transparent 62%);
   transform: translateX(-120%);
-  animation: ask-shine 3.2s ease-in-out infinite;
-  will-change: transform;
   pointer-events: none;
 }
-/* The cat breathes (its sparkles twinkle inside the SVG). */
 .ask-fab > span,
 .ask-mark > span {
   position: relative;
   display: inline-block;
   line-height: 0;
-  animation: ask-twinkle 3.2s ease-in-out infinite;
-  will-change: transform;
+}
+.ask-fab:hover::before,
+.ask-mark::before {
+  animation: ask-shine 1.4s ease-in-out 1;
+}
+.ask-fab:hover > span,
+.ask-mark > span {
+  animation: ask-twinkle 1.4s ease-in-out 1;
 }
 .ask-fab img,
 .ask-mark img,
@@ -1644,20 +1650,17 @@ button.dv-card-head:hover {
 .ask-fab:hover {
   transform: scale(1.08);
 }
-.ask-fab:hover > span {
-  animation-duration: 1.2s;
-}
 .ask-fab:active {
   transform: scale(0.96);
 }
 @keyframes ask-shine {
-  0%, 55% { transform: translateX(-120%); }
-  80%, 100% { transform: translateX(120%); }
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
 }
 @keyframes ask-twinkle {
-  0%, 60%, 100% { transform: scale(1) translateY(0); }
-  72% { transform: scale(1.1) translateY(-1px); }
-  84% { transform: scale(1) translateY(0); }
+  0%, 100% { transform: scale(1) translateY(0); }
+  30% { transform: scale(1.1) translateY(-1px); }
+  60% { transform: scale(1) translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .ask-fab,
