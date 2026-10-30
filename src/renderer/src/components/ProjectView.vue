@@ -166,7 +166,24 @@ const wsStatus = computed(() => {
   const server = state.value?.websockets.find((s) => s.kind === (p.value.wsServer ?? rt.suggested));
   return server?.installed ? server.status : 'stopped';
 });
-const active = computed(() => p.value.status === 'running' || p.value.status === 'starting');
+const active = computed(() => p.value.status === 'running' || p.value.status === 'starting' || !!p.value.launch);
+/** Start in progress: Stop waits until every app is up (a small ✕ cancels). */
+const starting = computed(() => !!p.value.launch || p.value.status === 'starting');
+type AppState = 'running' | 'starting' | 'waiting' | 'stopped' | 'crashed' | 'stopping';
+/** One app's state: up when its port answers; while the site starts, launched (spinner) or still waiting its turn. */
+function appState(app: ProjectState['stack']['apps'][number]): AppState {
+  if (app.docroot !== undefined) return p.value.served ? 'running' : 'stopped';
+  if (app.framework === 'mix') return p.value.status === 'running' || p.value.status === 'starting' ? 'running' : 'stopped';
+  if (app.port && p.value.openPorts.includes(app.port)) return 'running';
+  const phase = p.value.launch?.apps[app.dir];
+  if (phase) return phase;
+  if (p.value.status === 'starting') return 'starting';
+  if (!app.port && p.value.status === 'running') return 'running';
+  return p.value.status === 'crashed' || p.value.status === 'stopping' ? p.value.status : 'stopped';
+}
+/** Apps Start waits for (not PHP's FastCGI, not Laravel Mix), and how many are up. */
+const startApps = computed(() => p.value.stack.apps.filter((a) => a.docroot === undefined && a.framework !== 'mix'));
+const appsUp = computed(() => startApps.value.filter((a) => appState(a) === 'running').length);
 const command = computed(() => p.value.devCommand || p.value.stack.devCommand);
 /** Overview → Apps: restart one app of a site that runs one process per app (monorepo / folder project). */
 const perAppRunning = computed(() => !!p.value && runsPerApp(p.value) && (p.value.status === 'running' || p.value.status === 'starting') && p.value.stack.apps.length > 1);
@@ -401,8 +418,16 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
         <button v-else-if="!active" class="btn btn-primary btn-sm" :disabled="(!command && p.stack.runtime !== 'php') || p.status === 'stopping'" @click="start">
           Start
         </button>
+        <div v-else-if="starting" class="join" aria-busy="true">
+          <span class="btn btn-primary btn-sm join-item pointer-events-none">
+            <span class="loading loading-spinner loading-xs" />{{
+              p.launch?.building ? `Building ${p.launch.building}…` : startApps.length > 1 ? `Starting ${appsUp}/${startApps.length}…` : 'Starting…'
+            }}
+          </span>
+          <button class="btn btn-sm join-item px-2" title="Cancel: stop the apps that are already up" aria-label="Cancel start" @click="stop">✕</button>
+        </div>
         <button v-else class="btn btn-sm" @click="stop">Stop</button>
-        <button class="btn btn-sm" :disabled="!active" @click="restart">Restart</button>
+        <button class="btn btn-sm" :disabled="!active || starting" @click="restart">Restart</button>
         </template>
         <template v-if="buildTargets.length">
           <PopMenu v-if="buildTargets.length > 1" :items="buildItems" align="end" :width="300">
@@ -631,15 +656,9 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
           <tbody>
             <tr v-for="app in p.stack.apps" :key="app.dir">
               <td>
-                <StatusDot
-                  :status="
-                    app.docroot !== undefined
-                      ? p.served ? 'running' : 'stopped'
-                      : app.framework === 'mix'
-                        ? p.status
-                        : app.port && p.openPorts.includes(app.port) ? 'running' : 'stopped'
-                  "
-                />
+                <span v-if="appState(app) === 'starting'" class="loading loading-spinner loading-xs align-middle text-warning" title="Starting: waiting for its port" />
+                <span v-else-if="appState(app) === 'waiting'" class="status status-md status-neutral align-middle" title="Waiting for its turn" />
+                <StatusDot v-else :status="appState(app) as Exclude<AppState, 'waiting'>" />
                 <button
                   v-if="perAppRunning"
                   class="btn btn-ghost btn-xs btn-square ml-1 align-middle"
@@ -655,6 +674,8 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
               <td>
                 <div class="font-medium">{{ app.name }}</div>
                 <div class="text-xs opacity-50">{{ app.dir }}</div>
+                <div v-if="appState(app) === 'starting'" class="text-xs text-warning">starting…</div>
+                <div v-else-if="appState(app) === 'waiting'" class="text-xs opacity-60">waiting{{ p.launch?.building ? ` (building ${p.launch.building})` : '' }}…</div>
               </td>
               <td>
                 <span class="inline-flex items-center gap-1.5">

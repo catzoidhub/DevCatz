@@ -200,6 +200,8 @@ export class Herd extends EventEmitter {
   private installedBuns: InstalledBun[] = [];
   private bunInstalling: RuntimeInstallProgress | null = null;
   private installedGos: InstalledGo[] = [];
+  /** Sites being started: see ProjectState.launch. */
+  private launchState = new Map<string, { building: string | null; apps: Record<string, 'waiting' | 'starting'> }>();
   private rustToolchains: InstalledRust[] = [];
   private rustupVer: string | null = null;
   private rustTargets: string[] = [];
@@ -339,7 +341,11 @@ export class Herd extends EventEmitter {
 
   constructor() {
     super();
-    this.processes.on('status', () => this.changed());
+    this.processes.on('status', (id: string) => {
+      // Up (every port answers), stopped or crashed: the start is over.
+      if (this.processes.getStatus(id).status !== 'starting') this.launchState.delete(id);
+      this.changed();
+    });
     this.fpm.onChange = () => {
       this.updateRoutes();
       this.changed();
@@ -971,6 +977,9 @@ export class Herd extends EventEmitter {
   async start(id: string): Promise<void> {
     if (this.launching.has(id)) return;
     this.launching.add(id);
+    const apps = this.stacks.get(id)?.apps ?? [];
+    this.launchState.set(id, { building: null, apps: Object.fromEntries(apps.map((a) => [a.dir, 'waiting' as const])) });
+    this.changed();
     try {
       await this.launch(id);
       // For Free up space ("not run for 30 days"); saved without a rescan.
@@ -979,7 +988,19 @@ export class Herd extends EventEmitter {
       setTimeout(() => void this.siteOpenApi(id, true).catch(() => undefined), 8000);
     } finally {
       this.launching.delete(id);
+      // Failed before anything ran, or a PHP site (served already): nothing is starting.
+      if (this.processes.getStatus(id).status !== 'starting') this.launchState.delete(id);
+      this.changed();
     }
+  }
+
+  /** Apps of a starting site that are launched now (their ports are polled from here on). */
+  private launched(id: string, dirs: string[]): void {
+    const s = this.launchState.get(id);
+    if (!s) return;
+    s.building = null;
+    for (const d of dirs) s.apps[d] = 'starting';
+    this.changed();
   }
 
   private async launch(id: string): Promise<void> {
@@ -1086,6 +1107,11 @@ export class Herd extends EventEmitter {
       const pm = stack.packageManager ?? 'npm';
       // Like turbo's `dependsOn: ^build`: build shared packages before the apps import them.
       for (const lib of stack.libs.filter((l) => l.build)) {
+        const ls = this.launchState.get(id);
+        if (ls) {
+          ls.building = lib.name;
+          this.changed();
+        }
         const code = await stream(join(p.path, lib.dir), runScriptCommand(pm, 'build'), (t) => this.processes.log(id, 'sys', t.replace(/^(?=.)/gm, `[${lib.name}] `)), base);
         if (code !== 0) throw new Error(`Building ${lib.name} failed (exit ${code}); see the log`);
       }
@@ -1104,6 +1130,7 @@ export class Herd extends EventEmitter {
         })),
       ]);
     }
+    this.launched(id, stack.apps.map((a) => a.dir));
     // No port to wait for (a CLI, Burn / Candle, a Bevy game): it runs as soon as it is spawned and stops by itself.
     if (stack.apps.every((a) => a.kind === 'assets' || !a.port)) {
       this.processes.markRunning(id);
@@ -4058,6 +4085,7 @@ export class Herd extends EventEmitter {
       bun: this.bunChoice(p),
       go: this.goChoice(p),
       rust: this.rustChoice(p),
+      launch: this.launchState.get(p.id) ?? null,
       python: this.pythonChoice(p),
       php: this.phpChoice(p),
       realtime: detectRealtime(p.path),

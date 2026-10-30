@@ -89,8 +89,10 @@ export function runtimesOf(p: ProjectState): RuntimeRow[] {
   return rows;
 }
 
-/** What the status dot shows: PHP sites count as running while PHP-FPM serves them. */
+/** What the status dot shows: PHP sites count as running while PHP-FPM serves them; a start in progress as starting. */
 export function siteStatus(p: ProjectState): ProjectState['status'] {
+  // Building shared packages before the apps launch counts as starting too.
+  if (p.launch && p.status === 'stopped') return 'starting';
   return p.status === 'stopped' && p.served ? 'running' : p.status;
 }
 

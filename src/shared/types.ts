@@ -667,6 +667,12 @@ export interface ProjectState extends ProjectConfig {
   go: GoChoice;
   /** Only meaningful when the site has Rust apps (or a Tauri app). */
   rust: RustChoice;
+  /**
+   * While a site starts (from Start until every app's port answers): the shared package being built first, if any,
+   * and each app's place — `waiting` (not launched yet) or `starting` (launched, its port not answering yet). An app
+   * whose port answers is running. Null otherwise.
+   */
+  launch: { building: string | null; apps: Record<string, 'waiting' | 'starting'> } | null;
   /** Only meaningful for Python sites. */
   python: PythonChoice;
   /** Only meaningful for PHP/Laravel sites. */
