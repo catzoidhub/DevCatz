@@ -30,7 +30,8 @@ interface StoreData {
 const DEFAULT_SETTINGS: Settings = {
   tld: 'localhost',
   theme: 'system',
-  startAllOnLaunch: true,
+  // Off: with many sites, starting every dev server at launch can eat the Mac's memory; sites opt in one by one.
+  startAllOnLaunch: false,
   nodeDefault: null,
   bunDefault: null,
   goDefault: null,
