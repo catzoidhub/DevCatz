@@ -1160,6 +1160,9 @@ export class Herd extends EventEmitter {
       ]);
     }
     this.launched(id, stack.apps.map((a) => a.dir));
+    if (stack.apps.some((a) => a.library === 'electron')) {
+      this.processes.log(id, 'sys', 'Electron: the app opens in its own window. An app that allows one copy at a time (requestSingleInstanceLock) quits at once while its installed copy is open: close that one first.');
+    }
     // No port to wait for (a CLI, Burn / Candle, a Bevy game): it runs as soon as it is spawned and stops by itself.
     if (stack.apps.every((a) => a.kind === 'assets' || !a.port)) {
       this.processes.markRunning(id);

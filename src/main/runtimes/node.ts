@@ -211,6 +211,9 @@ function hasPrisma(dir: string, pkg: PackageJson): boolean {
   return Boolean(deps.prisma || deps['@prisma/client']) && existsSync(join(dir, 'prisma'));
 }
 
+/** An Electron app: `electron` in its dependencies (electron-vite, Electron Forge, or plain `electron .`). */
+const isElectron = (pkg: PackageJson) => Boolean(pkg.dependencies?.electron || pkg.devDependencies?.electron);
+
 function detectNodeStack(root: string, domain: string): StackInfo {
   const rootPkg = readJson<PackageJson>(join(root, 'package.json'));
   const pm = detectPackageManager(root, rootPkg);
@@ -226,19 +229,28 @@ function detectNodeStack(root: string, domain: string): StackInfo {
     if (!pkg) continue;
     const prisma = hasPrisma(dir, pkg);
     if (prisma && prismaDir === null) prismaDir = relative(root, dir) || '.';
-    if (!pkg.scripts?.dev) {
+    // Electron Forge starts with `start` (no dev script).
+    const electronScript = isElectron(pkg) ? (pkg.scripts?.dev ? 'dev' : pkg.scripts?.start ? 'start' : null) : null;
+    if (!pkg.scripts?.dev && !electronScript) {
       if (monorepo && pkg.scripts?.build) libs.push({ dir: relative(root, dir), name: pkg.name ?? basename(dir), build: true, dev: false });
       continue;
     }
     const framework = detectFramework(pkg);
+    if (electronScript) {
+      // A desktop app: its window is the app, so no port to wait for or to manage (electron-vite's renderer dev
+      // server only works inside that window, with its preload).
+      const command = runScriptCommand(pm, electronScript);
+      apps.push({ dir: relative(root, dir) || '.', name: pkg.name ?? basename(dir), framework, library: 'electron', kind: 'web', devScript: pkg.scripts![electronScript], command, port: null, configuredPort: null, portVars: [], managedPort: false, portSource: null, portFlag: false, flagCommand: null, prisma, domain: '' });
+      continue;
+    }
     const { port, vars, source } = detectPort(dir, root, pkg, framework);
     // An app that reads no port variable gets its own port on the command line: in a monorepo every app defaults to
     // the same one, and so do two worktrees (or two copies) of one Astro / Vite site.
-    const flagCommand = !vars.length ? portFlagCommand(pm, pkg.scripts.dev) : null;
+    const flagCommand = !vars.length ? portFlagCommand(pm, pkg.scripts?.dev) : null;
     // A workspace without a server (e.g. `tsc --watch` in packages/shared-types)
     // still runs as part of the root dev script, but gets no domain.
     if (framework === 'node' && port === null) {
-      if (monorepo) libs.push({ dir: relative(root, dir), name: pkg.name ?? basename(dir), build: Boolean(pkg.scripts.build), dev: true });
+      if (monorepo) libs.push({ dir: relative(root, dir), name: pkg.name ?? basename(dir), build: Boolean(pkg.scripts?.build), dev: true });
       continue;
     }
     apps.push({
@@ -247,7 +259,7 @@ function detectNodeStack(root: string, domain: string): StackInfo {
       framework,
       library: framework === 'express' ? detectServer(pkg) : null,
       kind: ['nestjs', 'express', 'node'].includes(framework) ? 'api' : 'web',
-      devScript: pkg.scripts.dev,
+      devScript: pkg.scripts?.dev ?? null,
       port,
       configuredPort: port,
       portVars: vars,
@@ -283,6 +295,8 @@ function detectNodeStack(root: string, domain: string): StackInfo {
     devCommand = `${runScriptCommand(pm, 'tauri')} dev`;
     apps[0].library = 'tauri';
   }
+  // Electron Forge at the root: `start`.
+  if (!devCommand && apps.length === 1 && apps[0].library === 'electron' && apps[0].dir === '.') devCommand = apps[0].command ?? null;
 
   const nvmrc = readText(join(root, '.nvmrc'))?.trim() || readText(join(root, '.node-version'))?.trim();
 

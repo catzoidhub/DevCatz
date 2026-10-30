@@ -1022,7 +1022,10 @@ export function generate(
     const dockerfile = dockerfileOf(app, a);
     const php = isPhpFramework(a.framework);
     const sqlite = sqliteOf(actx, a);
-    let content = a.framework === 'go' ? goDockerfile(actx, a) : a.framework === 'rust' ? rustDockerfile(actx, a) : php ? phpDockerfile(actx, a) : isPythonFramework(a.framework) ? pythonDockerfile(actx, a) : jsDockerfile(actx, a);
+    let content =
+      a.library === 'electron'
+        ? [GENERATED_MARK + ` for ${a.name} (Electron).`, '# An Electron app is a desktop app: electron-builder / Electron Forge make its installers, not a container.', 'FROM scratch', ''].join('\n')
+        : a.framework === 'go' ? goDockerfile(actx, a) : a.framework === 'rust' ? rustDockerfile(actx, a) : php ? phpDockerfile(actx, a) : isPythonFramework(a.framework) ? pythonDockerfile(actx, a) : jsDockerfile(actx, a);
     if (sqlite && !local) content = withSqliteFolder(content, sqlite.file, php);
     if (folders) content = content.replace('Build context: the project root.', `Build context: this folder (${app.dir}/), as docker-compose.yml at the project root builds it.`);
     files.push({ path: dockerfile, content });

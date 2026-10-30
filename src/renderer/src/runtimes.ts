@@ -196,6 +196,7 @@ const LIBRARIES: Record<string, [string, string]> = {
   dioxus: ['Dioxus', 'dioxus'],
   sycamore: ['Sycamore', 'sycamore'],
   tauri: ['Tauri', 'tauri'],
+  electron: ['Electron', 'electron'],
   bevy: ['Bevy', 'bevy'],
   burn: ['Burn', 'burn'],
   candle: ['Candle', 'huggingface'],
