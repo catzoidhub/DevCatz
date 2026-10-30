@@ -62,14 +62,14 @@ const tab = ref<Tab>('installed');
   </PageHeader>
 
   <section class="site-tab">
-    <div v-if="!b.uv" role="alert" class="alert">
-      <div class="flex-1">
+    <div v-if="!b.uv" role="alert" class="alert flex flex-wrap">
+      <div class="min-w-48 flex-1">
         <div class="font-medium">uv is not installed yet</div>
         <div class="text-xs opacity-80">
           DevCatz downloads Astral’s uv (one small binary, SHA-256 checked); it then installs Pythons and each site’s packages. {{ pySites.length }} Python site(s) linked.
         </div>
       </div>
-      <button class="btn btn-sm btn-primary" :disabled="!!busy" @click="installUv">Install uv</button>
+      <button class="btn btn-sm btn-primary shrink-0" :disabled="!!busy" @click="installUv">Install uv</button>
     </div>
 
     <!-- Progress -->

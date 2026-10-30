@@ -62,12 +62,12 @@ const tab = ref<Tab>('installed');
   </PageHeader>
 
   <section class="site-tab">
-    <div v-if="!b.installed.length" role="alert" class="alert alert-warning"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />
-      <div class="flex-1">
+    <div v-if="!b.installed.length" role="alert" class="alert alert-warning flex flex-wrap"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />
+      <div class="min-w-48 flex-1">
         <div class="font-medium">Go is not installed</div>
         <div class="text-xs opacity-80">{{ goSites.length }} site(s) have Go apps and cannot start until it is installed.</div>
       </div>
-      <button v-if="latest" class="btn btn-sm" :disabled="!!busy" @click="install(latest, true)">Install Go {{ latest }}</button>
+      <button v-if="latest" class="btn btn-sm shrink-0" :disabled="!!busy" @click="install(latest, true)">Install Go {{ latest }}</button>
     </div>
 
     <template v-if="tab === 'installed'">

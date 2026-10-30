@@ -158,15 +158,15 @@ const tab = ref<Tab>('installed');
   </PageHeader>
 
   <section class="site-tab">
-    <div v-if="!php.installed.some((i) => i.source === 'mrcatz')" role="alert" class="alert">
-      <div class="flex-1">
+    <div v-if="!php.installed.some((i) => i.source === 'mrcatz')" role="alert" class="alert flex flex-wrap">
+      <div class="min-w-48 flex-1">
         <div class="font-medium">No PHP installed by DevCatz yet</div>
         <div class="text-xs opacity-80">
           {{ phpSites.length }} PHP site(s).
           <template v-if="php.installed.length">PHP {{ php.installed[0].version }} (installed by another tool) is used meanwhile.</template>
         </div>
       </div>
-      <button v-if="remote.find((r) => r.minor === '8.4')" class="btn btn-sm btn-primary" :disabled="!!busy" @click="install(remote.find((r) => r.minor === '8.4')!.version, true)">
+      <button v-if="remote.find((r) => r.minor === '8.4')" class="btn btn-sm btn-primary shrink-0" :disabled="!!busy" @click="install(remote.find((r) => r.minor === '8.4')!.version, true)">
         Install PHP {{ remote.find((r) => r.minor === '8.4')!.version }}
       </button>
     </div>
