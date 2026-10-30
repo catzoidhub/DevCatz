@@ -41,6 +41,7 @@ const DEFAULT_SETTINGS: Settings = {
   editor: '',
   browser: '',
   parkedDirs: [],
+  parkGroups: {},
   updateNotifications: true,
   appUpdateAuto: true,
   appUpdateChannel: 'stable',

@@ -11,6 +11,7 @@ import askMark from './assets/logos/ask-catzoid.svg';
 import CatMood from './components/CatMood.vue';
 import SettingsView from './components/SettingsView.vue';
 import NewSiteDialog from './components/NewSiteDialog.vue';
+import ParkDialog from './components/ParkDialog.vue';
 import StackMark from './components/StackMark.vue';
 import DatabaseView from './components/DatabaseView.vue';
 import WebSocketView from './components/WebSocketView.vue';
@@ -418,6 +419,8 @@ function openSite(id: string) {
 
 /** Menu bar navigation: `sites`, `settings`, `new-site` or `site:<id>`. */
 const newSiteOpen = ref(false);
+/** The folder being parked (its dialog: park as a group, and the group's name). */
+const parking = ref<string | null>(null);
 function navigate(target: string) {
   // Trackpad swipe (macOS) and the mouse / keyboard browser keys (Windows) arrive from the main process.
   if (target === 'history:back') return goBack();
@@ -482,8 +485,7 @@ async function parkFromDialog() {
 
 async function park() {
   const dir = await herd.pickFolder();
-  if (!dir) return;
-  await attempt(() => herd.parkFolder(dir), `Parked ${dir}: every project inside gets a .${state.value?.settings.tld ?? 'localhost'} domain`);
+  if (dir) parking.value = dir;
 }
 </script>
 
@@ -699,6 +701,7 @@ async function park() {
       </div>
     </dialog>
     <NewSiteDialog v-if="newSiteOpen" @close="newSiteOpen = false" @created="onCreated" @park="parkFromDialog" />
+    <ParkDialog v-if="parking" :dir="parking" @close="parking = null" />
     <dialog v-if="groupDialog" open class="modal modal-open" @keydown.esc="groupDialog = null">
       <form class="modal-box w-80 space-y-3" @submit.prevent="saveGroup">
         <h3 class="font-semibold">{{ groupDialog.mode === 'new' ? 'New group' : 'Rename group' }}</h3>

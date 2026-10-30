@@ -586,6 +586,7 @@ export class Herd extends EventEmitter {
       used.add(domain);
       p.domain = domain;
     }
+    this.joinParkGroups(parked);
     this.projects = [...linked, ...parked].sort((a, b) => a.name.localeCompare(b.name));
     for (const p of this.projects) {
       const stack = this.assignPorts(p, this.applyOverrides(p, detectStack(p.path, p.domain)));
@@ -965,14 +966,39 @@ export class Herd extends EventEmitter {
     }
   }
 
-  park(dir: string): void {
+  park(dir: string, group: string | null = null): void {
     if (!store.settings.parkedDirs.includes(dir)) store.updateSettings({ parkedDirs: [...store.settings.parkedDirs, dir] });
+    const name = group?.trim().slice(0, 40);
+    if (name) store.updateSettings({ parkGroups: { ...store.settings.parkGroups, [dir]: { group: name, seen: [] } } });
     this.rescan();
   }
 
   unpark(dir: string): void {
-    store.updateSettings({ parkedDirs: store.settings.parkedDirs.filter((d) => d !== dir) });
+    // The group stays (with its sites gone, it is empty until something else is put in it).
+    const { [dir]: _gone, ...rest } = store.settings.parkGroups ?? {};
+    store.updateSettings({ parkedDirs: store.settings.parkedDirs.filter((d) => d !== dir), parkGroups: rest });
     this.rescan();
+  }
+
+  /** Parked folders with a group: sites found there for the first time join it (unless already in another group). */
+  private joinParkGroups(parked: ProjectConfig[]): void {
+    const config = store.settings.parkGroups ?? {};
+    let groups = store.settings.siteGroups;
+    let changed = false;
+    const next = { ...config };
+    for (const [dir, pg] of Object.entries(config)) {
+      const fresh = parked.filter((p) => p.parkedFrom === dir && !pg.seen.includes(p.id));
+      if (!fresh.length) continue;
+      changed = true;
+      const grouped = new Set(groups.flatMap((g) => g.sites));
+      const joining = fresh.filter((p) => !grouped.has(p.id)).map((p) => p.id);
+      if (joining.length) {
+        const g = groups.find((x) => x.name.toLowerCase() === pg.group.toLowerCase());
+        groups = g ? groups.map((x) => (x === g ? { ...x, sites: [...x.sites, ...joining] } : x)) : [...groups, { name: pg.group, sites: joining }];
+      }
+      next[dir] = { ...pg, seen: [...pg.seen, ...fresh.map((p) => p.id)] };
+    }
+    if (changed) store.updateSettings({ siteGroups: groups, parkGroups: next });
   }
 
   // ------------------------------------------------------------ dev servers
@@ -3814,13 +3840,16 @@ export class Herd extends EventEmitter {
     if (!name) throw new Error('Group name is empty');
     const groups = store.settings.siteGroups;
     if (groups.some((g) => g.name !== from && g.name.toLowerCase() === name.toLowerCase())) throw new Error(`A group "${name}" already exists`);
-    store.updateSettings({ siteGroups: groups.map((g) => (g.name === from ? { ...g, name } : g)) });
+    const parks = Object.fromEntries(Object.entries(store.settings.parkGroups ?? {}).map(([d, pg]) => [d, pg.group === from ? { ...pg, group: name } : pg]));
+    store.updateSettings({ siteGroups: groups.map((g) => (g.name === from ? { ...g, name } : g)), parkGroups: parks });
     this.changed();
   }
 
   /** The sites stay; they just become ungrouped. */
   deleteGroup(name: string): void {
-    store.updateSettings({ siteGroups: store.settings.siteGroups.filter((g) => g.name !== name) });
+    // A parked folder that filled this group stops adding to it.
+    const parks = Object.fromEntries(Object.entries(store.settings.parkGroups ?? {}).filter(([, pg]) => pg.group !== name));
+    store.updateSettings({ siteGroups: store.settings.siteGroups.filter((g) => g.name !== name), parkGroups: parks });
     this.changed();
   }
 

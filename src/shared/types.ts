@@ -723,6 +723,11 @@ export interface Settings {
   /** Browser for site and service links: the path of an installed browser app; '' = the system default. */
   browser: string;
   parkedDirs: string[];
+  /**
+   * Parked folders whose sites are gathered in a sidebar group: folder → the group and the sites it has taken in. A
+   * site found there later joins too; one taken out of the group by hand stays out (it is in `seen`).
+   */
+  parkGroups: Record<string, { group: string; seen: string[] }>;
   /** Check nodejs.org / GitHub / go.dev / static-php.dev for newer patch releases and notify. */
   updateNotifications: boolean;
   /** DevCatz's own updates (Catzoid #54): check 30 s after launch and every 6 h. */
@@ -2511,7 +2516,8 @@ export interface HerdApi {
   /** Detects a folder's stack without linking it (for the New Site form). */
   inspectFolder(path: string): Promise<FolderPreview>;
   linkProject(path: string, options?: LinkOptions): Promise<ProjectState | null>;
-  parkFolder(path: string): Promise<void>;
+  /** Parks a folder; with `group`, its sites (and the ones found there later) go into that sidebar group. */
+  parkFolder(path: string, group?: string | null): Promise<void>;
   unparkFolder(path: string): Promise<void>;
   /** `confirmDomain` must equal the site's domain (typed by the user): guards against a misclick. */
   removeProject(id: string, confirmDomain: string): Promise<void>;

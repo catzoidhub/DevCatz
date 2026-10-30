@@ -3,6 +3,7 @@ import { currentOS, words } from '@shared/platform';
 import PageHeader from './PageHeader.vue';
 import AiSettings from './AiSettings.vue';
 import AboutCard from './AboutCard.vue';
+import ParkDialog from './ParkDialog.vue';
 import UpdatesCard from './UpdatesCard.vue';
 import { ICONS } from '../icons';
 import UpdateButton from './UpdateButton.vue';
@@ -30,9 +31,11 @@ async function savePorts() {
   await attempt(() => herd.updateSettings({ httpsPort: Number(ports.value.httpsPort), httpPort: Number(ports.value.httpPort) }), 'Proxy restarted');
 }
 
+/** The folder being parked: the same dialog as Create New Site (park as a group). */
+const parking = ref<string | null>(null);
 async function park() {
   const dir = await herd.pickFolder();
-  if (dir) await attempt(() => herd.parkFolder(dir));
+  if (dir) parking.value = dir;
 }
 
 async function trust() {
@@ -480,10 +483,14 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
     <div v-if="tab === 'project'" class="card">
       <div class="card-body">
         <h2 class="font-semibold">Parked folders</h2>
-        <p class="text-xs opacity-70">Every sub-folder with a <code>package.json</code>, <code>go.mod</code> or <code>composer.json</code> becomes <code>&lt;folder&gt;.{{ s.domain.tld }}</code>.</p>
+        <p class="text-xs opacity-70">
+          Every sub-folder with a <code>package.json</code>, <code>composer.json</code>, <code>go.mod</code>, <code>Cargo.toml</code> or a Python project becomes
+          <code>&lt;folder&gt;.{{ s.domain.tld }}</code>. A folder parked as a group keeps its sites (and new ones) in that sidebar group.
+        </p>
         <ul class="space-y-1">
           <li v-for="dir in s.settings.parkedDirs" :key="dir" class="flex items-center gap-2">
             <code class="flex-1 truncate">{{ dir }}</code>
+            <span v-if="s.settings.parkGroups?.[dir]" class="badge badge-ghost badge-sm" title="Its sites, and new ones, go into this sidebar group">group: {{ s.settings.parkGroups[dir].group }}</span>
             <button class="btn btn-ghost btn-xs" @click="unpark(dir)">Unpark</button>
           </li>
         </ul>
@@ -1240,5 +1247,6 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
   </section>
   <DbServiceForm v-if="dbForm" :service="s.databases.find((d) => d.id === dbForm!.id)" @close="dbForm = null" @done="dbForm = null" />
   <StorageForm v-if="storageForm" :service="s.storage.find((x) => x.kind === storageForm!.service.kind) ?? storageForm.service" :mode="storageForm.mode" @close="storageForm = null" @done="storageForm = null" />
+  <ParkDialog v-if="parking" :dir="parking" @close="parking = null" />
 </template>
 

@@ -702,7 +702,7 @@ function api(): HerdApi {
       if (p) void herd.git.refresh(p.id);
       return p;
     },
-    parkFolder: async (path) => herd.park(path),
+    parkFolder: async (path, group) => herd.park(String(path), typeof group === 'string' ? group : null),
     unparkFolder: async (path) => herd.unpark(path),
     removeProject: async (id, confirmDomain) => {
       const p = herd.siteInfo(id);
