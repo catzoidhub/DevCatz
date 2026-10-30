@@ -30,7 +30,10 @@ export function pathKey(env: NodeJS.ProcessEnv): string {
 export function shellCommand(command: string, opts: { exec?: boolean } = {}): [string, string[]] {
   if (isWin) return [process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${command}"`]];
   const shell = process.env.SHELL || '/bin/zsh';
-  return [shell, ['-c', opts.exec ? `exec ${command}` : command]];
+  // `exec` makes a single command the process itself; a chain (`anchor build && solana-test-validator …`, `cd x && …`)
+  // keeps its shell, or only its first command would run. Either way the process group is what Stop ends.
+  const chain = /&&|\|\||;|\|/.test(command);
+  return [shell, ['-c', opts.exec && !chain ? `exec ${command}` : command]];
 }
 
 /** Stops a process and everything it started: the process group on macOS, `taskkill /T` on Windows. */

@@ -203,7 +203,9 @@ export function detectRustApp(dir: string, root: string, domain: string, manifes
   }
   if (lib && SERVERS.has(lib)) {
     const { port, vars } = serverPort(dir, root, lib);
-    return app('api', 'cargo run', port, { portVars: vars });
+    // A model behind a web server (Burn / Candle with Axum …): named after the model, built optimised.
+    const ml = (manifest?.deps ?? []).some((d) => d === 'burn') ? 'burn' : (manifest?.deps ?? []).some((d) => /^candle-/.test(d)) ? 'candle' : null;
+    return ml ? app('api', 'cargo run --release', port, { library: ml, portVars: vars }) : app('api', 'cargo run', port, { portVars: vars });
   }
   // Bevy, Burn, Candle, a CLI: no server. Machine learning is unbearably slow in debug builds.
   const command = lib === 'burn' || lib === 'candle' ? 'cargo run --release' : manifest?.isPackage ? 'cargo run' : null;
