@@ -588,11 +588,12 @@ export class Herd extends EventEmitter {
     }
     this.joinParkGroups(parked);
     this.projects = [...linked, ...parked].sort((a, b) => a.name.localeCompare(b.name));
+    const served = this.servedDomains();
     for (const p of this.projects) {
       const stack = this.assignPorts(p, this.applyOverrides(p, detectStack(p.path, p.domain)));
       this.stacks.set(p.id, stack);
       this.specFileCache.set(p.id, specFiles(p, stack));
-      this.envHints.set(p.id, this.findEnvHints(p, stack));
+      this.envHints.set(p.id, this.findEnvHints(p, stack, served));
       this.envOverrides.set(p.id, this.domainOverrides(p, stack));
       this.redisEnv.set(p.id, this.redisOverrides(p, stack));
     }
@@ -1913,8 +1914,15 @@ export class Herd extends EventEmitter {
   }
 
   /** .env URLs on local dev domains (.localhost/.test/…) that are not this site's domains. */
-  private findEnvHints(p: ProjectConfig, stack: StackInfo): { key: string; value: string }[] {
-    const own = new Set(stack.apps.map((a) => a.domain).concat(p.domain));
+  /** Domains DevCatz serves itself: its services (rustfs.localhost, ws.localhost …) and every site (its apps' subdomains end in it). */
+  private servedDomains(): string[] {
+    const services = [...this.storage.routes(), ...this.ws.routes(), ...this.search.routes(), ...this.mail.routes(), ...this.whatsapp.routes(), ...this.gateways.routes()];
+    return [...services.map((r) => r.domain), ...this.projects.map((x) => x.domain)].filter(Boolean).map((d) => d.toLowerCase());
+  }
+
+  /** .env values on dev domains nothing here serves (an old Herd / Valet domain); DevCatz's own services and sites are fine. */
+  private findEnvHints(p: ProjectConfig, stack: StackInfo, served: string[]): { key: string; value: string }[] {
+    const own = new Set([...stack.apps.map((a) => a.domain).concat(p.domain), ...served]);
     const devTld = /^(localhost|test|internal|local|orb\.local|lan|home\.arpa)$/;
     const files = [p.path, ...stack.apps.map((a) => join(p.path, a.dir))].map((d) => join(d, '.env'));
     const out: { key: string; value: string }[] = [];
@@ -1932,7 +1940,7 @@ export class Herd extends EventEmitter {
         const host = m[1].toLowerCase();
         const parts = host.split('.');
         const suffix = parts.length > 2 && `${parts.at(-2)}.${parts.at(-1)}` === 'orb.local' ? 'orb.local' : parts.at(-1)!;
-        if (parts.length > 1 && devTld.test(suffix) && !own.has(host)) {
+        if (parts.length > 1 && devTld.test(suffix) && !own.has(host) && ![...own].some((d) => host.endsWith(`.${d}`))) {
           out.push({ key, value });
           break;
         }
