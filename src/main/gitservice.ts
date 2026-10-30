@@ -456,7 +456,7 @@ export class GitService {
       }, 250);
     };
     try {
-      await g.clone({ url: src, dest, branch, shallow, creds: remote?.https ? hosts.credsFor(remote.host) : null, log: push, signal: abort.signal });
+      await g.clone({ url: src, dest, branch, shallow, creds: remote?.https ? await hosts.credsFor(remote.host) : null, log: push, signal: abort.signal });
       this.clone = { ...this.clone!, done: true };
       return dest;
     } catch (err) {

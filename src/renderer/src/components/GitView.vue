@@ -172,7 +172,7 @@ const broken = reactive(new Set<string>());
             </div>
           </a>
         </li>
-        <li class="menu-title mt-3 px-2"><span class="label-caps">Accounts</span></li>
+        <li class="menu-title mt-3 px-2"><span class="label-caps" title="Shared with Catzoid apps: connected once, used by each of them">Accounts</span></li>
         <li v-for="a in accounts" :key="a.id">
           <a :class="{ 'menu-active': account?.id === a.id }" @click="view = { kind: 'account', id: a.id }">
             <img v-if="a.avatarUrl && !broken.has(a.id)" :src="a.avatarUrl" alt="" class="size-8 shrink-0 rounded-full bg-base-300/70" draggable="false" @error="broken.add(a.id)" />
@@ -284,7 +284,7 @@ const broken = reactive(new Set<string>());
       <template v-else-if="view.kind === 'add'">
         <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <h2 class="text-lg font-semibold tracking-tight">Connect an account</h2>
-          <div class="text-xs opacity-60">For repositories to clone, pull requests and SSH keys. The token is encrypted with your {{ currentOS === 'mac' ? 'macOS Keychain' : words.secretStore }}.</div>
+          <div class="text-xs opacity-60">For repositories to clone, pull requests and SSH keys. Shared with Catzoid apps; the token is kept in your {{ currentOS === 'mac' ? 'macOS Keychain' : words.secretStore }}.</div>
         </header>
         <form class="mx-auto w-full max-w-xl flex-1 space-y-4 overflow-y-auto p-6" @submit.prevent="add">
           <div class="grid grid-cols-4 gap-2">
@@ -375,7 +375,7 @@ const broken = reactive(new Set<string>());
     <ConfirmDialog
       v-if="removing"
       :title="`Remove ${NAME[removing.kind]} account ${removing.username}?`"
-      text="Its token is deleted from DevCatz. Repositories and sites stay; revoke the token on the host too if you no longer need it."
+      text="The account is shared with Catzoid apps, so it goes from all of them, with its token. Repositories and sites stay; revoke the token on the host too if you no longer need it."
       confirm="Remove"
       tone="error"
       @cancel="removing = null"

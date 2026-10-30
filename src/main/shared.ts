@@ -3,13 +3,13 @@ import { app } from 'electron';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { AiProvider, ThemeMode } from '@shared/types';
+import type { AiProvider, GitAccount, ThemeMode } from '@shared/types';
 import { run } from './env';
 import { isWin } from './platform';
 
 /**
- * Settings shared by the Catzoid apps (DevCatz, DBCatz, later DialCatz): the theme and the AI connection
- * (provider, models, addresses). One owner-only JSON file every app reads, writes and watches, so a change in
+ * Settings shared by the Catzoid apps (DevCatz, DBCatz, DialCatz): the theme, the AI connection (provider, models,
+ * addresses) and the Git hosting accounts. One owner-only JSON file every app reads, writes and watches, so a change in
  * one app shows up in the others; API keys sit in one Keychain item ("Catzoid AI", an account per provider)
  * read through macOS's `security` tool — the way git's and gh's credential helpers keep tokens.
  *
@@ -17,15 +17,21 @@ import { isWin } from './platform';
  *   ~/Library/Application Support/Catzoid/shared.json  (folder 0700, file 0600)
  *   { "version": 1, "theme": "system" | "light" | "dark",
  *     "ai": { "provider": "anthropic", "models": { "<provider>": "<model>" }, "baseUrls": { … }, "keys": ["<provider>", …] },
- *     "updatedBy": "devcatz" | "dbcatz", "updatedAt": "<ISO time>" }
+ *     "updatedBy": "devcatz" | "dbcatz" | "dialcatz", "updatedAt": "<ISO time>" }
  *   Keychain: generic password, service "Catzoid AI", account = provider id, password = the API key.
  *   On / off switches (AI enabled, features) stay in each app.
+ *   Git hosting accounts (connected once, used by every Catzoid app; same as DialCatz's shared.ts):
+ *     "git": { "accounts": [ { "id", "kind": "github"|"gitlab"|"gitea"|"bitbucket", "baseUrl", "username", "name",
+ *              "avatarUrl" (the remote URL), "addedAt" } ] }
+ *   Keychain: generic password, service "Catzoid Git", account = the account id, password = its token.
+ *   Windows: the tokens DPAPI-encrypted in Catzoid/git/<account id>.dpapi (the AI keys in Catzoid/keys/).
  * CATZOID_SHARED_DIR and CATZOID_KEYCHAIN (a keychain file) point both elsewhere, for tests (same as DBCatz's copy).
  */
 
 export const SHARED_DIR = process.env.CATZOID_SHARED_DIR || (isWin ? join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'Catzoid') : join(homedir(), 'Library', 'Application Support', 'Catzoid'));
 const FILE = join(SHARED_DIR, 'shared.json');
 const SERVICE = 'Catzoid AI';
+const GIT_SERVICE = 'Catzoid Git';
 const ME = 'devcatz';
 /** A keychain file instead of the login keychain (tests only). */
 const KEYCHAIN = process.env.CATZOID_KEYCHAIN ? [process.env.CATZOID_KEYCHAIN] : [];
@@ -41,6 +47,8 @@ export interface Shared {
   version: 1;
   theme?: ThemeMode;
   ai?: SharedAi;
+  /** Git hosting accounts, shared by the Catzoid apps (tokens in the Keychain item "Catzoid Git"). */
+  git?: { accounts?: GitAccount[] };
   /** The Catzoid site address the apps build their links from (Catzoid TODO #50); DEFAULT_SITE when unset. */
   site?: string;
   updatedBy?: string;
@@ -83,9 +91,17 @@ export function readShared(): Shared {
 }
 
 /** Merges `patch` (ai merged one level deep) and writes the file atomically. */
-export function writeShared(patch: Partial<Omit<Shared, 'version' | 'ai'>> & { ai?: SharedAi }): Shared {
+export function writeShared(patch: Partial<Omit<Shared, 'version' | 'ai' | 'git'>> & { ai?: SharedAi; git?: Shared['git'] }): Shared {
   const cur = readShared();
-  const next: Shared = { ...cur, ...patch, ai: patch.ai ? { ...(cur.ai ?? {}), ...patch.ai } : cur.ai, version: 1, updatedBy: ME, updatedAt: new Date().toISOString() };
+  const next: Shared = {
+    ...cur,
+    ...patch,
+    ai: patch.ai ? { ...(cur.ai ?? {}), ...patch.ai } : cur.ai,
+    git: patch.git ? { ...(cur.git ?? {}), ...patch.git } : cur.git,
+    version: 1,
+    updatedBy: ME,
+    updatedAt: new Date().toISOString(),
+  };
   mkdirSync(SHARED_DIR, { recursive: true, mode: 0o700 });
   chmodSync(SHARED_DIR, 0o700);
   const tmp = `${FILE}.${process.pid}.tmp`;
@@ -98,6 +114,9 @@ export function writeShared(patch: Partial<Omit<Shared, 'version' | 'ai'>> & { a
 
 let lastOwnWrite = '';
 let watcher: FSWatcher | null = null;
+const listeners: ((s: Shared) => void)[] = [];
+/** One more listener for another app's changes (Git accounts …), next to the settings one. */
+export const onSharedChange = (fn: (s: Shared) => void) => listeners.push(fn);
 
 /** Calls `onChange` when another app changed the file (own writes are ignored). */
 export function watchShared(onChange: (s: Shared) => void): void {
@@ -111,9 +130,11 @@ export function watchShared(onChange: (s: Shared) => void): void {
       timer = setTimeout(() => {
         cache = null;
         keyCache.clear();
+        gitTokens.clear();
         const s = readShared();
         if (s.updatedAt && s.updatedAt === lastOwnWrite) return;
         onChange(s);
+        for (const fn of listeners) fn(s);
       }, 250);
     });
   } catch {
@@ -145,24 +166,43 @@ function powershell(script: string, input = ''): Promise<{ code: number; out: st
   });
 }
 async function winKey(provider: AiProvider): Promise<string> {
-  if (!existsSync(keyFile(provider))) return '';
+  return winSecret(keyFile(provider));
+}
+async function winSecret(file: string): Promise<string> {
+  if (!existsSync(file)) return '';
   const r = await powershell(
-    `$s = ConvertTo-SecureString (Get-Content -Raw -Path ${psQuote(keyFile(provider))}).Trim(); ` +
+    `$s = ConvertTo-SecureString (Get-Content -Raw -Path ${psQuote(file)}).Trim(); ` +
       '[Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))',
   );
   return r.code === 0 ? r.out.trim() : '';
 }
 async function setWinKey(provider: AiProvider, key: string): Promise<void> {
+  return setWinSecret(keyFile(provider), key);
+}
+async function setWinSecret(file: string, key: string): Promise<void> {
   if (!key) {
-    rmSync(keyFile(provider), { force: true });
+    rmSync(file, { force: true });
     return;
   }
-  mkdirSync(join(SHARED_DIR, 'keys'), { recursive: true });
+  mkdirSync(join(file, '..'), { recursive: true });
   const r = await powershell(
-    `$k = [Console]::In.ReadToEnd().Trim(); ConvertTo-SecureString $k -AsPlainText -Force | ConvertFrom-SecureString | Set-Content -NoNewline -Path ${psQuote(keyFile(provider))}`,
+    `$k = [Console]::In.ReadToEnd().Trim(); ConvertTo-SecureString $k -AsPlainText -Force | ConvertFrom-SecureString | Set-Content -NoNewline -Path ${psQuote(file)}`,
     key,
   );
   if (r.code !== 0) throw new Error('Windows could not store the key');
+}
+
+/** `security -i` with one add command on stdin, so the secret never appears in a process list. */
+function keychainAdd(service: string, account: string, secret: string): Promise<void> {
+  // `security -i` exits 0 even when a command failed: anything on stderr counts as a failed save.
+  return new Promise<void>((resolve, reject) => {
+    const p = spawn('/usr/bin/security', ['-i'], { stdio: ['pipe', 'ignore', 'pipe'] });
+    let err = '';
+    p.stderr.on('data', (d) => (err += d));
+    p.on('error', reject);
+    p.on('close', (c) => (c === 0 && !err.trim() ? resolve() : reject(new Error(`Keychain: ${err.trim() || `exit ${c}`}`))));
+    p.stdin.end(`add-generic-password -U -s "${service}" -a "${account}" -l "${service} (${account})" -w "${secret}"${KEYCHAIN.length ? ` "${KEYCHAIN[0]}"` : ''}\n`);
+  });
 }
 
 /** The provider's API key from the shared Keychain item ('' when there is none). Cached for a minute. */
@@ -190,20 +230,47 @@ export async function setSharedKey(provider: AiProvider, key: string): Promise<v
     await run('/usr/bin/security', ['delete-generic-password', '-s', SERVICE, '-a', provider, ...KEYCHAIN], { timeout: 15_000 });
   } else {
     if (/["\\\n\r]/.test(k)) throw new Error('That key has characters an API key does not have');
-    // Through `security -i` (commands on stdin), so the key never appears in a process list.
-    // `security -i` exits 0 even when a command failed: anything on stderr counts as a failed save.
-    await new Promise<void>((resolve, reject) => {
-      const p = spawn('/usr/bin/security', ['-i'], { stdio: ['pipe', 'ignore', 'pipe'] });
-      let err = '';
-      p.stderr.on('data', (d) => (err += d));
-      p.on('error', reject);
-      p.on('close', (c) => (c === 0 && !err.trim() ? resolve() : reject(new Error(`Keychain: ${err.trim() || `exit ${c}`}`))));
-      p.stdin.end(`add-generic-password -U -s "${SERVICE}" -a "${provider}" -l "${SERVICE} (${provider})" -w "${k}"${KEYCHAIN.length ? ` "${KEYCHAIN[0]}"` : ''}\n`);
-    });
+    await keychainAdd(SERVICE, provider, k);
   }
   keyCache.delete(provider);
   const keys = new Set(readShared().ai?.keys ?? []);
   if (k) keys.add(provider);
   else keys.delete(provider);
   writeShared({ ai: { keys: [...keys] } });
+}
+
+// ---------------------------------------------------------------- Git accounts (shared with the Catzoid apps)
+
+/** Connected Git hosting accounts (no tokens). */
+export const sharedGitAccounts = (): GitAccount[] => (readShared().git?.accounts ?? []).filter((a) => a && a.id && a.kind && a.baseUrl);
+
+export function setSharedGitAccounts(accounts: GitAccount[]): void {
+  writeShared({ git: { accounts } });
+}
+
+const gitTokens = new Map<string, { at: number; token: string }>();
+const gitTokenFile = (id: string) => join(SHARED_DIR, 'git', `${id.replace(/[^\w.-]/g, '_')}.dpapi`);
+
+/** An account's token from the shared Keychain item ('' when there is none). Cached for a minute. */
+export async function sharedGitToken(id: string): Promise<string> {
+  const hit = gitTokens.get(id);
+  if (hit && Date.now() - hit.at < 60_000) return hit.token;
+  let token = '';
+  if (isWin) token = await winSecret(gitTokenFile(id));
+  else {
+    const r = await run('/usr/bin/security', ['find-generic-password', '-s', GIT_SERVICE, '-a', id, '-w', ...KEYCHAIN], { timeout: 15_000 });
+    token = r.code === 0 ? r.stdout.replace(/\n$/, '') : '';
+  }
+  gitTokens.set(id, { at: Date.now(), token });
+  return token;
+}
+
+/** Saves (or with '' removes) an account's token in the shared Keychain item (never in a process list). */
+export async function setSharedGitToken(id: string, token: string): Promise<void> {
+  const t = token.trim();
+  if (/["\\\n\r]/.test(t)) throw new Error('That token has characters a token does not have');
+  if (isWin) await setWinSecret(gitTokenFile(id), t);
+  else if (!t) await run('/usr/bin/security', ['delete-generic-password', '-s', GIT_SERVICE, '-a', id, ...KEYCHAIN], { timeout: 15_000 });
+  else await keychainAdd(GIT_SERVICE, id, t);
+  gitTokens.delete(id);
 }

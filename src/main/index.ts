@@ -500,7 +500,7 @@ function api(): HerdApi {
       return a;
     },
     gitRemoveAccount: async (accountId) => {
-      gitHosts.removeAccount(accountId);
+      await gitHosts.removeAccount(accountId);
       herd.emit('change');
     },
     gitRepos: (accountId, search) => gitHosts.repos(accountId, search),
@@ -1329,6 +1329,8 @@ app.whenReady().then(async () => {
     herd.gateways.autoStart();
   }
   gitHosts.setAccountsListener(() => herd.emit('change'));
+  // DevCatz 1.0.0's own Git accounts → the shared store (once; DialCatz then sees them too).
+  void gitHosts.moveLocalAccounts().catch((e: Error) => console.warn(`Git accounts: ${e.message}`));
   herd.onNewUpdates = (list) => {
     if (!Notification.isSupported()) return;
     const body = list.map((u) => `${RUNTIME_NAMES[u.runtime]} ${u.from} → ${u.to}`).join('\n');

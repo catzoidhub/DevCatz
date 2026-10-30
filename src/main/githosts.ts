@@ -5,34 +5,34 @@ import { join } from 'node:path';
 import type { GitAccount, GitHostKind, GitPull, GitRepo, GitSshKey } from '@shared/types';
 import { run } from './env';
 import type { GitCreds } from './git';
+import { onSharedChange, setSharedGitAccounts, setSharedGitToken, sharedGitAccounts, sharedGitToken } from './shared';
 import { store } from './store';
 import { currentOS, words } from '@shared/platform';
 
 /**
- * Hosting accounts (GitHub, GitLab, Gitea / Forgejo, Bitbucket) through their
- * REST APIs with a personal access token. Tokens are encrypted with Electron's
- * safeStorage (a key kept in the macOS Keychain) and never leave the main process.
+ * Hosting accounts (GitHub, GitLab, Gitea / Forgejo, Bitbucket) through their REST APIs with a personal access
+ * token. The accounts are shared with the Catzoid apps: connected once in DevCatz or DialCatz, they are in both
+ * (shared.json "git.accounts", tokens in the Keychain item "Catzoid Git"; see shared.ts). Tokens never leave the
+ * main process. Avatars are kept here as small data: URLs (the window only loads its own images).
  */
 
-interface StoredAccount extends GitAccount {
-  /** safeStorage-encrypted token, base64. */
-  token: string;
+type StoredAccount = GitAccount;
+
+const accountsOf = (): StoredAccount[] => sharedGitAccounts();
+async function decrypt(a: StoredAccount): Promise<string> {
+  const t = await sharedGitToken(a.id);
+  if (!t) throw new Error(`The token of ${a.username} is not in ${currentOS === 'mac' ? 'the Keychain' : words.secretStore}: remove the account and connect it again`);
+  return t;
 }
 
-const accountsOf = (): StoredAccount[] => (store.extra<StoredAccount[]>('gitAccounts') ?? []).filter(Boolean);
-const save = (list: StoredAccount[]) => store.setExtra('gitAccounts', list);
-function decrypt(a: StoredAccount): string {
-  try {
-    return safeStorage.decryptString(Buffer.from(a.token, 'base64'));
-  } catch {
-    // Keychain key changed (Keychain reset, another DevCatz build): the token is unreadable.
-    throw new Error(`The token of ${a.username} can no longer be read: remove the account and connect it again`);
-  }
-}
+/** Local avatar copies, by account id: { url (the remote one it came from), data }. */
+const avatars = (): Record<string, { url: string; data: string | null }> => store.extra('gitAvatars') ?? {};
 
 export function listAccounts(): GitAccount[] {
   void fillAvatars();
-  return accountsOf().map(({ token: _t, ...a }) => a);
+  const local = avatars();
+  // The local copy belongs to the account's current remote URL ('' = moved from DevCatz 1.0.0 without one).
+  return accountsOf().map((a) => ({ ...a, avatarUrl: local[a.id] && local[a.id].url === (a.avatarUrl ?? '') ? local[a.id].data : null }));
 }
 
 /**
@@ -47,7 +47,7 @@ async function avatarData(url: string | null, a?: StoredAccount): Promise<string
     if (u.hostname.endsWith('githubusercontent.com') || u.hostname.endsWith('gravatar.com')) u.searchParams.set('s', '96');
     // Self-hosted GitLab / Gitea avatars may need the token.
     const sameHost = a && hostOf(a.baseUrl) === u.hostname;
-    const res = await fetch(u, { headers: sameHost ? headers(a.kind, a.baseUrl, decrypt(a), a.username) : {}, signal: AbortSignal.timeout(10_000) });
+    const res = await fetch(u, { headers: sameHost ? headers(a.kind, a.baseUrl, await decrypt(a), a.username) : {}, signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return null;
     const type = res.headers.get('content-type')?.split(';')[0] ?? 'image/png';
     if (!type.startsWith('image/')) return null;
@@ -59,25 +59,66 @@ async function avatarData(url: string | null, a?: StoredAccount): Promise<string
 }
 
 let filling = false;
-/** Turns remaining remote avatar URLs into data: URLs (once; a failed one becomes null). */
+/** Copies the accounts' remote avatars here as data: URLs (once per URL; a failed one stays null). */
 async function fillAvatars(): Promise<void> {
   if (filling) return;
-  const todo = accountsOf().filter((a) => a.avatarUrl && !a.avatarUrl.startsWith('data:'));
+  const local = avatars();
+  const todo = accountsOf().filter((a) => a.avatarUrl && local[a.id]?.url !== a.avatarUrl);
   if (!todo.length) return;
   filling = true;
   try {
-    const done = new Map<string, string | null>();
-    for (const a of todo) done.set(a.id, await avatarData(a.avatarUrl, a));
-    save(accountsOf().map((a) => (done.has(a.id) ? { ...a, avatarUrl: done.get(a.id) ?? null } : a)));
+    const next = { ...avatars() };
+    for (const a of todo) next[a.id] = { url: a.avatarUrl!, data: await avatarData(a.avatarUrl, a) };
+    store.setExtra('gitAvatars', next);
     onAccountsChange();
   } finally {
     filling = false;
   }
 }
 
-/** Set by index.ts: refreshes the window after avatars arrive. */
+/** Set by index.ts: refreshes the window after avatars arrive, or when another Catzoid app changed the accounts. */
 let onAccountsChange: () => void = () => undefined;
-export const setAccountsListener = (fn: () => void) => (onAccountsChange = fn);
+export const setAccountsListener = (fn: () => void) => {
+  onAccountsChange = fn;
+  onSharedChange(() => onAccountsChange());
+};
+
+/**
+ * DevCatz 1.0.0 kept its accounts in its own settings (`gitAccounts`, the token encrypted with safeStorage). They
+ * move to the shared store once, with their ids, so DialCatz sees them too; one DialCatz already brought over (same
+ * id, or the same host and user) is only dropped here. An account whose token cannot be read or saved stays where
+ * it was and is tried again on the next start.
+ */
+interface LocalAccount extends GitAccount {
+  token: string;
+}
+export async function moveLocalAccounts(): Promise<number> {
+  const local = (store.extra<LocalAccount[]>('gitAccounts') ?? []).filter((a) => a?.id && a.kind && a.baseUrl && typeof a.token === 'string');
+  if (!local.length) return 0;
+  const left: LocalAccount[] = [];
+  let moved = 0;
+  for (const a of local) {
+    const shared = accountsOf();
+    if (shared.some((x) => x.id === a.id || (x.kind === a.kind && x.baseUrl === a.baseUrl && x.username === a.username))) continue;
+    try {
+      const token = safeStorage.decryptString(Buffer.from(a.token, 'base64')).trim();
+      if (!token) continue;
+      const { token: _t, ...pub } = a;
+      await setSharedGitToken(pub.id, token);
+      // The shared list carries remote avatar URLs only; this copy's data: URL stays in the local avatars.
+      const data = pub.avatarUrl?.startsWith('data:') ? pub.avatarUrl : null;
+      setSharedGitAccounts([...accountsOf(), { ...pub, avatarUrl: data ? null : pub.avatarUrl }]);
+      if (data) store.setExtra('gitAvatars', { ...avatars(), [pub.id]: { url: '', data } });
+      moved++;
+    } catch (e) {
+      console.warn(`Git account ${a.username} not moved to the shared store: ${(e as Error).message}`);
+      left.push(a);
+    }
+  }
+  store.setExtra('gitAccounts', left.length ? left : undefined);
+  if (moved) onAccountsChange();
+  return moved;
+}
 
 const trimUrl = (u: string) => u.trim().replace(/\/+$/, '');
 const DEFAULT_URL: Record<GitHostKind, string> = { github: 'https://github.com', gitlab: 'https://gitlab.com', gitea: 'https://codeberg.org', bitbucket: 'https://bitbucket.org' };
@@ -136,11 +177,10 @@ function account(id: string): StoredAccount {
   if (!a) throw new Error('Account not found');
   return a;
 }
-const callAs = <T>(a: StoredAccount, method: string, path: string, body?: unknown) => call<T>(a.kind, a.baseUrl, decrypt(a), a.username, method, path, body);
+const callAs = async <T>(a: StoredAccount, method: string, path: string, body?: unknown) => call<T>(a.kind, a.baseUrl, await decrypt(a), a.username, method, path, body);
 
 /** Checks the token against the host, then keeps the account. */
 export async function addAccount(kind: GitHostKind, baseUrlIn: string, token: string, usernameIn: string): Promise<GitAccount> {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error(`${currentOS === 'mac' ? 'macOS Keychain' : words.secretStore} encryption is not available`);
   const baseUrl = trimUrl(baseUrlIn || DEFAULT_URL[kind]);
   if (!/^https?:\/\/[^/]+/.test(baseUrl)) throw new Error('URL: https://host');
   const t = token.trim();
@@ -165,23 +205,20 @@ export async function addAccount(kind: GitHostKind, baseUrlIn: string, token: st
     if (!username) throw new Error('Bitbucket Server: enter your username');
     await call(kind, baseUrl, t, username, 'GET', `/users/${encodeURIComponent(username)}`);
   }
-  const list = accountsOf().filter((a) => !(a.kind === kind && a.baseUrl === baseUrl && a.username === username));
-  const acc: StoredAccount = {
-    id: `${kind}-${Date.now().toString(36)}`,
-    kind,
-    baseUrl,
-    username,
-    name,
-    avatarUrl: await avatarData(avatarUrl),
-    addedAt: new Date().toISOString(),
-    token: safeStorage.encryptString(t).toString('base64'),
-  };
-  save([...list, acc]);
+  // The same host and user again replaces the old entry (and its token).
+  const old = accountsOf().filter((a) => a.kind === kind && a.baseUrl === baseUrl && a.username === username);
+  const acc: StoredAccount = { id: `${kind}-${Date.now().toString(36)}`, kind, baseUrl, username, name, avatarUrl, addedAt: new Date().toISOString() };
+  await setSharedGitToken(acc.id, t);
+  setSharedGitAccounts([...accountsOf().filter((a) => !old.includes(a)), acc]);
+  for (const o of old) await setSharedGitToken(o.id, '').catch(() => undefined);
+  if (avatarUrl) store.setExtra('gitAvatars', { ...avatars(), [acc.id]: { url: avatarUrl, data: await avatarData(avatarUrl) } });
   return listAccounts().find((a) => a.id === acc.id)!;
 }
 
-export function removeAccount(id: string): void {
-  save(accountsOf().filter((a) => a.id !== id));
+/** Removes the account from every Catzoid app (it is shared), with its token. */
+export async function removeAccount(id: string): Promise<void> {
+  setSharedGitAccounts(accountsOf().filter((a) => a.id !== id));
+  await setSharedGitToken(id, '');
 }
 
 /** The account for a remote's host (first match), and HTTPS credentials for it. */
@@ -195,12 +232,12 @@ export function accountFor(host: string | null): GitAccount | null {
   return a ? listAccounts().find((x) => x.id === a.id)! : null;
 }
 
-export function credsFor(host: string | null): GitCreds | null {
+export async function credsFor(host: string | null): Promise<GitCreds | null> {
   const pub = accountFor(host);
   if (!pub) return null;
   const a = account(pub.id);
   const user = a.kind === 'github' ? 'x-access-token' : a.kind === 'gitlab' ? 'oauth2' : a.username;
-  return { username: user, token: decrypt(a) };
+  return { username: user, token: await decrypt(a) };
 }
 
 // ------------------------------------------------------------ repositories
@@ -429,6 +466,6 @@ export async function sshAddToAccount(accountId: string, keyPath: string, title:
     const u = await callAs<{ uuid: string }>(a, 'GET', '/user');
     await callAs(a, 'POST', `/users/${enc(u.uuid)}/ssh-keys`, { key: body, label });
   } else {
-    await call(a.kind, a.baseUrl, decrypt(a), a.username, 'POST', `${a.baseUrl}/rest/ssh/1.0/keys`, { text: body, label });
+    await call(a.kind, a.baseUrl, await decrypt(a), a.username, 'POST', `${a.baseUrl}/rest/ssh/1.0/keys`, { text: body, label });
   }
 }
