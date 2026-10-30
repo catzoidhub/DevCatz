@@ -30,6 +30,8 @@ import * as nodes from './node';
 import * as buns from './bun';
 import * as golang from './golang';
 import * as rusts from './rust';
+import * as tools from './tools';
+import { cancellable } from './cancel';
 import * as phps from './php';
 import * as phpext from './phpext';
 import { detectRealtime } from './realtime';
@@ -102,7 +104,7 @@ import type {
   InstalledRust,
   RemoteRust,
   RustChoice,
-  RustToolId,
+  RustToolId, RuntimeToolId, RuntimeToolRuntime, RuntimeToolState,
   RustToolState,
   FolderPreview,
   InstalledBun,
@@ -341,6 +343,10 @@ export class Herd extends EventEmitter {
   private updates: UpdatesState = { list: [], checkedAt: null, checking: false, error: null, updating: null };
   /** Called with updates not announced before (macOS notification). */
   onNewUpdates: (list: RuntimeUpdate[]) => void = () => undefined;
+  /** Tools with a newer release (Runtimes → Tools); `page` = the runtime page that updates them. */
+  onNewToolUpdates: (list: { label: string; from: string; to: string; page: string }[]) => void = () => undefined;
+  /** Installed tools with a newer release, after the last check (the update badges on the Runtimes pages). */
+  private toolUpdateList: { id: string; label: string; page: string; from: string; to: string }[] = [];
 
   constructor() {
     super();
@@ -515,12 +521,26 @@ export class Herd extends EventEmitter {
       tryList('Go', this.installedGos.some((g) => g.source !== 'system'), () => this.goRemote(true)),
       tryList('PHP', this.installedPhps.length > 0, () => this.phpRemote(true)),
     ]);
+    // The tools on the Runtimes pages (Node.js, Go, Python, Rust): newer releases on their registries.
+    tools.setGoBin(this.toolRuntimes().go);
+    const toolUpdates = [
+      ...(await tools.toolUpdates().catch(() => [])).map((u) => ({ ...u, page: u.runtime as string })),
+      ...(this.rustupVer ? await rusts.rustToolUpdates().catch(() => []) : []).map((u) => ({ ...u, page: 'rust' })),
+    ];
+    this.toolUpdateList = toolUpdates.map(({ id, label, page, from, to }) => ({ id, label, page, from, to }));
+    if (this.rustupVer) this.rustTools = await rusts.toolStates().catch(() => this.rustTools);
     this.updates.checking = false;
     this.updates.checkedAt = Date.now();
     this.updates.error = errors.length ? errors.join('; ') : null;
     this.recomputeUpdates();
     if (!store.settings.updateNotifications) return;
     const told = new Set(store.notifiedUpdates);
+    const freshTools = toolUpdates.filter((u) => !told.has(`tool:${u.id}@${u.to}`));
+    if (freshTools.length) {
+      store.setNotifiedUpdates([...told, ...freshTools.map((u) => `tool:${u.id}@${u.to}`)]);
+      for (const u of freshTools) told.add(`tool:${u.id}@${u.to}`);
+      this.onNewToolUpdates(freshTools);
+    }
     const fresh = this.updates.list.filter((u) => !told.has(`${u.runtime}@${u.to}`));
     if (!fresh.length) return;
     store.setNotifiedUpdates([...told, ...fresh.map((u) => `${u.runtime}@${u.to}`)]);
@@ -1064,6 +1084,17 @@ export class Herd extends EventEmitter {
           : stack.layout === 'folders'
             ? `${stack.warnings.find((w) => w.startsWith('Dependencies missing')) ?? 'Dependencies are missing in some folders.'} It installs every folder's (npm / composer / uv / go).`
             : `Dependencies are not installed (node_modules is empty). Use "Install dependencies" (${stack.packageManager} install) first.`;
+      this.processes.log(id, 'sys', msg);
+      throw new Error(msg);
+    }
+    // Installed, but not everything: say why instead of letting the dev command fail with "command not found".
+    const issue = stack.nodeIssues?.[0];
+    if (issue) {
+      const where = issue.dir === '.' ? '' : ` in ${issue.dir}`;
+      const msg =
+        issue.kind === 'electron-binary'
+          ? `Electron's own download is missing${where} (its install step failed or was skipped): use "Repair Electron" on the Overview tab.`
+          : `package.json lists packages that are not installed yet${where} (${issue.packages?.join(', ')}): use "Install dependencies" (${stack.packageManager ?? 'npm'} install).`;
       this.processes.log(id, 'sys', msg);
       throw new Error(msg);
     }
@@ -2310,6 +2341,8 @@ export class Herd extends EventEmitter {
     const def = store.settings.nodeDefault;
     if (def && !this.installedNodes.some((n) => n.version === def)) store.updateSettings({ nodeDefault: null });
     nodes.writeShims(store.settings.nodeDefault);
+    // Links for the tools on the Runtimes → Tools tabs (a shim of the same name stays first).
+    tools.writeToolShims();
   }
 
   /** Version a site runs with: its own pick, then .nvmrc/engines, then the default, then the shell's node. */
@@ -2418,6 +2451,8 @@ export class Herd extends EventEmitter {
       dirs.push(join(pythons.pythonDir(), 'bin'));
       pyEnv.PYTHONUNBUFFERED = '1';
     }
+    // Tools installed on the Runtimes pages (pnpm, air, swag, poetry …), after the site's own runtimes.
+    dirs.push(...tools.toolPathDirs());
     // The site's Redis DB index (any stack).
     const extra = { ...phpEnv, ...pyEnv, ...(this.redisEnv.get(p.id) ?? {}) };
     if (!dirs.length) return extra;
@@ -2668,10 +2703,159 @@ export class Herd extends EventEmitter {
     return this.rustTask(target, (detail) => rusts.addTarget(target, detail));
   }
 
+  async rustToolUninstall(id: RustToolId): Promise<void> {
+    await rusts.uninstallTool(id);
+    this.rustTools = await rusts.toolStates();
+    this.syncRustToolUpdates();
+    this.changed();
+  }
+
+  async rustToolsCheck(): Promise<void> {
+    this.rustTools = await rusts.toolStates(true);
+    this.syncRustToolUpdates();
+    this.changed();
+  }
+
+  private syncRustToolUpdates(): void {
+    this.setToolUpdates('rust', this.rustTools.filter((t) => t.update).map((t) => ({ id: t.id, label: t.label, page: 'rust', from: t.version ?? '', to: t.latest ?? '' })));
+  }
+
   rustToolInstall(id: RustToolId): Promise<void> {
     const tool = rusts.RUST_TOOLS.find((t) => t.id === id);
     if (!tool) throw new Error(`Unknown tool ${id}`);
-    return this.rustTask(tool.label, (detail) => rusts.installTool(id, detail));
+    return this.withCancel('rust', () => this.rustTask(tool.label, (detail) => rusts.installTool(id, detail))).then(async () => {
+      this.rustTools = await rusts.toolStates();
+      this.syncRustToolUpdates();
+      this.changed();
+    });
+  }
+
+  // ------------------------------------------------------------ cancellable installs
+
+  private installAborts = new Map<string, AbortController>();
+
+  /**
+   * Runs an install (a runtime version, a tool, an update) so Cancel can stop it: its downloads and processes see the
+   * signal (cancel.ts). A cancelled install leaves no error behind, only the state cleared by `reset`.
+   */
+  withCancel<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const c = new AbortController();
+    this.installAborts.set(key, c);
+    return cancellable(c.signal, fn).finally(() => {
+      if (this.installAborts.get(key) === c) this.installAborts.delete(key);
+      if (c.signal.aborted) {
+        const runtime = key.split(':')[0];
+        if (runtime === 'node') this.nodeInstalling = null;
+        else if (runtime === 'bun') this.bunInstalling = null;
+        else if (runtime === 'go') this.goInstalling = null;
+        else if (runtime === 'php' || runtime === 'composer') this.phpInstalling = null;
+        else if (runtime === 'python') this.pythonInstalling = null;
+        else if (runtime === 'rust') this.rustInstalling = null;
+        else if (runtime === 'tool') this.toolTask = null;
+        this.changed();
+      }
+    });
+  }
+
+  /** Cancel of an install started with withCancel (`node`, `go`, `rust`, `tool:<id>` …). */
+  installCancel(key: string): void {
+    this.installAborts.get(key)?.abort();
+  }
+
+  // ------------------------------------------------------------ Runtimes → Tools (Node.js, Go, Python)
+
+  /** The default Node's and Go's bin folders: they install the tools. */
+  private toolRuntimes(): tools.ToolRuntimes {
+    const node = this.installedNodes.find((n) => n.version === store.settings.nodeDefault) ?? this.installedNodes[0];
+    const go = this.installedGos.find((g) => g.version === store.settings.goDefault) ?? this.installedGos[0];
+    return { node: node?.binDir ?? null, go: go?.binDir ?? null };
+  }
+
+  /** Which sites need a tool they cannot find: their package manager (pnpm / Yarn), Air for apps started with `air`. */
+  private toolNeeds(): Map<RuntimeToolId, string[]> {
+    const needs = new Map<RuntimeToolId, string[]>();
+    const add = (id: RuntimeToolId, site: string) => needs.set(id, [...(needs.get(id) ?? []), site]);
+    for (const p of this.projects) {
+      const st = this.stacks.get(p.id);
+      if (!st) continue;
+      if (st.packageManager === 'pnpm' || st.packageManager === 'yarn') add(st.packageManager, p.name);
+      if (st.apps.some((a) => a.command === 'air' || a.command?.startsWith('air '))) add('air', p.name);
+    }
+    return needs;
+  }
+
+  async toolsState(runtime: RuntimeToolRuntime, refresh = false): Promise<RuntimeToolState[]> {
+    tools.setGoBin(this.toolRuntimes().go);
+    const list = await tools.toolStates(runtime, this.toolNeeds(), refresh);
+    this.setToolUpdates(runtime, list.filter((t) => t.update).map((t) => ({ id: t.id, label: t.label, page: runtime, from: t.version ?? '', to: t.latest ?? '' })));
+    return list;
+  }
+
+  /** Replaces one page's entries of the update list (after its Tools tab was read or a tool changed). */
+  private setToolUpdates(page: string, list: { id: string; label: string; page: string; from: string; to: string }[]): void {
+    const next = [...this.toolUpdateList.filter((u) => u.page !== page), ...list];
+    if (JSON.stringify(next) === JSON.stringify(this.toolUpdateList)) return;
+    this.toolUpdateList = next;
+    this.changed();
+  }
+
+  async toolInstall(id: RuntimeToolId): Promise<void> {
+    const t = tools.TOOLS.find((x) => x.id === id);
+    if (!t) throw new Error(`Unknown tool ${id}`);
+    if (this.toolBusy.has(id)) throw new Error(`${t.label} is already being installed`);
+    this.toolBusy.add(id);
+    this.toolTask = { id, label: t.label, runtime: t.runtime, detail: 'Starting…' };
+    this.changed();
+    let last = 0;
+    try {
+      await this.withCancel(`tool:${id}`, () =>
+        tools.installTool(id, this.toolRuntimes(), (line) => {
+          if (this.toolTask?.id === id) this.toolTask.detail = line.slice(0, 200);
+          // npm / go / uv print fast: the window hears about every fifth of a second.
+          if (Date.now() - last > 200) {
+            last = Date.now();
+            this.changed();
+          }
+        }),
+      );
+      this.toolUpdateList = this.toolUpdateList.filter((u) => u.id !== id);
+    } finally {
+      this.toolBusy.delete(id);
+      if (this.toolTask?.id === id) this.toolTask = null;
+      this.changed();
+    }
+  }
+
+  async toolUninstall(id: RuntimeToolId): Promise<void> {
+    await tools.uninstallTool(id, this.toolRuntimes());
+    this.toolUpdateList = this.toolUpdateList.filter((u) => u.id !== id);
+    this.changed();
+  }
+
+  private toolBusy = new Set<RuntimeToolId>();
+  /** The tool being installed or updated, with the last line its runtime printed (Tools tab progress). */
+  private toolTask: { id: RuntimeToolId; label: string; runtime: RuntimeToolRuntime; detail: string } | null = null;
+
+  /** Electron's install script again (it downloads the binary into node_modules/electron/dist), output in Logs. */
+  async repairElectron(id: string): Promise<void> {
+    const p = this.project(id);
+    const stack = this.stacks.get(id);
+    const issue = stack?.nodeIssues?.find((i) => i.kind === 'electron-binary');
+    if (!issue) throw new Error('Electron is installed correctly here');
+    if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
+    const dir = join(p.path, issue.dir === '.' ? '' : issue.dir);
+    if (relative(p.path, dir).startsWith('..')) throw new Error('Unknown folder');
+    this.dbTasks.set(id, 'repairing Electron');
+    this.changed();
+    try {
+      this.processes.log(id, 'sys', '$ node node_modules/electron/install.js');
+      const code = await stream(dir, 'node node_modules/electron/install.js', (t) => this.processes.log(id, 'sys', t), this.runtimeEnv(p));
+      if (code !== 0) throw new Error(`Electron's download failed (exit ${code}); see Logs (a proxy or firewall may block github.com)`);
+    } finally {
+      this.dbTasks.delete(id);
+      this.rescan();
+      this.changed();
+    }
   }
 
   /** `cargo fetch`, streamed into the site's log (cargo builds on Start anyway; this downloads the crates first). */
@@ -4305,6 +4489,8 @@ export class Herd extends EventEmitter {
       dbcatz: this.dbcatz.state(),
       dialcatz: this.dialcatz.state(),
       appUpdate: this.updater.state(),
+      toolTask: this.toolTask,
+      toolUpdates: this.toolUpdateList,
       reports: this.reports.state(),
       uninstall: this.uninstallTask,
       git: this.git.state(),

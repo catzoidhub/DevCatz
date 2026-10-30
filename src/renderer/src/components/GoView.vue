@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import type { RemoteGo } from '@shared/types';
 import PageHeader from './PageHeader.vue';
 import { ICONS } from '../icons';
 import UpdateButton from './UpdateButton.vue';
-import { attempt, herd, notify, state } from '../store';
+import { attempt, herd, notify, runtimeTabRequest, state, askConfirm } from '../store';
+import RuntimeToolsCard from './RuntimeToolsCard.vue';
 import CatMood from './CatMood.vue';
 
 
 const s = computed(() => state.value!);
+/** Update badges on the tabs: newer versions of this runtime (Installed), newer tool releases (Tools). */
+const versionUpdates = computed(() => s.value.updates.list.filter((u) => u.runtime === 'go').length);
+const toolUpdates = computed(() => s.value.toolUpdates.filter((u) => u.page === 'go').length);
 const b = computed(() => s.value.go);
 const remote = ref<RemoteGo[]>([]);
 const loadingRemote = ref(false);
@@ -43,10 +47,19 @@ async function install(version: string, makeDefault = false) {
   notify('success', `Go ${version} installed`);
 }
 const setDefault = (version: string | null) => attempt(() => herd.goSetDefault(version));
-const uninstall = (version: string) => attempt(() => herd.goUninstall(version));
+async function uninstall(version: string) {
+  if (await askConfirm({ title: `Uninstall Go ${version}?`, text: `Go sites fall back to the default toolchain or your own installation.`, confirm: 'Uninstall' })) await attempt(() => herd.goUninstall(version));
+}
 
-type Tab = 'installed' | 'available';
+type Tab = 'installed' | 'available' | 'tools';
 const tab = ref<Tab>('installed');
+// The tool-update notification opens the Tools tab.
+watch(runtimeTabRequest, (t) => {
+  if (t === 'tools') {
+    tab.value = 'tools';
+    runtimeTabRequest.value = null;
+  }
+}, { immediate: true });
 </script>
 
 <template>
@@ -56,8 +69,9 @@ const tab = ref<Tab>('installed');
       <code>go.mod</code>, preferring the default.
     </p>
     <div role="tablist" class="seg no-drag mt-3">
-      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-info badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'tools' }" @click="tab = 'tools'">Tools<span v-if="toolUpdates" class="badge badge-info badge-xs ml-1" title="Tool updates available">{{ toolUpdates }}</span></a>
     </div>
   </PageHeader>
 
@@ -123,6 +137,7 @@ const tab = ref<Tab>('installed');
         </div>
         <progress class="progress progress-primary w-full" :value="busy.phase === 'extract' ? 100 : percent" max="100" />
       </div>
+      <button class="btn btn-ghost btn-sm" title="Stop the download / install" @click="herd.installCancel('go')">Cancel</button>
     </div>
     <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />
       Installing Go {{ b.installing.version }} failed: {{ b.installing.error }}
@@ -157,6 +172,9 @@ const tab = ref<Tab>('installed');
         </p>
       </div>
     </div>
+    </template>
+    <template v-if="tab === 'tools'">
+      <RuntimeToolsCard runtime="go" :ready="b.installed.length > 0" missing="Install a Go version first (Available tab): go install builds the tools." />
     </template>
   </section>
 </template>

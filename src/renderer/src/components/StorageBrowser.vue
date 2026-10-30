@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { confirmDeleteBucket, confirmDeleteObject } from '../confirms';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { S3Bucket, S3Entry, S3UploadProgress, StorageState } from '@shared/types';
 import { attempt, herd, notify } from '../store';
@@ -75,7 +76,7 @@ async function createBucket() {
   }
 }
 async function deleteBucket() {
-  if (!bucket.value) return;
+  if (!bucket.value || !(await confirmDeleteBucket(bucket.value))) return;
   await run(() => herd.s3DeleteBucket(props.service.kind, bucket.value!));
   await loadBuckets();
 }
@@ -129,6 +130,7 @@ async function download(e: S3Entry) {
   if (path) notify('success', `Saved to ${path}`);
 }
 async function remove(e: S3Entry) {
+  if (!(await confirmDeleteObject(e.key))) return;
   await run(() => herd.s3Delete(props.service.kind, bucket.value!, e.key));
   await loadEntries();
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { confirmCleanUrls, confirmResolver, confirmTrustCa } from '../confirms';
 import { currentOS, words } from '@shared/platform';
 import PageHeader from './PageHeader.vue';
 import AiSettings from './AiSettings.vue';
@@ -39,6 +40,7 @@ async function park() {
 }
 
 async function trust() {
+  if (!(await confirmTrustCa())) return;
   const ok = await attempt(() => herd.trustCa());
   if (ok) await attempt(async () => undefined, 'Certificate authority trusted. Reload your browser tabs.');
 }
@@ -64,7 +66,7 @@ async function applyTld() {
   if (r) notify('success', `Default domain is now .${r.to}${r.renamed.length ? `; renamed ${r.renamed.length} site(s)` : ''}`);
   tldPreview.value = null;
 }
-const installResolver = () => attempt(() => herd.installResolver());
+const installResolver = async () => (await confirmResolver()) && attempt(() => herd.installResolver());
 const uninstallResolver = () => attempt(() => herd.uninstallResolver(), 'Resolver removed');
 
 const setStartAll = (startAllOnLaunch: boolean) => attempt(() => herd.updateSettings({ startAllOnLaunch }));
@@ -90,6 +92,7 @@ function pickBrowser(path: string) {
 }
 
 async function cleanUrls(on: boolean) {
+  if (on && !(await confirmCleanUrls())) return;
   const ok = on ? await attempt(() => herd.installCleanUrls()) : await attempt(() => herd.uninstallCleanUrls());
   if (ok) await attempt(async () => undefined, on ? 'Clean URLs enabled' : 'Clean URLs disabled');
 }

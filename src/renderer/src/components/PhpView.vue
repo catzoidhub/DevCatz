@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, onMounted, ref, watch } from 'vue';
 import type { PhpIniSettings, RemotePhp } from '@shared/types';
 import PageHeader from './PageHeader.vue';
 import PhpExtensionsCard from './PhpExtensionsCard.vue';
 import { ICONS } from '../icons';
 import UpdateButton from './UpdateButton.vue';
-import { attempt, herd, notify, state } from '../store';
+import { attempt, herd, notify, state, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
 import { isWin } from '../platform';
 
@@ -14,6 +15,9 @@ const FPM = isWin ? 'PHP (FastCGI)' : 'PHP-FPM';
 
 
 const s = computed(() => state.value!);
+/** Update badges on the tabs: newer versions of this runtime (Installed), newer tool releases (Tools). */
+const versionUpdates = computed(() => s.value.updates.list.filter((u) => u.runtime === 'php').length);
+const toolUpdates = computed(() => s.value.toolUpdates.filter((u) => u.page === 'php').length);
 const php = computed(() => s.value.php);
 const remote = ref<RemotePhp[]>([]);
 const loadingRemote = ref(false);
@@ -63,7 +67,9 @@ async function install(version: string, makeDefault = false) {
   notify('success', `PHP ${got.version} installed`);
 }
 const setDefault = (version: string | null) => attempt(() => herd.phpSetDefault(version));
-const uninstall = (version: string) => attempt(() => herd.phpUninstall(version));
+async function uninstall(version: string) {
+  if (await askConfirm({ title: `Uninstall PHP ${version}?`, text: `Its ${words.phpServer} ${isWin ? 'workers stop' : 'pool stops'}; sites using it fall back to another installed version.`, confirm: 'Uninstall' })) await attempt(() => herd.phpUninstall(version));
+}
 const installComposer = () => attempt(() => herd.composerInstall(), 'Composer installed');
 
 // ---- php.ini
@@ -141,7 +147,7 @@ const tab = ref<Tab>('installed');
     </p>
     <div class="no-drag mt-3 flex flex-wrap items-center gap-3">
       <div role="tablist" class="seg">
-        <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed</a>
+        <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-info badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
         <a role="tab" class="seg-item normal-case" :class="{ 'is-active': tab === 'ini' }" @click="tab = 'ini'">php.ini</a>
         <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'extensions' }" @click="tab = 'extensions'">Extensions</a>
         <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>
@@ -238,6 +244,7 @@ const tab = ref<Tab>('installed');
         <progress v-if="busy.detail" class="progress progress-primary w-full" />
         <progress v-else class="progress progress-primary w-full" :value="busy.phase === 'extract' ? 100 : percent" max="100" />
       </div>
+      <button class="btn btn-ghost btn-sm" title="Stop the download / install" @click="herd.installCancel(busy.version === 'composer' ? 'composer' : 'php')">Cancel</button>
     </div>
     <div v-else-if="php.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />
       Installing {{ php.installing.version }} failed: {{ php.installing.error }}

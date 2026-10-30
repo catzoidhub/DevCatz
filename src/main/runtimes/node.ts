@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
-import type { AppInfo, Framework, PackageManager, StackInfo } from '@shared/types';
+import type { AppInfo, Framework, NodeDepIssue, PackageManager, StackInfo } from '@shared/types';
 import {
   DEFAULT_PORTS,
   detectDatabase,
@@ -353,6 +353,7 @@ function detectNodeStack(root: string, domain: string): StackInfo {
     node: nvmrc || rootPkg?.engines?.node || null,
     runtime: 'node',
     depsMissing: !hasDependencies(root),
+    ...(hasDependencies(root) ? nodeDepIssues(root, candidates) : {}),
     warnings: [...portClashes(apps), ...warnings],
     libs,
     layout: monorepo ? 'workspaces' : undefined,
@@ -361,6 +362,34 @@ function detectNodeStack(root: string, domain: string): StackInfo {
 }
 
 /** node_modules exists and has something in it (bun's isolated layout included). */
+/**
+ * After an install: packages package.json lists that node_modules lacks (package.json changed since `npm install`), and an
+ * Electron whose own binary never downloaded (its install script failed or was skipped: no node_modules/electron/path.txt).
+ * Either way Start would fail with "command not found" / "Electron failed to install correctly"; the site says why instead.
+ * Yarn Plug'n'Play has no node_modules to look in.
+ */
+function nodeDepIssues(root: string, dirs: string[]): { nodeIssues?: NodeDepIssue[] } {
+  if (existsSync(join(root, '.pnp.cjs')) || existsSync(join(root, '.pnp.js'))) return {};
+  const issues: NodeDepIssue[] = [];
+  for (const dir of dirs) {
+    const pkg = readJson<PackageJson>(join(dir, 'package.json'));
+    if (!pkg) continue;
+    const rel = relative(root, dir) || '.';
+    // Workspace siblings and local links resolve without a download; the rest must be in this folder's or the root's node_modules.
+    const where = (name: string) => [join(dir, 'node_modules', name), join(root, 'node_modules', name)].find((d) => existsSync(join(d, 'package.json'))) ?? null;
+    const missing = Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })
+      .filter(([, spec]) => !/^(workspace|link|file|portal):/.test(spec))
+      .map(([name]) => name)
+      .filter((name) => !where(name));
+    if (missing.length) issues.push({ kind: 'missing-packages', dir: rel, packages: missing.slice(0, 6) });
+    const electron = (pkg.dependencies?.electron || pkg.devDependencies?.electron) && where('electron');
+    // Electron up to 44 downloads its binary in a postinstall script; 45+ does it on first run (no script, nothing to repair).
+    const downloadsOnInstall = electron ? Boolean(readJson<PackageJson>(join(electron, 'package.json'))?.scripts?.postinstall) : false;
+    if (electron && downloadsOnInstall && !existsSync(join(electron, 'path.txt'))) issues.push({ kind: 'electron-binary', dir: relative(root, join(electron, '..', '..')) || '.' });
+  }
+  return issues.length ? { nodeIssues: issues } : {};
+}
+
 export function hasDependencies(root: string): boolean {
   try {
     return readdirSync(join(root, 'node_modules')).length > 0;

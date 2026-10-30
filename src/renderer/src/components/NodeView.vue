@@ -2,13 +2,17 @@
 import PageHeader from './PageHeader.vue';
 import { ICONS } from '../icons';
 import UpdateButton from './UpdateButton.vue';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import type { RemoteNode } from '@shared/types';
-import { attempt, herd, notify, state } from '../store';
+import { attempt, herd, notify, runtimeTabRequest, state, askConfirm } from '../store';
+import RuntimeToolsCard from './RuntimeToolsCard.vue';
 import CatMood from './CatMood.vue';
 import { isWin } from '../platform';
 
 const s = computed(() => state.value!);
+/** Update badges on the tabs: newer versions of this runtime (Installed), newer tool releases (Tools). */
+const versionUpdates = computed(() => s.value.updates.list.filter((u) => u.runtime === 'node').length);
+const toolUpdates = computed(() => s.value.toolUpdates.filter((u) => u.page === 'node').length);
 const n = computed(() => s.value.node);
 const remote = ref<RemoteNode[]>([]);
 const loadingRemote = ref(false);
@@ -41,7 +45,9 @@ async function install(version: string, makeDefault = false) {
 }
 
 const setDefault = (version: string | null) => attempt(() => herd.nodeSetDefault(version));
-const uninstall = (version: string) => attempt(() => herd.nodeUninstall(version));
+async function uninstall(version: string) {
+  if (await askConfirm({ title: `Uninstall Node ${version}?`, text: `Sites pinned to this version fall back to their .nvmrc match or the default version.`, confirm: 'Uninstall' })) await attempt(() => herd.nodeUninstall(version));
+}
 
 const pathLine = computed(() => `export PATH="${n.value.shimDir}:$PATH"`);
 const pathBusy = ref(false);
@@ -55,8 +61,15 @@ async function copyPath() {
   notify('info', 'Copied. Add it to the end of ~/.zshrc, then open a new terminal.');
 }
 
-type Tab = 'installed' | 'available' | 'terminal';
+type Tab = 'installed' | 'available' | 'terminal' | 'tools';
 const tab = ref<Tab>('installed');
+// The tool-update notification opens the Tools tab.
+watch(runtimeTabRequest, (t) => {
+  if (t === 'tools') {
+    tab.value = 'tools';
+    runtimeTabRequest.value = null;
+  }
+}, { immediate: true });
 </script>
 
 <template>
@@ -67,9 +80,10 @@ const tab = ref<Tab>('installed');
     </p>
   
     <div role="tablist" class="seg no-drag mt-3">
-      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-info badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'terminal' }" @click="tab = 'terminal'">Terminal</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'tools' }" @click="tab = 'tools'">Tools<span v-if="toolUpdates" class="badge badge-info badge-xs ml-1" title="Tool updates available">{{ toolUpdates }}</span></a>
     </div>
   </PageHeader>
 
@@ -135,6 +149,7 @@ const tab = ref<Tab>('installed');
         </div>
         <progress class="progress progress-primary w-full" :value="busy.phase === 'extract' ? 100 : percent" max="100" />
       </div>
+      <button class="btn btn-ghost btn-sm" title="Stop the download / install" @click="herd.installCancel('node')">Cancel</button>
     </div>
     <div v-else-if="n.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />
       Installing {{ n.installing.version }} failed: {{ n.installing.error }}
@@ -203,6 +218,9 @@ const tab = ref<Tab>('installed');
         </div>
       </div>
     </div>
+    </template>
+    <template v-if="tab === 'tools'">
+      <RuntimeToolsCard runtime="node" :ready="n.installed.length > 0" missing="Install a Node.js version first (Available tab): its npm installs the tools." />
     </template>
   </section>
 </template>

@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import type { RemotePython } from '@shared/types';
 import PageHeader from './PageHeader.vue';
 import { STACK_ICONS } from '../stackicons';
-import { attempt, herd, notify, state } from '../store';
+import { attempt, herd, notify, runtimeTabRequest, state, askConfirm } from '../store';
+import RuntimeToolsCard from './RuntimeToolsCard.vue';
 import CatMood from './CatMood.vue';
 
 /** Python versions through uv (Astral): uv itself, installed CPythons, the ones uv can download, the default. */
 
 const s = computed(() => state.value!);
+/** Update badges on the tabs: newer versions of this runtime (Installed), newer tool releases (Tools). */
+// uv and rustup keep their own versions current: no version updates tracked here.
+const versionUpdates = computed(() => 0);
+const toolUpdates = computed(() => s.value.toolUpdates.filter((u) => u.page === 'python').length);
 const b = computed(() => s.value.python);
 const remote = ref<RemotePython[]>([]);
 const loadingRemote = ref(false);
@@ -43,10 +48,19 @@ async function install(version: string) {
   if (await attempt(() => herd.pythonInstall(version).then(() => true))) notify('success', `Python ${version} installed`);
 }
 const setDefault = (version: string | null) => attempt(() => herd.pythonSetDefault(version));
-const uninstall = (version: string) => attempt(() => herd.pythonUninstall(version));
+async function uninstall(version: string) {
+  if (await askConfirm({ title: `Uninstall Python ${version}?`, text: `Sites whose venv was made with it keep working until their .venv is recreated; new venvs use the default.`, confirm: 'Uninstall' })) await attempt(() => herd.pythonUninstall(version));
+}
 
-type Tab = 'installed' | 'available';
+type Tab = 'installed' | 'available' | 'tools';
 const tab = ref<Tab>('installed');
+// The tool-update notification opens the Tools tab.
+watch(runtimeTabRequest, (t) => {
+  if (t === 'tools') {
+    tab.value = 'tools';
+    runtimeTabRequest.value = null;
+  }
+}, { immediate: true });
 </script>
 
 <template>
@@ -56,8 +70,9 @@ const tab = ref<Tab>('installed');
       a <code>.venv</code> per site, dependencies from pyproject.toml, requirements.txt or Pipfile.
     </p>
     <div role="tablist" class="seg no-drag mt-3">
-      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-info badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'tools' }" @click="tab = 'tools'">Tools<span v-if="toolUpdates" class="badge badge-info badge-xs ml-1" title="Tool updates available">{{ toolUpdates }}</span></a>
     </div>
   </PageHeader>
 
@@ -83,6 +98,7 @@ const tab = ref<Tab>('installed');
         </div>
         <progress class="progress progress-primary w-full" :value="busy.total ? percent : undefined" max="100" />
       </div>
+      <button class="btn btn-ghost btn-sm" title="Stop the download / install" @click="herd.installCancel('python')">Cancel</button>
     </div>
     <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />Installing {{ b.installing.version }} failed: {{ b.installing.error }}</div>
 
@@ -153,6 +169,9 @@ const tab = ref<Tab>('installed');
         </div>
       </div>
     </div>
+    </template>
+    <template v-if="tab === 'tools'">
+      <RuntimeToolsCard runtime="python" :ready="!!b.uv" missing="Install uv first (above): it installs the tools." />
     </template>
   </section>
 </template>

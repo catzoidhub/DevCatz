@@ -268,6 +268,8 @@ export interface StackInfo {
   redis: RedisInfo | null;
   /** Workspace-relative dir that owns `prisma/schema.prisma`, if any. */
   prismaDir: string | null;
+  /** Node: packages in package.json that are not in node_modules, an Electron whose binary never downloaded. */
+  nodeIssues?: NodeDepIssue[];
   node: string | null;
   /** `go` for Go modules (go.mod), `node` for package.json projects, `python` for pyproject/requirements/manage.py. */
   runtime: 'node' | 'go' | 'php' | 'python' | 'rust';
@@ -562,6 +564,44 @@ export interface RemoteRust {
   note: string | null;
 }
 
+/** Runtimes → Tools of Node.js, Go and Python (main/tools.ts). */
+export type RuntimeToolRuntime = 'node' | 'go' | 'python';
+export type RuntimeToolId =
+  | 'pnpm' | 'yarn' | 'electron' | 'electron-forge' | 'angular-cli' | 'nest-cli' | 'typescript' | 'tsx' | 'nodemon'
+  | 'air' | 'swag' | 'migrate' | 'goose' | 'sqlc' | 'templ' | 'wails' | 'delve'
+  | 'poetry' | 'pipenv' | 'pdm' | 'ruff' | 'pre-commit' | 'cookiecutter';
+
+export interface RuntimeToolState {
+  id: RuntimeToolId;
+  runtime: RuntimeToolRuntime;
+  label: string;
+  why: string;
+  /** npm package, Go module path or PyPI package. */
+  pkg: string;
+  /** Installed by DevCatz (its tools folder). */
+  installed: boolean;
+  /** Not DevCatz's, but found on the PATH (Homebrew, corepack, another install). */
+  onPath: boolean;
+  /** That other copy's command (shown so the user knows which one runs). */
+  externalPath: string | null;
+  version: string | null;
+  /** Newest release on its registry (npm, the Go proxy, PyPI); null when unknown or not installed. */
+  latest: string | null;
+  /** Installed and older than `latest`. */
+  update: boolean;
+  /** Sites that run it and cannot find it. */
+  neededBy: string[];
+}
+
+/** A Node project whose packages are not all installed, or whose Electron download is missing (Start refuses). */
+export interface NodeDepIssue {
+  kind: 'missing-packages' | 'electron-binary';
+  /** Folder (relative to the site) holding the package.json / node_modules/electron. */
+  dir: string;
+  /** missing-packages: the names (first few). */
+  packages?: string[];
+}
+
 export type RustToolId = 'trunk' | 'dioxus-cli' | 'cargo-leptos' | 'tauri-cli' | 'solana' | 'anchor' | 'sqlx-cli' | 'sea-orm-cli' | 'diesel-cli';
 
 export interface RustToolState {
@@ -570,6 +610,9 @@ export interface RustToolState {
   why: string;
   installed: boolean;
   version: string | null;
+  /** Newest release (crates.io, or GitHub for Solana / Anchor); null when unknown or not installed. */
+  latest: string | null;
+  update: boolean;
 }
 
 /** Which toolchain a site's Rust apps build with: rust-toolchain.toml's, else rustup's default. */
@@ -1417,6 +1460,10 @@ export interface AppState {
   dialcatz: DbCatzState;
   /** DevCatz's own update (Catzoid #54). */
   appUpdate: AppUpdateState;
+  /** The Runtimes → Tools install / update running now, with the last line its runtime printed. */
+  toolTask: { id: RuntimeToolId; label: string; runtime: RuntimeToolRuntime; detail: string } | null;
+  /** Installed tools with a newer release (last automatic or manual check), for the update badges. */
+  toolUpdates: { id: string; label: string; page: string; from: string; to: string }[];
   /** Report a Bug / feedback / crash reports (Catzoid #65). */
   reports: ReportsState;
   /** Uninstall DevCatz in progress (Catzoid #55). */
@@ -2670,6 +2717,19 @@ export interface HerdApi {
   rustTargetAdd(target: string): Promise<void>;
   /** Installs a framework CLI (trunk, dx, cargo-leptos, cargo-tauri), Solana (Agave) or Anchor (avm). */
   rustToolInstall(id: RustToolId): Promise<void>;
+  /** Asks crates.io / GitHub for the Rust tools' newest releases now (state.rust.tools gets latest / update). */
+  rustToolsCheck(): Promise<void>;
+  /** Removes a Rust tool: cargo uninstall, or Solana's / Anchor's folder to the Trash. */
+  rustToolUninstall(id: RustToolId): Promise<void>;
+  /** Runtimes → Tools: Node.js / Go / Python CLIs, installed by DevCatz or found on the PATH, and who needs them. */
+  toolsState(runtime: RuntimeToolRuntime, refresh?: boolean): Promise<RuntimeToolState[]>;
+  /** Installs (or updates) a tool with its runtime into DevCatz's tools folder; output in the log of the task. */
+  toolInstall(id: RuntimeToolId): Promise<void>;
+  toolUninstall(id: RuntimeToolId): Promise<void>;
+  /** Runs Electron's own install script again (downloads its binary) in a site's folder; output in Logs. */
+  repairElectron(siteId: string): Promise<void>;
+  /** Cancels an install / update started from the Runtimes pages: `node`, `bun`, `go`, `php`, `composer`, `python`, `rust`, `tool:<id>`. */
+  installCancel(key: string): Promise<void>;
   /** Installs uv (Astral), which then installs Pythons and creates venvs. */
   uvInstall(): Promise<void>;
   pythonRemote(): Promise<RemotePython[]>;
@@ -3072,6 +3132,6 @@ export const API_METHODS: (keyof HerdApi)[] = [
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',
   'installDeps', 'depCommands', 'depRun', 'nodeRemote', 'nodeInstall', 'nodeUninstall', 'nodeSetDefault', 'shimPathSet',
   'bunRemote', 'bunInstall', 'bunUninstall', 'bunSetDefault',
-  'goRemote', 'goInstall', 'goUninstall', 'goSetDefault', 'rustInstall', 'rustRemote', 'rustToolchainInstall', 'rustToolchainUninstall', 'rustSetDefault', 'rustTargetAdd', 'rustToolInstall', 'uvInstall', 'pythonRemote', 'pythonInstall', 'pythonUninstall', 'pythonSetDefault',
+  'goRemote', 'goInstall', 'goUninstall', 'goSetDefault', 'rustInstall', 'rustRemote', 'rustToolchainInstall', 'rustToolchainUninstall', 'rustSetDefault', 'rustTargetAdd', 'rustToolInstall', 'rustToolsCheck', 'rustToolUninstall', 'toolsState', 'toolInstall', 'toolUninstall', 'repairElectron', 'installCancel', 'uvInstall', 'pythonRemote', 'pythonInstall', 'pythonUninstall', 'pythonSetDefault',
   'phpRemote', 'phpInstall', 'phpUninstall', 'phpSetDefault', 'phpGetIni', 'phpSetIni', 'composerInstall', 'phpExtensions', 'phpExtInstall', 'phpExtSetEnabled', 'phpExtRemove', 'phpExtDismiss', 'phpOpenIni', 'restartServices', 'checkUpdates', 'runtimeUpdate', 'goDbInfo', 'goDbTask', 'stackTask', 'dbEngines', 'dbVersions', 'dbDefaults', 'dbCreate', 'dbCancelCreate', 'dbDismiss', 'dbUpdate', 'dbRemove', 'dbAction', 'dbOpenData', 'dbOpenBinaries', 'dbDetect', 'dbList', 'dbCreateDatabase', 'dbBuildAction', 'dbcatzOpen', 'dbcatzInstall', 'dbcatzCancelInstall', 'dbcatzDismiss', 'monitorSnapshot', 'monitorLive', 'monitorHistory', 'monitorExport', 'searchInstall', 'searchUpdate', 'searchCancelInstall', 'searchUninstall', 'searchAction', 'searchOpenData', 'searchIndexes', 'searchCreateIndex', 'searchDeleteIndex', 'searchGetSettings', 'searchSaveSettings', 'searchQuery', 'searchUpsert', 'searchImportFile', 'searchDeleteDoc', 'mailAction', 'mailList', 'mailGet', 'mailRaw', 'mailMarkRead', 'mailDelete', 'mailDeleteAll', 'mailSaveAttachment', 'mailAttachmentData', 'mailForward', 'mailForwardConfig', 'mailSetForwardConfig', 'mailEnv', 'mailSendTest', 'mailOpenData', 'exposeInstall', 'exposeCancelInstall', 'exposeUninstall', 'exposeCheckUpdates', 'exposeUpgrade', 'exposeCloudflareLogin', 'exposeCloudflareLogout', 'exposeSetAccount', 'exposeStart', 'exposeStop', 'exposeRequests', 'exposeClearRequests', 'exposeReplay', 'waInstall', 'waUpdate', 'waCancelInstall', 'waUninstall', 'waAction', 'waOpenData', 'waCheckUpdates', 'taskDismiss', 'gwInstall', 'gwUpdate', 'gwCancelInstall', 'gwUninstall', 'gwAction', 'gwOpenData', 'gwCheckUpdates', 'gwUpgrade', 'gwSetAutoStart', 'gwSend', 'gwEnv', 'gwSms', 'gwClearSms', 'waUpgrade', 'waSessionStart', 'waSessionQr', 'waSessionLogout', 'waSessionRemove', 'waSend', 'waContacts', 'waGroups', 'waMessages', 'waClearMessages', 'waHooks', 'waSetHook', 'waRemoveHook', 'waDeliveries', 'waReplay', 'waEnv', 'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitDiscard', 'gitCommit', 'gitSync', 'gitCancel', 'gitLog', 'gitShow', 'gitBranches', 'gitBranch', 'aiSettings', 'aiSetSettings', 'aiSetKey', 'aiModels', 'aiProbe', 'aiTest', 'aiCancel', 'aiPreviewExplain', 'aiExplain', 'aiPreviewCommit', 'aiCommit', 'aiPreviewDockerEdit', 'aiDockerEdit', 'aiPreviewEnv', 'aiEnv', 'aiPreviewSearch', 'aiSearch', 'aiPreviewWebhook', 'aiWebhook', 'aiPreviewAsk', 'aiAsk', 'aiRunAction', 'worktreeList', 'worktreeCreate', 'worktreeAdd', 'worktreeCheck', 'worktreeRemove', 'worktreePrune', 'gitStashes', 'gitStash', 'gitTags', 'gitTag', 'gitOperation', 'gitSquash', 'gitCherryPick', 'gitRevert', 'gitReset', 'gitRestoreFile', 'gitOpenFile', 'gitIgnoreSuggestions', 'gitIgnoreAdd', 'gitSetIdentity', 'gitAddRemote', 'gitPulls', 'gitCreatePull', 'gitCheckoutPull', 'gitAddAccount', 'gitRemoveAccount', 'gitRepos', 'gitSshKeys', 'gitSshGenerate', 'gitSshAddToAccount', 'gitClone', 'gitCancelClone', 'searchUpgrade', 'wsUpgrade', 'storageUpgrade', 'servicesCheckUpdates', 'serviceSetAutoStart', 'searchTasks', 'searchCancelTasks', 'searchClearTasks', 'searchBackups', 'searchCreateBackup', 'searchDeleteBackup', 'searchRevealBackup', 'searchRestoreBackup', 'searchExport', 'searchKeys', 'searchCreateKey', 'searchDeleteKey', 'searchEnv', 'storageEnv', 'scoutCommand', 'wsInstall', 'wsUpdate', 'wsCancelInstall', 'wsUninstall', 'wsAction', 'wsOpenData', 'wsStats', 'wsPublish', 'wsClientAuth', 'wsEnv', 'reverbEnv', 'laravelBroadcast', 'laravelTestBroadcast', 'storageInstall', 'storageUpdate', 'storageCancelInstall', 'storageUninstall', 'storageAction', 'storageOpenData', 'openLogsFolder', 'pickFile', 's3Buckets', 's3CreateBucket', 's3DeleteBucket', 's3SetPublic', 's3List', 's3Upload', 's3CancelUpload', 's3Download', 's3Delete', 's3MkDir', 'dockerStatus', 'dockerFiles', 'dockerServices', 'dockerGenerate', 'dockerWrite', 'dockerListFiles', 'dockerReadFile', 'dockerSaveFile', 'dockerCompose', 'startEngine', 'setFavorite', 'setSiteGroup', 'renameGroup', 'deleteGroup', 'toggleGroup', 'moveGroup', 'siteMenu', 'groupMenu', 'setSiteOrder', 'dbSetFavorite', 'dbSetGroup', 'dbGroupAction', 'dbSetOrder', 'dbMenu', 'dbGroupMenu', 'laravelLog', 'herdSites', 'setTld', 'installResolver', 'uninstallResolver', 'installCleanUrls', 'uninstallCleanUrls',
 ];

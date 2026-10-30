@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import type { RemoteRust, RustToolId } from '@shared/types';
 import PageHeader from './PageHeader.vue';
 import { STACK_ICONS } from '../stackicons';
-import { attempt, herd, notify, state } from '../store';
+import { attempt, herd, notify, state, runtimeTabRequest, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
+import ConfirmDialog from './ConfirmDialog.vue';
 
 /**
  * Rust through rustup in its standard place (~/.rustup, ~/.cargo): toolchains, the WebAssembly target, and the CLIs
@@ -12,6 +13,10 @@ import CatMood from './CatMood.vue';
  */
 
 const s = computed(() => state.value!);
+/** Update badges on the tabs: newer versions of this runtime (Installed), newer tool releases (Tools). */
+// uv and rustup keep their own versions current: no version updates tracked here.
+const versionUpdates = computed(() => 0);
+const toolUpdates = computed(() => s.value.toolUpdates.filter((u) => u.page === 'rust').length);
 const b = computed(() => s.value.rust);
 const remote = ref<RemoteRust[]>([]);
 const loadingRemote = ref(false);
@@ -49,14 +54,35 @@ async function installToolchain(name: string) {
 async function addWasm() {
   if (await attempt(() => herd.rustTargetAdd('wasm32-unknown-unknown').then(() => true))) notify('success', 'WebAssembly target added');
 }
-async function installTool(id: RustToolId, label: string) {
-  if (await attempt(() => herd.rustToolInstall(id).then(() => true))) notify('success', `${label} installed`);
+async function installTool(id: RustToolId, label: string, update = false) {
+  if (await attempt(() => herd.rustToolInstall(id).then(() => true))) notify('success', `${label} ${update ? 'updated' : 'installed'}`);
+  if (update) await herd.rustToolsCheck();
 }
 const setDefault = (name: string) => attempt(() => herd.rustSetDefault(name));
-const uninstall = (name: string) => attempt(() => herd.rustToolchainUninstall(name));
+async function uninstall(name: string) {
+  if (await askConfirm({ title: `Uninstall the Rust toolchain ${name}?`, text: `rustup removes it; projects that ask for it in rust-toolchain.toml download it again on their next build.`, confirm: 'Uninstall' })) await attempt(() => herd.rustToolchainUninstall(name));
+}
 
 type Tab = 'installed' | 'available' | 'tools';
 const tab = ref<Tab>('installed');
+// The tool-update notification opens the Tools tab.
+watch(runtimeTabRequest, (t) => {
+  if (t === 'tools') {
+    tab.value = 'tools';
+    runtimeTabRequest.value = null;
+  }
+}, { immediate: true });
+const checking = ref(false);
+const askUninstall = ref<{ id: RustToolId; label: string } | null>(null);
+async function uninstallTool(t: { id: RustToolId; label: string }) {
+  askUninstall.value = null;
+  await attempt(() => herd.rustToolUninstall(t.id), `${t.label} removed`);
+}
+async function checkTools() {
+  checking.value = true;
+  await attempt(() => herd.rustToolsCheck());
+  checking.value = false;
+}
 </script>
 
 <template>
@@ -66,9 +92,9 @@ const tab = ref<Tab>('installed');
       terminal use the same toolchains. A project’s <code>rust-toolchain.toml</code> picks its own.
     </p>
     <div role="tablist" class="seg no-drag mt-3">
-      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-info badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>
-      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'tools' }" @click="tab = 'tools'">Tools</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'tools' }" @click="tab = 'tools'">Tools<span v-if="toolUpdates" class="badge badge-info badge-xs ml-1" title="Tool updates available">{{ toolUpdates }}</span></a>
     </div>
   </PageHeader>
 
@@ -100,6 +126,7 @@ const tab = ref<Tab>('installed');
         <div v-if="busy.detail && !busy.total" class="truncate font-mono text-xs opacity-60">{{ busy.detail }}</div>
         <progress class="progress progress-primary w-full" :value="busy.total ? percent : undefined" max="100" />
       </div>
+      <button class="btn btn-ghost btn-sm" title="Stop the download / install" @click="herd.installCancel('rust')">Cancel</button>
     </div>
     <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />Installing {{ b.installing.version }} failed: {{ b.installing.error }}</div>
 
@@ -167,7 +194,12 @@ const tab = ref<Tab>('installed');
     <template v-if="tab === 'tools'">
       <div class="card">
         <div class="card-body">
-          <h2 class="font-semibold">Framework tools</h2>
+          <div class="flex flex-wrap items-center gap-2">
+            <h2 class="flex-1 font-semibold">Framework tools</h2>
+            <button class="btn btn-ghost btn-xs" :disabled="checking || !!busy" title="Ask crates.io and GitHub for the newest releases" @click="checkTools">
+              <span v-if="checking" class="loading loading-spinner loading-xs" />Check for updates
+            </button>
+          </div>
           <p class="text-xs opacity-60">
             Prebuilt through cargo-binstall where the project publishes one (else compiled by cargo). Solana comes from Anza’s installer, Anchor from avm (compiled once: a few
             minutes).
@@ -178,11 +210,22 @@ const tab = ref<Tab>('installed');
                 <div class="flex flex-wrap items-center gap-1.5">
                   <span class="font-medium">{{ t.label }}</span>
                   <span v-if="t.installed" class="badge badge-ghost badge-sm font-mono">{{ t.version }}</span>
+                  <span v-if="t.update" class="badge badge-info badge-soft badge-sm font-mono" :title="`${t.latest} is out`">→ {{ t.latest }}</span>
                   <span v-if="neededBy(t.id).length" class="badge badge-warning badge-soft badge-sm" :title="neededBy(t.id).join(', ')">needed by {{ neededBy(t.id).length }} site{{ neededBy(t.id).length === 1 ? '' : 's' }}</span>
                 </div>
                 <div class="text-xs opacity-60">{{ t.why }}</div>
               </div>
-              <span v-if="t.installed" class="text-xs opacity-60">installed</span>
+              <div v-if="t.installed" class="flex shrink-0 items-center gap-1">
+                <button v-if="t.update" class="btn btn-primary btn-xs" :disabled="!!busy || !b.rustup" @click="installTool(t.id, t.label, true)">Update</button>
+                <span v-else class="text-xs opacity-60">installed</span>
+                <button
+                  class="btn btn-ghost btn-xs text-error"
+                  :disabled="!!busy"
+                  @click="askUninstall = { id: t.id, label: t.label }"
+                >
+                  Remove
+                </button>
+              </div>
               <button
                 v-else
                 class="btn btn-xs shrink-0"
@@ -199,5 +242,20 @@ const tab = ref<Tab>('installed');
         </div>
       </div>
     </template>
+    <ConfirmDialog
+      v-if="askUninstall"
+      :title="`Remove ${askUninstall.label}?`"
+      :text="
+        askUninstall.id === 'solana'
+          ? 'Moves Solana’s install folder (~/.local/share/solana/install) to the Trash; anchor test and the local validator stop working.'
+          : askUninstall.id === 'anchor'
+            ? 'Removes avm and moves its folder (~/.avm, every Anchor version) to the Trash.'
+            : 'cargo uninstall removes it from ~/.cargo/bin; sites and terminals will not find it any more.'
+      "
+      confirm="Remove"
+      tone="error"
+      @ok="uninstallTool(askUninstall)"
+      @cancel="askUninstall = null"
+    />
   </section>
 </template>

@@ -4,11 +4,14 @@ import type { RemoteBun } from '@shared/types';
 import PageHeader from './PageHeader.vue';
 import { ICONS } from '../icons';
 import UpdateButton from './UpdateButton.vue';
-import { attempt, herd, notify, state } from '../store';
+import { attempt, herd, notify, state, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
 
 
 const s = computed(() => state.value!);
+/** Update badges on the tabs: newer versions of this runtime (Installed), newer tool releases (Tools). */
+const versionUpdates = computed(() => s.value.updates.list.filter((u) => u.runtime === 'bun').length);
+const toolUpdates = computed(() => s.value.toolUpdates.filter((u) => u.page === 'bun').length);
 const b = computed(() => s.value.bun);
 const remote = ref<RemoteBun[]>([]);
 const loadingRemote = ref(false);
@@ -42,7 +45,9 @@ async function install(version: string, makeDefault = false) {
   notify('success', `Bun ${version} installed`);
 }
 const setDefault = (version: string | null) => attempt(() => herd.bunSetDefault(version));
-const uninstall = (version: string) => attempt(() => herd.bunUninstall(version));
+async function uninstall(version: string) {
+  if (await askConfirm({ title: `Uninstall Bun ${version}?`, text: `Sites using it fall back to the default Bun or your own installation.`, confirm: 'Uninstall' })) await attempt(() => herd.bunUninstall(version));
+}
 
 type Tab = 'installed' | 'available';
 const tab = ref<Tab>('installed');
@@ -55,7 +60,7 @@ const tab = ref<Tab>('installed');
       default.
     </p>
     <div role="tablist" class="seg no-drag mt-3">
-      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-info badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>
     </div>
   </PageHeader>
@@ -122,6 +127,7 @@ const tab = ref<Tab>('installed');
         </div>
         <progress class="progress progress-primary w-full" :value="busy.phase === 'extract' ? 100 : percent" max="100" />
       </div>
+      <button class="btn btn-ghost btn-sm" title="Stop the download / install" @click="herd.installCancel('bun')">Cancel</button>
     </div>
     <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />
       Installing Bun {{ b.installing.version }} failed: {{ b.installing.error }}

@@ -1,11 +1,14 @@
+import { shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { InstalledRust, RemoteRust, RuntimeInstallProgress, RustToolId, RustToolState } from '@shared/types';
+import { killOnCancel } from './cancel';
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { compare } from './node';
+import { newer } from './tools';
 import { exe, isWin, joinPath, pathKey, TAR } from './platform';
 import { dataDir } from './store';
 
@@ -60,6 +63,7 @@ async function rustup(args: string[], timeout = 60_000) {
 function streamLines(cmd: string, args: string[], line: (text: string) => void, cwd?: string): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd, windowsHide: true, env: { ...getShellEnv(), ...rustEnv() }, stdio: ['ignore', 'pipe', 'pipe'] });
+    killOnCancel(child);
     const feed = (d: Buffer) => d.toString().split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean).forEach(line);
     child.stdout.on('data', feed);
     child.stderr.on('data', feed);
@@ -210,7 +214,7 @@ export const RUST_TOOLS: { id: RustToolId; label: string; bin: string; crate: st
   { id: 'diesel-cli', label: 'Diesel CLI', bin: 'diesel', crate: 'diesel_cli', why: 'diesel setup / migration run for Diesel projects (Database tab)' },
 ];
 
-export async function toolStates(): Promise<RustToolState[]> {
+export async function toolStates(refresh = false): Promise<RustToolState[]> {
   return Promise.all(
     RUST_TOOLS.map(async (t) => {
       const path = toolPath(t.bin);
@@ -220,9 +224,36 @@ export async function toolStates(): Promise<RustToolState[]> {
         const r = await run(path, args, { timeout: 15_000, env: rustEnv() }).catch(() => null);
         version = r?.stdout.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? (r?.code === 0 ? '?' : null);
       }
-      return { id: t.id, label: t.label, why: t.why, version, installed: !!path };
+      const latest = path ? await rustToolLatest(t.id, refresh).catch(() => null) : null;
+      return { id: t.id, label: t.label, why: t.why, version, installed: !!path, latest, update: !!(version && latest && newer(latest, version)) };
     }),
   );
+}
+
+const rustLatest = new Map<RustToolId, { at: number; version: string }>();
+
+/** Newest release: crates.io for the cargo CLIs, GitHub for Solana (Agave) and Anchor; cached 6 hours unless `refresh`. */
+export async function rustToolLatest(id: RustToolId, refresh = false): Promise<string | null> {
+  const hit = rustLatest.get(id);
+  if (hit && !refresh && Date.now() - hit.at < 6 * 3600_000) return hit.version;
+  const tool = RUST_TOOLS.find((t) => t.id === id);
+  let version: string | null = null;
+  if (id === 'solana') version = (await latestRelease('anza-xyz/agave')).tag.replace(/^v/, '');
+  else if (id === 'anchor') version = (await latestRelease('solana-foundation/anchor')).tag.replace(/^v/, '');
+  else if (tool?.crate) {
+    // crates.io turns away requests without a User-Agent.
+    const res = await fetch(`https://crates.io/api/v1/crates/${tool.crate}`, { headers: { 'User-Agent': 'DevCatz (https://catzoid.com)' } });
+    if (res.ok) version = ((await res.json()) as { crate?: { max_stable_version?: string } }).crate?.max_stable_version ?? null;
+  }
+  if (version) rustLatest.set(id, { at: Date.now(), version });
+  return version;
+}
+
+/** Installed Rust tools with a newer release (the automatic check). */
+export async function rustToolUpdates(): Promise<{ id: RustToolId; label: string; from: string; to: string }[]> {
+  const out: { id: RustToolId; label: string; from: string; to: string }[] = [];
+  for (const s of await toolStates(true)) if (s.update && s.version && s.latest) out.push({ id: s.id, label: s.label, from: s.version, to: s.latest });
+  return out;
 }
 
 interface GhAsset {
@@ -319,6 +350,31 @@ export async function installTool(id: RustToolId, detail: (line: string) => void
   // Apple silicon); otherwise cargo-binstall compiles it (cargo install) itself.
   const code = await streamLines(binstall, ['--no-confirm', '--locked', '--targets', TRIPLE, tool.crate!], detail);
   if (code !== 0) throw new Error(`Installing ${tool.label} failed (exit ${code})`);
+}
+
+/**
+ * Removes a tool: cargo-installed CLIs with `cargo uninstall`; Solana's install folder (~/.local/share/solana/install)
+ * and Anchor's (avm itself and ~/.avm) go to the Trash, so they can be put back.
+ */
+export async function uninstallTool(id: RustToolId): Promise<void> {
+  const tool = RUST_TOOLS.find((t) => t.id === id);
+  if (!tool) throw new Error(`Unknown tool ${id}`);
+  if (id === 'solana' || id === 'anchor') {
+    const dir = id === 'solana' ? join(homedir(), '.local', 'share', 'solana', 'install') : join(homedir(), '.avm');
+    if (id === 'anchor' && toolPath('cargo')) await run(toolPath('cargo')!, ['uninstall', 'avm'], { timeout: 120_000, env: rustEnv() }).catch(() => null);
+    if (existsSync(dir)) await shell.trashItem(dir);
+    return;
+  }
+  if (!tool.crate) throw new Error(`${tool.label} cannot be removed here`);
+  const cargo = toolPath('cargo');
+  if (!cargo) throw new Error('Rust is not installed');
+  const r = await run(cargo, ['uninstall', tool.crate], { timeout: 120_000, env: rustEnv() });
+  // Installed some other way (a prebuilt copied in): the file itself.
+  if (r.code !== 0) {
+    const path = toolPath(tool.bin);
+    if (!path) throw new Error(r.stderr.trim() || 'cargo uninstall failed');
+    rmSync(path, { force: true });
+  }
 }
 
 /** Newest first, stable before beta before nightly. */

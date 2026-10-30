@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import ConfirmDialog from './components/ConfirmDialog.vue';
 import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { attempt, cloneRequest, dbGroupRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog } from './store';
+import { attempt, cloneRequest, dbGroupRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog, runtimeTabRequest, confirmRequest } from './store';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ReportDialog from './components/ReportDialog.vue';
 import UninstallDialog from './components/UninstallDialog.vue';
@@ -447,6 +448,13 @@ function navigate(target: string) {
     section.value = target as AppSection;
     return;
   }
+  // `node:tools` …: a runtime page's tab (the tool-update notification).
+  if (PANELS.includes(target.split(':')[0]) && target.includes(':')) {
+    section.value = 'runtimes';
+    runtime.value = target.split(':')[0] as RuntimeId;
+    runtimeTabRequest.value = target.split(':')[1];
+    return;
+  }
   // Menu bar "PHP-FPM" etc. open that runtime.
   if (PANELS.includes(target)) {
     section.value = 'runtimes';
@@ -748,4 +756,13 @@ async function park() {
       </div>
     </div>
   </div>
+  <ConfirmDialog
+    v-if="confirmRequest"
+    :title="confirmRequest.title"
+    :text="confirmRequest.text"
+    :confirm="confirmRequest.confirm"
+    :tone="confirmRequest.tone"
+    @ok="(confirmRequest.resolve(true), (confirmRequest = null))"
+    @cancel="(confirmRequest.resolve(false), (confirmRequest = null))"
+  />
 </template>

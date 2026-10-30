@@ -259,6 +259,10 @@ const openItems = computed<MenuItem[]>(() => [
   { label: 'Terminal', icon: ICONS.terminal, action: () => void herd.openTerminal(p.value.id) },
 ]);
 
+async function repairElectron() {
+  tab.value = 'logs';
+  await attempt(() => herd.repairElectron(p.value.id), 'Electron repaired');
+}
 async function installDeps() {
   tab.value = 'logs';
   await attempt(() => herd.installDeps(p.value.id), 'Dependencies installed');
@@ -507,6 +511,32 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
                 ? `Install dependencies (${pythonInstallLabel(p.stack)})`
                 : `Install dependencies (${p.stack.packageManager} install)`
         }}
+      </button>
+    </div>
+    <!-- Installed, but not all of it: packages added to package.json since the install, an Electron that never downloaded. -->
+    <div v-for="i in p.stack.depsMissing ? [] : (p.stack.nodeIssues ?? [])" :key="`${i.kind}-${i.dir}`" role="alert" class="alert alert-warning">
+      <CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />
+      <div class="flex-1">
+        <template v-if="i.kind === 'electron-binary'">
+          <div class="font-medium">Electron is not fully installed{{ i.dir === '.' ? '' : ` in ${i.dir}` }}</div>
+          <div class="text-xs opacity-80">
+            Its package is there, but its own download (the Electron app itself) is missing: the install step failed or was skipped (a proxy, no
+            network, <code>--ignore-scripts</code>). Start would stop with “Electron failed to install correctly”.
+          </div>
+        </template>
+        <template v-else>
+          <div class="font-medium">Some packages are not installed{{ i.dir === '.' ? '' : ` in ${i.dir}` }}</div>
+          <div class="text-xs opacity-80">
+            <code>package.json</code> lists {{ i.packages?.join(', ') }}{{ (i.packages?.length ?? 0) >= 6 ? ' …' : '' }}, which <code>node_modules</code> does not have yet
+            (added since the last install?). Start would fail with “command not found”.
+          </div>
+        </template>
+      </div>
+      <button v-if="i.kind === 'electron-binary'" class="btn btn-sm" :disabled="!!p.dbTask" @click="repairElectron">
+        <span v-if="p.dbTask" class="loading loading-spinner loading-xs" />{{ p.dbTask ? `${p.dbTask}…` : 'Repair Electron' }}
+      </button>
+      <button v-else class="btn btn-sm" :disabled="!!p.dbTask" @click="installDeps">
+        <span v-if="p.dbTask" class="loading loading-spinner loading-xs" />{{ p.dbTask ? `${p.dbTask}…` : `Install dependencies (${p.stack.packageManager} install)` }}
       </button>
     </div>
     <div v-if="p.stack.runtime === 'php' && !p.stack.depsMissing && p.stack.jsDepsMissing" role="alert" class="alert text-sm">

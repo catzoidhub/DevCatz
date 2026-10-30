@@ -419,17 +419,8 @@ function api(): HerdApi {
     gitDiff: (id, file, staged) => herd.git.diff(id, file, staged),
     gitStage: (id, files) => herd.git.stage(id, files),
     gitUnstage: (id, files) => herd.git.unstage(id, files),
-    gitDiscard: async (id, files) => {
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'warning',
-        buttons: ['Discard', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: files.length === 1 ? `Discard the changes to ${files[0]}?` : `Discard the changes to ${files.length} files?`,
-        detail: 'Edits are lost and new (untracked) files are deleted. This cannot be undone.',
-      });
-      if (response === 0) await herd.git.discard(id, files);
-    },
+    // Confirmed in the window (DevCatz's own dialog, renderer/confirms.ts), like the actions below.
+    gitDiscard: (id, files) => herd.git.discard(id, files),
     gitCommit: (id, message, amend) => herd.git.commit(id, message, amend),
     gitSync: (id, action) => herd.git.sync(id, action),
     gitCancel: async (id) => herd.git.cancel(id),
@@ -619,17 +610,7 @@ function api(): HerdApi {
     },
     s3Buckets: (kind) => herd.s3Buckets(kind),
     s3CreateBucket: (kind, bucket) => s3.createBucket(herd.s3Target(kind), bucket),
-    s3DeleteBucket: async (kind, bucket) => {
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'warning',
-        buttons: ['Delete bucket', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: `Delete the bucket "${bucket}"?`,
-        detail: 'Every object in it is deleted too. This cannot be undone.',
-      });
-      if (response === 0) await s3.deleteBucket(herd.s3Target(kind), bucket);
-    },
+    s3DeleteBucket: (kind, bucket) => s3.deleteBucket(herd.s3Target(kind), bucket),
     s3SetPublic: (kind, bucket, on) => herd.s3SetPublic(kind, bucket, on),
     s3List: (kind, bucket, prefix) => s3.list(herd.s3Target(kind), bucket, prefix),
     s3Upload: async (kind, bucket, prefix, paths) => {
@@ -678,18 +659,7 @@ function api(): HerdApi {
       await s3.download(t, bucket, key, r.filePath);
       return r.filePath;
     },
-    s3Delete: async (kind, bucket, key) => {
-      const folder = key.endsWith('/');
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'warning',
-        buttons: ['Delete', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: folder ? `Delete the folder "${key}" and everything in it?` : `Delete "${key}"?`,
-        detail: 'This cannot be undone.',
-      });
-      if (response === 0) await s3.remove(herd.s3Target(kind), bucket, key);
-    },
+    s3Delete: (kind, bucket, key) => s3.remove(herd.s3Target(kind), bucket, key),
     s3MkDir: (kind, bucket, prefix) => s3.mkdir(herd.s3Target(kind), bucket, prefix),
     pickFolder: async () => {
       const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] });
@@ -807,61 +777,13 @@ function api(): HerdApi {
         writeShared({ theme: patch.theme });
       }
     },
-    trustCa: async () => {
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'question',
-        buttons: [isWin ? 'Add to Windows' : 'Add to Keychain', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1,
-        message: 'Trust the DevCatz local certificate authority?',
-        detail: isWin
-          ? `The CA is created on this PC and only signs certificates for your *.${store.settings.tld} sites. ` +
-            "It goes into your own Trusted Root certificates (no administrator needed); Windows asks you to confirm next. " +
-            'You can remove it again from Settings.'
-          : `The CA is created on this Mac and only signs certificates for your *.${store.settings.tld} sites. ` +
-            'It will be added to your login keychain as trusted for SSL; macOS asks for your password next. ' +
-            'You can remove it again from Settings.',
-      });
-      if (response !== 0) return false;
-      return herd.trustCa();
-    },
+    trustCa: () => herd.trustCa(),
     untrustCa: () => herd.untrustCa(),
     revealCa: async () => shell.showItemInFolder(herd.certs.caPath),
-    installCleanUrls: async () => {
-      const s = store.settings;
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'question',
-        buttons: ['Enable', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1,
-        message: 'Serve sites without a port number?',
-        detail:
-          `DevCatz will install two LaunchDaemons: launchd listens on [::1]:443 and [::1]:80 and relays each connection ` +
-          `with /usr/bin/nc (running as "nobody") to the proxy on ${s.httpsPort} / ${s.httpPort}. ` +
-          '127.0.0.1:80/443 stay with any app already using them.\n\n' +
-          'Files: /Library/LaunchDaemons/com.mrcatz.herd.forward-https.plist and -http.plist. ' +
-          'macOS asks for an administrator password next.',
-      });
-      if (response !== 0) return false;
-      return herd.installCleanUrls();
-    },
+    installCleanUrls: () => herd.installCleanUrls(),
     uninstallCleanUrls: () => herd.uninstallCleanUrls(),
     setTld: (next, dryRun) => herd.setTld(next, dryRun),
-    installResolver: async () => {
-      const t = store.settings.tld;
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'question',
-        buttons: ['Install', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1,
-        message: `Resolve *.${t} to this Mac?`,
-        detail:
-          `DevCatz will create /etc/resolver/${t} so macOS asks DevCatz's own DNS (127.0.0.1:53531) for *.${t} names. ` +
-          'Nothing else on the network changes. macOS asks for an administrator password next.',
-      });
-      if (response !== 0) return false;
-      return herd.installResolver();
-    },
+    installResolver: () => herd.installResolver(),
     uninstallResolver: () => herd.uninstallResolver(),
     quitApp: async () => void quit('window'),
     startAll: async () => herd.startAll(),
@@ -876,82 +798,43 @@ function api(): HerdApi {
     redisWriteEnv: async (id, apply) => herd.redisWriteEnv(id, apply),
     installDeps: (id) => herd.installDeps(id),
     nodeRemote: (refresh) => herd.nodeRemote(refresh),
-    nodeInstall: (version) => herd.nodeInstall(version),
-    nodeUninstall: async (version) => {
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'warning',
-        buttons: ['Uninstall', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: `Uninstall Node ${version}?`,
-        detail: 'Sites pinned to this version fall back to their .nvmrc match or the default version.',
-      });
-      if (response === 0) herd.nodeUninstall(version);
-    },
+    nodeInstall: (version) => herd.withCancel('node', () => herd.nodeInstall(version)),
+    // Confirmed in the window (DevCatz's own dialog).
+    nodeUninstall: async (version) => herd.nodeUninstall(version),
     nodeSetDefault: async (version) => herd.nodeSetDefault(version),
     shimPathSet: async (on) => herd.shimPathSet(on),
     bunRemote: (refresh) => herd.bunRemote(refresh),
-    bunInstall: (version) => herd.bunInstall(version),
-    bunUninstall: async (version) => {
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'warning',
-        buttons: ['Uninstall', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: `Uninstall Bun ${version}?`,
-        detail: 'Sites using it fall back to the default Bun or your own installation.',
-      });
-      if (response === 0) await herd.bunUninstall(version);
-    },
+    bunInstall: (version) => herd.withCancel('bun', () => herd.bunInstall(version)),
+    // Confirmed in the window (DevCatz's own dialog).
+    bunUninstall: (version) => herd.bunUninstall(version),
     bunSetDefault: (version) => herd.bunSetDefault(version),
     goRemote: (refresh) => herd.goRemote(refresh),
-    goInstall: (version) => herd.goInstall(version),
-    goUninstall: async (version) => {
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'warning',
-        buttons: ['Uninstall', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: `Uninstall Go ${version}?`,
-        detail: 'Go sites fall back to the default toolchain or your own installation.',
-      });
-      if (response === 0) await herd.goUninstall(version);
-    },
+    goInstall: (version) => herd.withCancel('go', () => herd.goInstall(version)),
+    // Confirmed in the window (DevCatz's own dialog).
+    goUninstall: (version) => herd.goUninstall(version),
     goSetDefault: (version) => herd.goSetDefault(version),
-    rustInstall: () => herd.rustInstall(),
+    rustInstall: () => herd.withCancel('rust', () => herd.rustInstall()),
     rustRemote: (refresh) => herd.rustRemote(refresh),
-    rustToolchainInstall: (name) => herd.rustToolchainInstall(String(name)),
-    rustToolchainUninstall: async (name) => {
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'warning',
-        buttons: ['Uninstall', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: `Uninstall the Rust toolchain ${name}?`,
-        detail: 'rustup removes it; projects that ask for it in rust-toolchain.toml download it again on their next build.',
-      });
-      if (response === 0) await herd.rustToolchainUninstall(String(name));
-    },
+    rustToolchainInstall: (name) => herd.withCancel('rust', () => herd.rustToolchainInstall(String(name))),
+    rustToolchainUninstall: (name) => herd.rustToolchainUninstall(String(name)),
     rustSetDefault: (name) => herd.rustSetDefault(String(name)),
     rustTargetAdd: (target) => herd.rustTargetAdd(String(target)),
     rustToolInstall: (id) => herd.rustToolInstall(id),
+    rustToolsCheck: () => herd.rustToolsCheck(),
+    rustToolUninstall: (id) => herd.rustToolUninstall(id),
+    toolsState: (runtime, refresh) => herd.toolsState(runtime === 'go' || runtime === 'python' ? runtime : 'node', Boolean(refresh)),
+    toolInstall: (id) => herd.toolInstall(id),
+    toolUninstall: (id) => herd.toolUninstall(id),
+    repairElectron: (siteId) => herd.repairElectron(String(siteId)),
+    installCancel: async (key) => herd.installCancel(String(key)),
     phpRemote: (refresh) => herd.phpRemote(refresh),
-    phpInstall: (version) => herd.phpInstall(version),
-    phpUninstall: async (version) => {
-      const { response } = await dialog.showMessageBox(win!, {
-        type: 'warning',
-        buttons: ['Uninstall', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: `Uninstall PHP ${version}?`,
-        detail: `Its ${words.phpServer} ${isWin ? 'workers stop' : 'pool stops'}; sites using it fall back to another installed version.`,
-      });
-      if (response === 0) await herd.phpUninstall(version);
-    },
+    phpInstall: (version) => herd.withCancel('php', () => herd.phpInstall(version)),
+    // Confirmed in the window (DevCatz's own dialog).
+    phpUninstall: (version) => herd.phpUninstall(version),
     phpSetDefault: (version) => herd.phpSetDefault(version),
     phpGetIni: (version) => herd.phpGetIni(version),
     phpSetIni: (version, settings) => herd.phpSetIni(version, settings),
-    composerInstall: () => herd.composerInstall(),
+    composerInstall: () => herd.withCancel('composer', () => herd.composerInstall()),
     phpExtensions: (version) => herd.phpExtensions(version),
     phpExtInstall: (version, pkg) => herd.phpExtInstall(version, pkg),
     phpExtSetEnabled: async (version, module, on) => herd.phpExtSetEnabled(version, module, on),
@@ -961,29 +844,16 @@ function api(): HerdApi {
     goDbInfo: async (id) => herd.goDbInfo(id),
     goDbTask: (id, dir, taskId, name) => herd.goDbTask(id, dir, taskId, name),
     stackTask: (id, taskId, name) => herd.stackTask(id, taskId, name),
-    uvInstall: () => herd.uvInstall(),
+    uvInstall: () => herd.withCancel('python', () => herd.uvInstall()),
     pythonRemote: () => herd.pythonRemote(),
-    pythonInstall: (version) => herd.pythonInstall(version),
+    pythonInstall: (version) => herd.withCancel('python', () => herd.pythonInstall(version)),
     pythonUninstall: (version) => herd.pythonUninstall(version),
     pythonSetDefault: (version) => herd.pythonSetDefault(version),
     dockerStatus: () => dockerStatus(),
     dockerFiles: async (id) => herd.dockerFiles(id),
     dockerServices: (id, file) => herd.dockerServices(id, file),
     dockerGenerate: async (id, options) => herd.dockerGenerate(id, options),
-    dockerWrite: async (id, options, paths, overwrite, edited) => {
-      if (overwrite.length) {
-        const { response } = await dialog.showMessageBox(win!, {
-          type: 'warning',
-          buttons: ['Overwrite', 'Cancel'],
-          defaultId: 1,
-          cancelId: 1,
-          message: `Overwrite ${overwrite.length} existing file${overwrite.length === 1 ? '' : 's'}?`,
-          detail: overwrite.join('\n'),
-        });
-        if (response !== 0) return [];
-      }
-      return herd.dockerWrite(id, options, paths, overwrite, edited ?? {});
-    },
+    dockerWrite: async (id, options, paths, overwrite, edited) => herd.dockerWrite(id, options, paths, overwrite, edited ?? {}),
     dockerCompose: (id, file, action, service) => herd.dockerCompose(id, file, action, service),
     startEngine: (id) => startEngine(id),
     setFavorite: async (id, on) => herd.setFavorite(id, on),
@@ -1058,7 +928,7 @@ function api(): HerdApi {
       ]).popup({ window: win ?? undefined });
     },
     checkUpdates: () => herd.checkUpdates(),
-    runtimeUpdate: (runtime, from) => herd.runtimeUpdate(runtime, from),
+    runtimeUpdate: (runtime, from) => herd.withCancel(String(runtime), () => herd.runtimeUpdate(runtime, from)),
     restartServices: () => herd.restartServices(),
     laravelLog: async (id, lines) => herd.laravelLog(id, lines),
     herdSites: async () => herd.herdSites(),
@@ -1331,6 +1201,13 @@ app.whenReady().then(async () => {
   gitHosts.setAccountsListener(() => herd.emit('change'));
   // DevCatz 1.0.0's own Git accounts → the shared store (once; DialCatz then sees them too).
   void gitHosts.moveLocalAccounts().catch((e: Error) => console.warn(`Git accounts: ${e.message}`));
+  herd.onNewToolUpdates = (list) => {
+    if (!Notification.isSupported()) return;
+    const body = list.map((u) => `${u.label} ${u.from} → ${u.to}`).join('\n');
+    const n = new Notification({ title: list.length === 1 ? 'Tool update available' : `${list.length} tool updates available`, body });
+    n.on('click', () => showWindow(`${list[0].page}:tools`));
+    n.show();
+  };
   herd.onNewUpdates = (list) => {
     if (!Notification.isSupported()) return;
     const body = list.map((u) => `${RUNTIME_NAMES[u.runtime]} ${u.from} → ${u.to}`).join('\n');

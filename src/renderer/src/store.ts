@@ -21,7 +21,9 @@ export async function attempt<T>(fn: () => Promise<T>, success?: string): Promis
     if (success) notify('success', success);
     return r;
   } catch (e) {
-    notify('error', String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+    const msg = String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+    // A Cancel the user pressed is no error.
+    notify(msg === 'Cancelled' ? 'info' : 'error', msg);
     return undefined;
   }
 }
@@ -62,6 +64,14 @@ export const cloneRequest = ref<{ url: string; name: string; branch: string } | 
 export const openSiteRequest = ref<string | null>(null);
 /** Opens a site on one of its tabs (menu bar "Commit…" → Git). */
 export const siteTabRequest = ref<{ id: string; tab: string } | null>(null);
+/** The DevCatz-styled confirmation (App.vue shows it); `askConfirm` resolves with the choice. */
+export const confirmRequest = ref<{ title: string; text: string; confirm: string; tone: 'error' | 'warning' | 'primary'; resolve: (ok: boolean) => void } | null>(null);
+export function askConfirm(o: { title: string; text: string; confirm: string; tone?: 'error' | 'warning' | 'primary' }): Promise<boolean> {
+  confirmRequest.value?.resolve(false);
+  return new Promise((resolve) => (confirmRequest.value = { tone: 'error', ...o, resolve }));
+}
+/** A tab of a Runtimes page to show (the tool-update notification → `tools`); the page clears it. */
+export const runtimeTabRequest = ref<string | null>(null);
 /** Monitor → Dependencies → a site: its Settings tab scrolls to the Free up space card (the site's id). */
 export const freeSpaceRequest = ref<string | null>(null);
 /** Database page: "New Group…" / "Rename Group…" from the native context menus (`db-new-group:<id>` / `db-rename-group:<name>`). */

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { confirmDiscard } from '../confirms';
 import { keyLabel, words } from '@shared/platform';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { GitFile, GitStatus, GitSyncAction, ProjectState } from '@shared/types';
@@ -144,7 +145,7 @@ const dir = (path: string) => path.split('/').slice(0, -1).join('/');
 
 const stage = (files: string[]) => act(() => herd.gitStage(p.value.id, files));
 const unstage = (files: string[]) => act(() => herd.gitUnstage(p.value.id, files));
-const discard = (files: string[]) => act(() => herd.gitDiscard(p.value.id, files));
+const discard = async (files: string[]) => (await confirmDiscard(files)) && act(() => herd.gitDiscard(p.value.id, files));
 const open = (file: string) => attempt(() => herd.gitOpenFile(p.value.id, file));
 
 const message = ref('');

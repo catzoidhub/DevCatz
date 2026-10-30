@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { confirmCleanUrls, confirmTrustCa } from '../confirms';
 import { computed, ref } from 'vue';
 import CatMood from './CatMood.vue';
 import { attempt, herd, state } from '../store';
@@ -15,11 +16,13 @@ const dismissed = ref(false);
 const busy = ref<'' | 'ca' | 'urls'>('');
 
 async function trust() {
+  if (!(await confirmTrustCa())) return;
   busy.value = 'ca';
   await attempt(() => herd.trustCa());
   busy.value = '';
 }
 async function cleanUrls() {
+  if (!(await confirmCleanUrls())) return;
   busy.value = 'urls';
   await attempt(() => herd.installCleanUrls());
   busy.value = '';

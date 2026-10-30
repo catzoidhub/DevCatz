@@ -20,7 +20,8 @@ export type RuntimeId = 'php' | 'go' | 'rust' | 'python' | 'bun' | 'node';
 const current = defineModel<RuntimeId>({ required: true });
 
 const s = computed(() => state.value!);
-const updatesFor = (r: string) => s.value.updates.list.filter((u) => u.runtime === r).length;
+/** Newer versions of the runtime plus newer releases of its tools (Tools tab). */
+const updatesFor = (r: string) => s.value.updates.list.filter((u) => u.runtime === r).length + s.value.toolUpdates.filter((u) => u.page === r).length;
 const sitesOn = (r: 'php' | 'go' | 'python' | 'node' | 'rust') => s.value.projects.filter((p) => p.stack.runtime === r || p.stack.subRuntimes?.includes(r as 'rust')).length;
 const plural = (n: number) => `${n} site${n === 1 ? '' : 's'}`;
 
@@ -41,7 +42,7 @@ const all = computed(() => [
     box: '0 0 24 24',
     version: s.value.python.defaultVersion ?? s.value.python.installed[0]?.version ?? null,
     detail: s.value.python.uv ? `uv ${s.value.python.uv} · ${plural(sitesOn('python'))}` : 'uv not installed',
-    updates: 0,
+    updates: updatesFor('python'),
   },
   {
     id: 'node' as const,
@@ -77,7 +78,7 @@ const all = computed(() => [
     box: '0 0 24 24',
     version: s.value.rust.toolchains.find((t) => t.isDefault)?.version ?? null,
     detail: s.value.rust.rustup ? `${s.value.rust.toolchains.length} toolchain${s.value.rust.toolchains.length === 1 ? '' : 's'} · ${plural(sitesOn('rust'))}` : 'not installed',
-    updates: 0,
+    updates: updatesFor('rust'),
   },
 ]);
 // Windows, stage 1: PHP is macOS-only so far (Catzoid #57).
@@ -99,7 +100,7 @@ onMounted(() => void herd.refreshRuntimes().catch(() => undefined));
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5">
               <span class="font-medium">{{ r.label }}</span>
-              <span v-if="r.updates" class="badge badge-info badge-xs" title="Update available">↑</span>
+              <span v-if="r.updates" class="badge badge-info badge-xs" :title="`${r.updates} update${r.updates === 1 ? '' : 's'} available`">↑ {{ r.updates }}</span>
             </div>
             <div class="truncate text-xs opacity-60">{{ r.detail }}</div>
           </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { confirmOverwrite } from '../confirms';
 import { words } from '@shared/platform';
 import { isWin } from '../platform';
 import { diff } from '../linediff';
@@ -98,6 +99,8 @@ async function write() {
   const pv = preview.value;
   if (!pv) return;
   const picked = pv.files.filter((f) => f.pick && !f.same);
+  const existing = picked.filter((f) => f.current !== null).map((f) => f.path);
+  if (existing.length && !(await confirmOverwrite(existing))) return;
   const written = await attempt(() =>
     herd.dockerWrite(
       props.project.id,

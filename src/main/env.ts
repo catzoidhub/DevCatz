@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { connect } from 'node:net';
+import { killOnCancel } from './cancel';
 import { isWin, joinPath, pathKey, splitPath } from './platform';
 
 /**
@@ -81,7 +82,7 @@ export function run(
   opts: { cwd?: string; timeout?: number; env?: Record<string, string> } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(
+    const child = execFile(
       cmd,
       args,
       { cwd: opts.cwd, env: { ...getShellEnv(), ...opts.env }, timeout: opts.timeout ?? 60_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
@@ -90,6 +91,7 @@ export function run(
         resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
       },
     );
+    killOnCancel(child);
   });
 }
 
@@ -126,6 +128,12 @@ export async function setUserPath(dir: string, on: boolean): Promise<void> {
   env[key] = joinPath(on ? [dir, ...rest] : rest);
   userPathDirs = null;
   await userPath();
+}
+
+/** Where `bin` is on the PATH of `env` (`command -v` / `where`), or null. */
+export async function findCommand(bin: string, env: Record<string, string> = {}): Promise<string | null> {
+  const r = isWin ? await run('where.exe', [bin], { env, timeout: 5000 }) : await run('/bin/sh', ['-c', `command -v ${bin}`], { env, timeout: 5000 });
+  return r.code === 0 ? r.stdout.trim().split(/\r?\n/)[0] || null : null;
 }
 
 /** Whether `bin` is on the PATH of `env` (`command -v` on macOS, `where` on Windows). */

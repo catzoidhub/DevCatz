@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { currentSignal } from './cancel';
 
 /** Expected SHA-256 for `file` from a `SHASUMS256.txt` (`<hash>  <file>` lines). */
 export async function checksumFor(sumsUrl: string, file: string): Promise<string> {
@@ -28,6 +29,8 @@ export async function downloadVerified(
   signal?: AbortSignal,
   algo: 'sha256' | 'sha512' | 'md5' = 'sha256',
 ): Promise<string> {
+  // Inside a cancellable install, Cancel stops the download.
+  signal ??= currentSignal();
   const res = await fetch(url, { headers, signal });
   if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
   const total = Number(res.headers.get('content-length')) || 0;

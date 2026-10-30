@@ -5,6 +5,7 @@ import { execCommand } from './detect';
 import { getShellEnv, isPortOpen, run } from './env';
 import { isWin, shellCommand } from './platform';
 import type { DbAction, DbStatus, ProjectState } from '@shared/types';
+import { killOnCancel } from './cancel';
 
 type Log = (text: string) => void;
 
@@ -47,6 +48,7 @@ export function stream(cwd: string, command: string, log: Log, env: Record<strin
       env: { ...getShellEnv(), FORCE_COLOR: '1', CI: '1', ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    killOnCancel(child);
     child.stdout.on('data', (d: Buffer) => log(d.toString()));
     child.stderr.on('data', (d: Buffer) => log(d.toString()));
     child.on('error', (e) => log(e.message));
