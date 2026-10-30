@@ -52,6 +52,20 @@ export function detectPackageManager(dir: string, pkg: PackageJson | null): Pack
   return 'npm';
 }
 
+/**
+ * The package.json script that runs an app in development: `dev` (Vite, Next, Nuxt …), else `start:dev` (the
+ * NestJS CLI's default), else `serve` (Angular, Vue CLI), else `start` when it is a watching dev server
+ * (`nest start --watch`, `ng serve`, `nodemon`, `node --watch`, `tsx watch`); null when none runs one.
+ */
+export function devScriptName(pkg: PackageJson | null): string | null {
+  const s = pkg?.scripts ?? {};
+  if (s.dev) return 'dev';
+  if (s['start:dev']) return 'start:dev';
+  if (s.serve) return 'serve';
+  if (s.start && /^\s*(?:npx\s+|bunx\s+)?(?:nest\s+start|ng\s+serve|nodemon|node\s+--watch|tsx\s+watch|ts-node-dev|vite|next\s+dev|nuxt\s+dev|astro\s+dev)\b/.test(s.start)) return 'start';
+  return null;
+}
+
 export function runScriptCommand(pm: PackageManager, script: string): string {
   return pm === 'yarn' ? `yarn ${script}` : `${pm} run ${script}`;
 }
@@ -76,9 +90,11 @@ export const DEFAULT_PORTS: Record<Framework, number | null> = {
   next: 3000,
   'vite-vue': 5173,
   'vite-react': 5173,
+  'vite-svelte': 5173,
   'tanstack-start': 3000,
   vite: 5173,
   sveltekit: 5173,
+  angular: 4200,
   astro: 4321,
   nestjs: 3000,
   express: 3000,

@@ -1,12 +1,12 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 import type { AppInfo, StackInfo } from '@shared/types';
-import { detectDatabase, readJson, runScriptCommand, slugify, type PackageJson } from '../detect';
+import { detectDatabase, devScriptName, readJson, runScriptCommand, slugify, type PackageJson } from '../detect';
 import { detectRedis } from '../redis';
 import { detectGoApp } from './go';
 import { hasDependencies, mainRank, nodeDriver, portClashes, portFlagCommand } from './node';
-import { phpDriver } from './php';
-import { pythonDriver } from './python';
+import { phpDriver, phpFolderApp } from './php';
+import { pythonDriver, pythonFolderApp } from './python';
 import { detectRustApp, readCargo } from './rust';
 
 /**
@@ -49,27 +49,12 @@ const isProject = (d: string) => phpDriver.matches(d) || pythonDriver.matches(d)
 function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' | 'php' | 'python' | 'go' | 'rust'; depsMissing: boolean; warnings: string[] } | null {
   const rel = relative(root, dir);
   if (phpDriver.matches(dir)) {
-    const s = phpDriver.detect(dir, '');
-    const web = s.apps.find((a) => a.kind === 'web');
-    if (!web) return null;
-    const laravel = existsSync(join(dir, 'artisan'));
-    const docroot = web.docroot ?? '.';
-    const command = laravel ? 'php artisan serve --host=127.0.0.1 --port=${PORT:-8000}' : `php -S 127.0.0.1:\${PORT:-8000} -t ${docroot}`;
-    return {
-      runtime: 'php',
-      depsMissing: s.depsMissing,
-      warnings: s.warnings,
-      app: { ...web, dir: rel, kind: 'api', docroot: undefined, devScript: command, command, port: 8000, configuredPort: 8000, portVars: ['PORT'], managedPort: false, portFlag: false, flagCommand: null, domain: '' },
-    };
+    const f = phpFolderApp(root, dir);
+    return f ? { runtime: 'php', ...f } : null;
   }
   if (pythonDriver.matches(dir)) {
-    const s = pythonDriver.detect(dir, '');
-    const app = s.apps[0];
-    if (!app?.command) return null;
-    // The folder's own venv first (the site-wide one is the root's).
-    const venv = s.python?.venv ? join(dir, s.python.venv) : null;
-    const command = venv ? `env VIRTUAL_ENV="${venv}" PATH="${venv}/bin:$PATH" PYTHONUNBUFFERED=1 ${app.command}` : `env PYTHONUNBUFFERED=1 ${app.command}`;
-    return { runtime: 'python', depsMissing: s.depsMissing, warnings: s.warnings, app: { ...app, dir: rel, kind: 'api', devScript: app.command, command, domain: '' } };
+    const f = pythonFolderApp(root, dir);
+    return f ? { runtime: 'python', ...f } : null;
   }
   if (existsSync(join(dir, 'Cargo.toml'))) {
     const app = detectRustApp(dir, root, '', readCargo(dir));
@@ -80,18 +65,38 @@ function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' |
     return app.command ? { runtime: 'go', depsMissing: false, warnings: [], app: { ...app, kind: 'api' } } : null;
   }
   const pkg = readJson<PackageJson>(join(dir, 'package.json'));
-  if (!pkg?.scripts?.dev) return null;
+  const script = devScriptName(pkg);
+  if (!pkg || !script) return null;
   const s = nodeDriver.detect(dir, '');
   const app = s.apps[0];
   if (!app || !s.packageManager) return null;
   const pm = s.packageManager;
   // A nested JS monorepo runs as one process with its own dev script (its apps keep their own ports).
-  const flagCommand = !s.monorepo && !app.portVars.length ? portFlagCommand(pm, pkg.scripts.dev) : null;
+  const flagCommand = !s.monorepo && !app.portVars.length ? portFlagCommand(pm, script, pkg.scripts![script]) : null;
   return {
     runtime: 'node',
     depsMissing: !hasDependencies(dir),
     warnings: s.warnings,
-    app: { ...app, dir: rel, command: s.devCommand ?? runScriptCommand(pm, 'dev'), portFlag: Boolean(flagCommand), flagCommand, domain: '' },
+    app: { ...app, dir: rel, command: s.devCommand ?? runScriptCommand(pm, script), portFlag: Boolean(flagCommand), flagCommand, domain: '' },
+  };
+}
+
+/**
+ * Projects of other runtimes in the folders of a PHP site (a Laravel API with a Vue SPA in frontend/, a NestJS
+ * service in api/): each becomes an app on `<folder>.<domain>` that Start runs from its folder, while the root stays
+ * served by PHP-FPM on the site's own domain. Folders of the root's own runtime (a package in packages/) are left alone.
+ */
+export function siblingApps(root: string, domain: string, skip: 'php' | 'python'): Pick<StackInfo, 'apps' | 'warnings'> & { runtimes: NonNullable<StackInfo['subRuntimes']>; depsMissing: boolean } {
+  const found = projectFolders(root)
+    .map((d) => folderApp(root, d))
+    .filter((x): x is NonNullable<typeof x> => x !== null && x.runtime !== skip);
+  const apps = found.map((f) => ({ ...f.app, domain: `${slugify(basename(f.app.dir))}.${domain}` }));
+  const missing = found.filter((f) => f.depsMissing).map((f) => f.app.dir);
+  return {
+    apps,
+    runtimes: [...new Set(found.map((f) => f.runtime))],
+    depsMissing: missing.length > 0,
+    warnings: [...found.flatMap((f) => f.warnings.map((w) => `${f.app.dir}: ${w}`)), ...(missing.length ? [`Dependencies missing in ${missing.join(', ')}: use Install dependencies.`] : [])],
   };
 }
 

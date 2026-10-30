@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import type { AppInfo, Framework, PythonStack, StackInfo, StackTask } from '@shared/types';
 import { DEFAULT_PORTS, detectDatabase, readText } from '../detect';
 import { detectRedis } from '../redis';
@@ -239,6 +239,19 @@ function detectPythonStack(root: string, domain: string): StackInfo {
     tasks,
     python: { tool, venv: venv.dir, venvVersion: venv.version, spec: pythonSpec(root), celery },
   };
+}
+
+/**
+ * A Python project in a folder of another site (client/ + server/, a workspace's apps/api): one `api` app run from
+ * that folder's own venv (the site-wide one is the root's). Null when the folder has nothing to run.
+ */
+export function pythonFolderApp(root: string, dir: string): { app: AppInfo; depsMissing: boolean; warnings: string[] } | null {
+  const s = detectPythonStack(dir, '');
+  const app = s.apps[0];
+  if (!app?.command) return null;
+  const venv = s.python?.venv ? join(dir, s.python.venv) : null;
+  const command = venv ? `env VIRTUAL_ENV="${venv}" PATH="${venv}/bin:$PATH" PYTHONUNBUFFERED=1 ${app.command}` : `env PYTHONUNBUFFERED=1 ${app.command}`;
+  return { depsMissing: s.depsMissing, warnings: s.warnings, app: { ...app, dir: relative(root, dir), kind: 'api', devScript: app.command, command, domain: '' } };
 }
 
 export const pythonDriver: RuntimeDriver = {

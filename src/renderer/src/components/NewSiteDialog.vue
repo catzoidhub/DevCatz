@@ -193,7 +193,7 @@ const goInstalled = computed(() => state.value?.go.installed ?? []);
 
 const FRAMEWORK: Record<string, string> = {
   nuxt: 'Nuxt', next: 'Next.js', 'vite-vue': 'Vue + Vite',
-  'vite-react': 'React + Vite', 'tanstack-start': 'TanStack Start', vite: 'Vite', astro: 'Astro', sveltekit: 'SvelteKit',
+  'vite-react': 'React + Vite', 'vite-svelte': 'Svelte + Vite', 'tanstack-start': 'TanStack Start', vite: 'Vite', astro: 'Astro', sveltekit: 'SvelteKit', angular: 'Angular',
   nestjs: 'NestJS', express: 'Node server', node: 'Node', go: 'Go', laravel: 'Laravel', php: 'PHP',
 };
 const summary = computed(() => {

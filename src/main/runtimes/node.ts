@@ -5,6 +5,8 @@ import {
   DEFAULT_PORTS,
   detectDatabase,
   detectPackageManager,
+  devScriptName,
+  execCommand,
   firstExisting,
   readEnvFiles,
   readJson,
@@ -16,12 +18,18 @@ import {
 import { detectRedis } from '../redis';
 import { detectGoApp, findGoModules } from './go';
 import { findRustApps } from './rust';
+import { phpDriver, phpFolderApp } from './php';
+import { pythonDriver, pythonFolderApp } from './python';
 import type { RuntimeDriver } from './types';
 
 const isPackage = (dir: string) => existsSync(join(dir, 'package.json'));
 
-/** Expands workspace patterns of the form `dir`, `dir/*` (no deep globs). */
-function workspaceDirs(root: string, pkg: PackageJson | null): string[] {
+/**
+ * Expands workspace patterns of the form `dir`, `dir/*` (no deep globs) to the folders holding a package.json —
+ * or, with `all`, to every folder they match: a PHP / Python project under apps/ has no package.json but is a
+ * member of the project all the same.
+ */
+function workspaceDirs(root: string, pkg: PackageJson | null, all = false): string[] {
   let patterns: string[] = [];
   if (Array.isArray(pkg?.workspaces)) patterns = pkg.workspaces;
   else if (pkg?.workspaces?.packages) patterns = pkg.workspaces.packages;
@@ -43,9 +51,9 @@ function workspaceDirs(root: string, pkg: PackageJson | null): string[] {
       }
       for (const entry of entries.sort()) {
         const full = join(base, entry);
-        if (entry !== 'node_modules' && statSync(full).isDirectory() && isPackage(full)) dirs.push(full);
+        if (entry !== 'node_modules' && !entry.startsWith('.') && statSync(full).isDirectory() && (all || isPackage(full))) dirs.push(full);
       }
-    } else if (!clean.includes('*') && isPackage(join(root, clean))) {
+    } else if (!clean.includes('*') && (all ? existsSync(join(root, clean)) : isPackage(join(root, clean)))) {
       dirs.push(join(root, clean));
     }
   }
@@ -66,10 +74,12 @@ function detectFramework(pkg: PackageJson): Framework {
   if (deps['@sveltejs/kit']) return 'sveltekit';
   if (deps.astro) return 'astro';
   if (deps['@nestjs/core']) return 'nestjs';
+  if (deps['@angular/core']) return 'angular';
   // TanStack Start (React or Solid) is a Vite plugin: before the plain Vite checks.
   if (deps['@tanstack/react-start'] || deps['@tanstack/solid-start']) return 'tanstack-start';
   if (deps.vite && deps.vue) return 'vite-vue';
   if (deps.vite && deps.react) return 'vite-react';
+  if (deps.vite && deps.svelte) return 'vite-svelte';
   if (deps.vite) return 'vite';
   if (deps.express || deps.fastify || deps.hono || deps.koa) return 'express';
   return 'node';
@@ -116,7 +126,7 @@ function portExprInBlock(text: string | null, block: string): string | null {
 }
 
 function detectPort(dir: string, root: string, pkg: PackageJson, framework: Framework): PortInfo {
-  const script = pkg.scripts?.dev ?? '';
+  const script = pkg.scripts?.[devScriptName(pkg) ?? 'dev'] ?? '';
   const flag = script.match(/(?:--port[= ]|\s-p\s+)(\d{2,5})/);
   // A literal --port in the dev script cannot be overridden from the environment.
   if (flag) {
@@ -143,7 +153,7 @@ function detectPort(dir: string, root: string, pkg: PackageJson, framework: Fram
     if (info?.port) return info;
     return { port: Number(env.NUXT_PORT) || Number(env.PORT) || DEFAULT_PORTS.nuxt, vars: ['NUXT_PORT'] };
   }
-  if (framework === 'vite' || framework === 'vite-vue' || framework === 'vite-react' || framework === 'sveltekit' || framework === 'tanstack-start') {
+  if (framework === 'vite' || framework === 'vite-vue' || framework === 'vite-react' || framework === 'vite-svelte' || framework === 'sveltekit' || framework === 'tanstack-start') {
     const info = fromBlock(['vite.config.ts', 'vite.config.js', 'vite.config.mts', 'vite.config.mjs'], 'server');
     if (info?.port) return info;
   }
@@ -194,16 +204,25 @@ function detectPort(dir: string, root: string, pkg: PackageJson, framework: Fram
  * one directly, DevCatz can give each app its own port on the command line — in a monorepo they all default to the
  * same one (5173, 4321, 3000) and only the first would start.
  */
-const PORT_CLI = /^\s*(?:npx\s+|bunx\s+)?(vite|astro|nuxi|nuxt|next)(?:\s+(?:dev|serve))?(?:\s|$)/;
+const PORT_CLI = /^\s*(?:npx\s+|bunx\s+)?(vite|astro|nuxi|nuxt|next|ng)(?:\s+(?:dev|serve))?(?:\s|$)/;
 
-/** `<pm> run dev … --port {port}` for an app whose dev script is a plain CLI call, else null. */
-export function portFlagCommand(pm: PackageManager, devScript: string | undefined): string | null {
+/**
+ * `<pm> run <script> … --port {port}` for an app whose dev script is a plain CLI call, else null. A script that
+ * writes its own port (`vite dev --port 3000`, TanStack's starter) runs the CLI directly with that flag replaced:
+ * a second `--port` would not override it.
+ */
+export function portFlagCommand(pm: PackageManager, script: string, devScript: string | undefined): string | null {
   if (!devScript || /&&|\|\||[;|&]/.test(devScript)) return null;
   const cli = devScript.match(PORT_CLI)?.[1];
   if (!cli) return null;
-  if (/--port[= ]|\s-p\s/.test(devScript)) return null;
+  // Angular's dev server listens on ::1 only when told `localhost`; the proxy reaches apps on 127.0.0.1.
+  const extra = cli === 'vite' ? ' --strictPort' : cli === 'ng' ? ' --host 127.0.0.1' : '';
+  if (/--port[= ]|\s-p\s/.test(devScript)) {
+    const call = devScript.trim().replace(/^(?:npx|bunx)\s+/, '').replace(/(--port[= ]|\s-p\s+)\d{2,5}/, '$1{port}');
+    return `${execCommand(pm, call)}${/--strictPort|--host/.test(call) ? '' : extra}`;
+  }
   const sep = pm === 'npm' ? ' --' : '';
-  return `${runScriptCommand(pm, 'dev')}${sep} --port {port}${cli === 'vite' ? ' --strictPort' : ''}`;
+  return `${runScriptCommand(pm, script)}${sep} --port {port}${extra}`;
 }
 
 function hasPrisma(dir: string, pkg: PackageJson): boolean {
@@ -219,19 +238,36 @@ function detectNodeStack(root: string, domain: string): StackInfo {
   const pm = detectPackageManager(root, rootPkg);
   const wsDirs = workspaceDirs(root, rootPkg);
   const monorepo = wsDirs.length > 0;
-  const candidates = monorepo ? wsDirs : [root];
+  // PHP / Python members have no package.json: the patterns' other folders, when they are such projects.
+  const others = monorepo ? workspaceDirs(root, rootPkg, true).filter((d) => !wsDirs.includes(d) && (phpDriver.matches(d) || pythonDriver.matches(d))) : [];
+  const candidates = monorepo ? [...wsDirs, ...others].sort() : [root];
 
   const apps: AppInfo[] = [];
   const libs: StackInfo['libs'] = [];
+  const warnings: string[] = [];
+  const subRuntimes = new Set<NonNullable<StackInfo['subRuntimes']>[number]>();
   let prismaDir: string | null = null;
   for (const dir of candidates) {
+    // A workspace member that is a PHP / Python project (apps/api with artisan beside apps/web): DevCatz runs it
+    // from its folder like a folder layout does, not as a JS package.
+    if (dir !== root) {
+      const folder = phpDriver.matches(dir) ? { runtime: 'php' as const, found: phpFolderApp(root, dir) } : pythonDriver.matches(dir) ? { runtime: 'python' as const, found: pythonFolderApp(root, dir) } : null;
+      if (folder?.found) {
+        apps.push(folder.found.app);
+        subRuntimes.add(folder.runtime);
+        warnings.push(...folder.found.warnings.map((w) => `${folder.found!.app.dir}: ${w}`));
+        if (folder.found.depsMissing) warnings.push(`Dependencies missing in ${folder.found.app.dir}: use Install dependencies.`);
+        continue;
+      }
+    }
     const pkg = readJson<PackageJson>(join(dir, 'package.json'));
     if (!pkg) continue;
     const prisma = hasPrisma(dir, pkg);
     if (prisma && prismaDir === null) prismaDir = relative(root, dir) || '.';
     // Electron Forge starts with `start` (no dev script).
     const electronScript = isElectron(pkg) ? (pkg.scripts?.dev ? 'dev' : pkg.scripts?.start ? 'start' : null) : null;
-    if (!pkg.scripts?.dev && !electronScript) {
+    const script = devScriptName(pkg);
+    if (!script && !electronScript) {
       if (monorepo && pkg.scripts?.build) libs.push({ dir: relative(root, dir), name: pkg.name ?? basename(dir), build: true, dev: false });
       continue;
     }
@@ -246,11 +282,11 @@ function detectNodeStack(root: string, domain: string): StackInfo {
     const { port, vars, source } = detectPort(dir, root, pkg, framework);
     // An app that reads no port variable gets its own port on the command line: in a monorepo every app defaults to
     // the same one, and so do two worktrees (or two copies) of one Astro / Vite site.
-    const flagCommand = !vars.length ? portFlagCommand(pm, pkg.scripts?.dev) : null;
+    const flagCommand = !vars.length ? portFlagCommand(pm, script!, pkg.scripts![script!]) : null;
     // A workspace without a server (e.g. `tsc --watch` in packages/shared-types)
     // still runs as part of the root dev script, but gets no domain.
     if (framework === 'node' && port === null) {
-      if (monorepo) libs.push({ dir: relative(root, dir), name: pkg.name ?? basename(dir), build: Boolean(pkg.scripts?.build), dev: true });
+      if (monorepo && script === 'dev') libs.push({ dir: relative(root, dir), name: pkg.name ?? basename(dir), build: Boolean(pkg.scripts?.build), dev: true });
       continue;
     }
     apps.push({
@@ -259,12 +295,15 @@ function detectNodeStack(root: string, domain: string): StackInfo {
       framework,
       library: framework === 'express' ? detectServer(pkg) : null,
       kind: ['nestjs', 'express', 'node'].includes(framework) ? 'api' : 'web',
-      devScript: pkg.scripts?.dev ?? null,
+      devScript: pkg.scripts![script!],
+      // Run app by app, a NestJS app starts with `start:dev`, not `dev` (which `<pm> run dev` would look for).
+      command: script !== 'dev' ? runScriptCommand(pm, script!) : null,
       port,
       configuredPort: port,
       portVars: vars,
       managedPort: false,
-      portSource: source ?? null,
+      // A port DevCatz can replace on the command line is not one the app keeps.
+      portSource: flagCommand ? null : (source ?? null),
       portFlag: Boolean(flagCommand),
       flagCommand,
       prisma,
@@ -285,8 +324,10 @@ function detectNodeStack(root: string, domain: string): StackInfo {
   });
 
   let devCommand: string | null = null;
-  if (rootPkg?.scripts?.dev) devCommand = runScriptCommand(pm, 'dev');
-  else if (apps.length === 1 && monorepo) devCommand = `cd ${apps[0].dir} && ${runScriptCommand(pm, 'dev')}`;
+  const rootScript = devScriptName(rootPkg);
+  if (rootScript && !monorepo) devCommand = runScriptCommand(pm, rootScript);
+  else if (rootPkg?.scripts?.dev) devCommand = runScriptCommand(pm, 'dev');
+  else if (apps.length === 1 && monorepo) devCommand = `cd ${apps[0].dir} && ${apps[0].command ?? runScriptCommand(pm, 'dev')}`;
   // No dev script at the root (bun / npm workspaces of apps/web + apps/api): Start runs every app from its folder.
   else if (apps.length > 1 && monorepo) devCommand = `${apps.length} apps, each from its folder`;
   // Tauri (src-tauri/ beside a Vite frontend): `tauri dev` opens the app's window and starts the frontend through
@@ -312,9 +353,10 @@ function detectNodeStack(root: string, domain: string): StackInfo {
     node: nvmrc || rootPkg?.engines?.node || null,
     runtime: 'node',
     depsMissing: !hasDependencies(root),
-    warnings: portClashes(apps),
+    warnings: [...portClashes(apps), ...warnings],
     libs,
     layout: monorepo ? 'workspaces' : undefined,
+    ...(subRuntimes.size ? { subRuntimes: [...subRuntimes] } : {}),
   };
 }
 

@@ -7,10 +7,13 @@ export type Framework =
   | 'next'
   | 'vite-vue'
   | 'vite-react'
+  | 'vite-svelte'
   | 'tanstack-start'
   | 'vite'
   | 'astro'
   | 'sveltekit'
+  // Angular CLI (`ng serve`, usually the `start` script)
+  | 'angular'
   | 'nestjs'
   | 'express'
   | 'node'

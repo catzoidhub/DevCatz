@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import type { AppInfo, DatabaseInfo, Framework, StackInfo, StackTask } from '@shared/types';
 import { detectDatabase, detectPackageManager, firstExisting, readJson, readText, type PackageJson } from '../detect';
 import { detectRedis } from '../redis';
@@ -219,6 +219,25 @@ function hasNodeModules(root: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * A PHP project in a folder of another site (frontend/ + backend/, a workspace's apps/api): one `api` app DevCatz
+ * runs from that folder on its own port — Laravel through `artisan serve`, other PHP through PHP's built-in server
+ * — instead of PHP-FPM. Null when the folder has nothing to serve.
+ */
+export function phpFolderApp(root: string, dir: string): { app: AppInfo; depsMissing: boolean; warnings: string[] } | null {
+  const s = detectPhpStack(dir, '');
+  const web = s.apps.find((a) => a.kind === 'web');
+  if (!web) return null;
+  const laravel = existsSync(join(dir, 'artisan'));
+  const docroot = web.docroot ?? '.';
+  const command = laravel ? 'php artisan serve --host=127.0.0.1 --port=${PORT:-8000}' : `php -S 127.0.0.1:\${PORT:-8000} -t ${docroot}`;
+  return {
+    depsMissing: s.depsMissing,
+    warnings: s.warnings,
+    app: { ...web, dir: relative(root, dir), kind: 'api', docroot: undefined, devScript: command, command, port: 8000, configuredPort: 8000, portVars: ['PORT'], managedPort: false, portFlag: false, flagCommand: null, domain: '' },
+  };
 }
 
 export const phpDriver: RuntimeDriver = {

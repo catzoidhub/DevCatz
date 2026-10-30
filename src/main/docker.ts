@@ -155,7 +155,7 @@ interface Ctx {
 }
 
 const INTERNAL_PORT: Record<string, number> = { go: 8080, laravel: 8080, php: 8080, django: 8000, flask: 8000, fastapi: 8000, litestar: 8000, python: 8000 };
-const STATIC = new Set(['vite-vue', 'vite-react', 'vite', 'astro']);
+const STATIC = new Set(['vite-vue', 'vite-react', 'vite-svelte', 'vite', 'astro']);
 /** Rust WebAssembly frontends built by trunk: static files behind nginx. */
 const rustStatic = (a: AppInfo) => a.framework === 'rust' && !!a.command?.startsWith('trunk');
 const portOf = (a: AppInfo) => (STATIC.has(a.framework) || rustStatic(a) ? 80 : a.framework === 'rust' ? 8080 : (INTERNAL_PORT[a.framework] ?? 3000));
@@ -201,7 +201,7 @@ function buildCmd(a: AppInfo, pkg: PackageJson | null, pm: string): string {
   const x = pm === 'bun' ? 'bunx' : 'npx';
   const cli: Partial<Record<AppInfo['framework'], string>> = {
     nuxt: 'nuxt build', next: 'next build', astro: 'astro build', sveltekit: 'vite build', nestjs: 'nest build',
-    vite: 'vite build', 'vite-vue': 'vite build', 'vite-react': 'vite build', 'tanstack-start': 'vite build',
+    vite: 'vite build', 'vite-vue': 'vite build', 'vite-react': 'vite build', 'vite-svelte': 'vite build', 'tanstack-start': 'vite build', angular: 'ng build',
   };
   return cli[a.framework] ? `${x} ${cli[a.framework]}` : 'true # no build step';
 }

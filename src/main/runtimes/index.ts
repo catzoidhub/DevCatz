@@ -6,7 +6,7 @@ import { pythonDriver } from './python';
 import { rustDriver } from './rust';
 import type { RuntimeDriver } from './types';
 import { withDataLibs } from './datalibs';
-import { detectFolders, projectFolders } from './folders';
+import { detectFolders, projectFolders, siblingApps } from './folders';
 
 /**
  * First match wins: PHP (composer.json + artisan/public/index.php) before Node, since Laravel apps also have a
@@ -36,6 +36,18 @@ export function detectStack(root: string, domain: string): StackInfo {
   if (!base || (!base.apps.length && !base.monorepo) || ((base.runtime === 'go' || base.runtime === 'rust') && !base.monorepo)) {
     const folders = detectFolders(root, domain, base);
     if (folders) return withDataLibs(root, folders);
+  }
+  // A PHP or Python site with projects of other runtimes in its folders (Laravel + frontend/ with Vite, Django +
+  // frontend/, FastAPI + api/ with NestJS): the root keeps the site's domain (PHP-FPM, or its own dev server), each
+  // folder runs as an app on its own subdomain and port.
+  if (base?.runtime === 'php' || base?.runtime === 'python') {
+    const extra = siblingApps(root, domain, base.runtime);
+    if (extra.apps.length) {
+      base.apps.push(...extra.apps);
+      base.layout = 'folders';
+      base.subRuntimes = extra.runtimes;
+      base.warnings.push(...extra.warnings);
+    }
   }
   return withDataLibs(root, base ?? nodeDriver.detect(root, domain));
 }
