@@ -154,21 +154,21 @@ function tauriDevPort(root: string): number | null {
 }
 
 /**
- * `anchor localnet`: Anchor 1.x starts Surfpool by default, so it is asked for solana-test-validator (`legacy`, part of
- * the Solana CLI DevCatz installs), and NO_DNA=1 makes it run without waiting for input in the background.
+ * An Anchor workspace's local chain: `anchor build`, then solana-test-validator in the foreground with every program
+ * of [programs.localnet] deployed (target/deploy/<name>.so at its id) and the provider wallet funded. Not
+ * `anchor localnet`: Anchor 1.x waits for keys on a terminal (and panics without one), or with NO_DNA=1 leaves the
+ * validator behind and exits — either way DevCatz could not tell it runs, nor stop it.
  */
-function anchorCommand(dir: string): string {
-  const programs = join(dir, 'programs');
-  let major = 0;
-  try {
-    for (const p of readdirSync(programs)) {
-      const v = (readText(join(programs, p, 'Cargo.toml')) ?? '').match(/^\s*anchor-lang\s*=\s*(?:\{[^}]*version\s*=\s*)?["'][^\d]*(\d+)/m)?.[1];
-      if (v) major = Math.max(major, Number(v));
-    }
-  } catch {
-    /* no programs/ */
-  }
-  return major >= 1 ? 'env NO_DNA=1 anchor localnet --validator legacy' : 'anchor localnet';
+export function anchorCommand(dir: string): string {
+  const toml = readText(join(dir, 'Anchor.toml')) ?? '';
+  const section = toml.split(/^\[programs\.localnet\]\s*$/m)[1]?.split(/^\[/m)[0] ?? '';
+  const programs = [...section.matchAll(/^\s*([\w-]+)\s*=\s*["'](\w+)["']/gm)].map((m) => `--bpf-program ${m[2]} target/deploy/${m[1]}.so`);
+  const wallet = (toml.match(/^\s*wallet\s*=\s*["']([^"']+)["']/m)?.[1] ?? '~/.config/solana/id.json').replace(/^~(?=\/)/, '$HOME');
+  return [
+    'anchor build',
+    'mkdir -p .anchor',
+    `solana-test-validator --reset --quiet --ledger .anchor/test-ledger --mint "$(solana-keygen pubkey "${wallet}")" ${programs.join(' ')}`.trim(),
+  ].join(' && ');
 }
 
 /** One crate as an app (dir = the crate's folder). */

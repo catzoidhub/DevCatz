@@ -1104,6 +1104,11 @@ export class Herd extends EventEmitter {
         })),
       ]);
     }
+    // No port to wait for (a CLI, Burn / Candle, a Bevy game): it runs as soon as it is spawned and stops by itself.
+    if (stack.apps.every((a) => a.kind === 'assets' || !a.port)) {
+      this.processes.markRunning(id);
+      this.processes.log(id, 'sys', 'This app is not a server (no port): its output appears here, and it stops by itself when it is done. The first run compiles it.');
+    }
     this.updateRoutes();
   }
 
