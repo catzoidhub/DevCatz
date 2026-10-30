@@ -4,7 +4,7 @@ import { basename, extname, join, resolve } from 'node:path';
 import { rewrite } from './htaccess';
 import { fastcgi } from './fastcgi';
 import { createServer as createHttpsServer, request as httpsRequest } from 'node:https';
-import type { Socket } from 'node:net';
+import { connect as netConnect, type Socket } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { createProxyServer } from 'http-proxy-3';
 import type { CertManager } from './certs';
@@ -85,9 +85,42 @@ export class Proxy {
   httpsUp = false;
   httpUp = false;
 
+  /**
+   * Which loopback address an app's port answers on. `localhost` would resolve to ::1 first on macOS, and a port's
+   * IPv4 and IPv6 listeners can be different programs (Angular's dev server on 127.0.0.1, another site's devtools
+   * on ::1): the app is reached on the address DevCatz saw it answer on, 127.0.0.1 first.
+   */
+  private loopback = new Map<number, string>();
+
+  private async loopbackFor(port: number): Promise<string> {
+    const known = this.loopback.get(port);
+    if (known) return known;
+    const probe = (host: string) =>
+      new Promise<boolean>((ok) => {
+        const s = netConnect({ host, port });
+        const done = (v: boolean) => {
+          s.destroy();
+          ok(v);
+        };
+        s.setTimeout(300, () => done(false));
+        s.once('connect', () => done(true));
+        s.once('error', () => done(false));
+      });
+    const host = (await probe('127.0.0.1')) ? '127.0.0.1' : (await probe('::1')) ? '[::1]' : null;
+    if (host) this.loopback.set(port, host);
+    return host ?? '127.0.0.1';
+  }
+
+  /** The proxy target of a route's port; the Host header stays `localhost:<port>` (Vite/Nuxt allow it). */
+  private async target(port: number, keepHost: boolean | undefined) {
+    return { target: `http://${await this.loopbackFor(port)}:${port}`, changeOrigin: false, ...(keepHost ? {} : { headers: { host: `localhost:${port}` } }) };
+  }
+
   constructor(private certs: CertManager) {
     this.proxy.on('error', (err, req, res) => {
       const route = this.route(req as IncomingMessage);
+      // The app may have moved to the other loopback address (or gone): look again next time.
+      if (route?.port) this.loopback.delete(route.port);
       if (res && 'writeHead' in res) {
         const r = res as ServerResponse;
         if (!r.headersSent) this.page(r, route, (err as Error).message, String((req as IncomingMessage).headers.host ?? ""));
@@ -141,10 +174,8 @@ export class Proxy {
     if (own) return own(req, res);
     if (route?.php) return this.servePhp(req, res, route, secure);
     if (!route || !route.port) return this.page(res, route, undefined, String(req.headers.host ?? ''));
-    this.proxy.web(req, res, {
-      target: `http://localhost:${route.port}`,
-      headers: { 'x-forwarded-proto': secure ? 'https' : 'http' },
-      ...(route.keepHost ? { changeOrigin: false } : {}),
+    void this.target(route.port, route.keepHost).then((t) => {
+      this.proxy.web(req, res, { ...t, headers: { ...t.headers, 'x-forwarded-proto': secure ? 'https' : 'http' } });
     });
   };
 
@@ -156,7 +187,7 @@ export class Proxy {
       return this.proxy.ws(req, socket, head, { target: `${scheme}://localhost:${route.php.vitePort}`, secure: false });
     }
     if (!route?.port) return socket.destroy();
-    this.proxy.ws(req, socket, head, { target: `http://localhost:${route.port}`, ...(route.keepHost ? { changeOrigin: false } : {}) });
+    void this.target(route.port, route.keepHost).then((t) => this.proxy.ws(req, socket, head, t));
   };
 
   /**
