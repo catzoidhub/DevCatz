@@ -43,8 +43,12 @@ export function copyEnvFiles(from: string, to: string, dirs: string[], parentDom
   return copied;
 }
 
-/** Dependency folders worth cloning (absolute paths inside them would point back at the parent: not .venv). */
-const DEP_DIRS = ['node_modules', 'vendor'];
+/**
+ * Dependency folders worth cloning (absolute paths inside them would point back at the parent: not .venv). A Rust
+ * crate's target/ too: cargo rebuilds the crate itself (its fingerprints name the parent's sources) but keeps the
+ * compiled dependencies, minutes less than a cold build.
+ */
+const DEP_DIRS = ['node_modules', 'vendor', 'target'];
 
 /**
  * Clones the parent's node_modules / vendor folders into the worktree with APFS copy-on-write (`cp -c`):
@@ -100,6 +104,20 @@ export function rewriteEnvDb(root: string, files: string[], from: string, to: st
     }
   }
   return changed;
+}
+
+/**
+ * Project-local SQLite files (Laravel's database/database.sqlite, gitignored) of the root and the app folders
+ * (backend/database/database.sqlite in a folder layout), copied into the worktree whatever the database choice:
+ * a file inside the project cannot be shared, the worktree has its own copy of the folder. Returns the copied paths.
+ */
+export function copyLocalSqlite(from: string, to: string, dirs: string[]): string[] {
+  const copied: string[] = [];
+  for (const dir of new Set(['.', ...dirs])) {
+    const rel = join(dir, 'database', 'database.sqlite');
+    if (copyLocalFile(from, to, rel)) copied.push(rel);
+  }
+  return copied;
 }
 
 /** A project-local SQLite file (Laravel's database/database.sqlite, gitignored) copied into the worktree. */

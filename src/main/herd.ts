@@ -50,7 +50,7 @@ import {
 } from './git';
 import { DevCatzAi } from './ai/devcatz';
 import { aiSettings } from './ai/settings';
-import { branchLabel, cloneDeps, copyEnvFiles, copyLocalFile, copyName, rewriteEnvDb } from './worktrees';
+import { branchLabel, cloneDeps, copyEnvFiles, copyLocalFile, copyLocalSqlite, copyName, rewriteEnvDb } from './worktrees';
 import { MailManager } from './mail/manager';
 import { WaManager } from './whatsapp';
 import { GatewayManager } from './gateways/manager';
@@ -838,7 +838,8 @@ export class Herd extends EventEmitter {
     const existing = store.projects.find((p) => this.real(p.path) === this.real(sitePath));
     if (existing) return existing.id;
     if (this.real(sitePath) === this.real(parent.path)) throw new Error(`${sitePath} is ${parent.name} itself`);
-    if (!isProjectDir(sitePath)) throw new Error(`${sitePath} has no project files (package.json, composer.json, go.mod …)`);
+    // A folder layout (frontend/ + backend/) has no manifest at its root: it is a site all the same.
+    if (!isLinkableDir(sitePath)) throw new Error(`${sitePath} has no project files (package.json, composer.json, go.mod …)`);
     const label = branchLabel(branch);
     const taken = new Set(this.projects.flatMap((p) => [p.domain, ...(this.stacks.get(p.id)?.apps.map((a) => a.domain) ?? [])]));
     let domain = `${label}.${parent.domain}`;
@@ -860,6 +861,9 @@ export class Herd extends EventEmitter {
     const log = (t: string) => this.processes.log(id, 'sys', t);
     log(`Worktree of ${parent.name} on branch ${branch}: ${this.urlFor(project)}`);
     if (envFiles.length) log(`Copied from ${parent.name} with the domain changed to ${domain}: ${envFiles.join(', ')}`);
+    // A SQLite file inside the project (gitignored) cannot be shared: without a copy the worktree's app fails at once.
+    const sqlite = copyLocalSqlite(parent.path, sitePath, dirs);
+    if (sqlite.length) log(`Copied from ${parent.name} (a SQLite file inside the project is the worktree's own copy): ${sqlite.join(', ')}`);
     if (database === 'copy') {
       try {
         await this.worktreeCopyDb(parent, id, branch, envFiles);
@@ -874,6 +878,12 @@ export class Herd extends EventEmitter {
         try {
           const cloned = await cloneDeps(parent.path, sitePath, dirs);
           if (cloned.length) log(`Cloned from ${parent.name} (copy-on-write, no extra disk until files change): ${cloned.join(', ')}`);
+          // What a clone cannot bring (a Python folder's .venv holds absolute paths; Go / Rust folders): installed.
+          this.rescan();
+          if (this.stacks.get(id)?.depsMissing) {
+            log('Some folders still miss their dependencies; installing them.');
+            install = true;
+          }
         } catch (e) {
           log(`${(e as Error).message}; installing instead.`);
           install = true;
@@ -952,7 +962,7 @@ export class Herd extends EventEmitter {
       for (const site of this.projects.filter((p) => !p.worktreeOf && this.git.summaries.get(p.id))) {
         const list = await this.worktreeList(site.id).catch(() => null);
         for (const w of list?.items ?? []) {
-          if (w.main || w.siteId || w.prunable || w.locked || store.settings.worktreeIgnore.includes(w.sitePath) || !isProjectDir(w.sitePath)) continue;
+          if (w.main || w.siteId || w.prunable || w.locked || store.settings.worktreeIgnore.includes(w.sitePath) || !isLinkableDir(w.sitePath)) continue;
           try {
             const id = await this.worktreeRegister(site, w.sitePath, w.branch ?? basename(w.path), 'clone', 'shared');
             const added = this.find(id);
@@ -1588,7 +1598,8 @@ export class Herd extends EventEmitter {
     let dirty = false;
     await Promise.all(
       this.projects.map(async (p) => {
-        const ports = (this.stacks.get(p.id)?.apps ?? []).map((a) => a.port).filter((x): x is number => !!x);
+        const apps = this.stacks.get(p.id)?.apps ?? [];
+        const ports = apps.map((a) => a.port).filter((x): x is number => !!x);
         const open: number[] = [];
         for (const port of ports) if (await isPortOpen(port)) open.push(port);
         const prev = this.openPorts.get(p.id) ?? [];
@@ -1596,8 +1607,11 @@ export class Herd extends EventEmitter {
           this.openPorts.set(p.id, open);
           dirty = true;
         }
-        // "running" once every app's port answers (or the first web app's, at least).
-        if (this.processes.getStatus(p.id).status === 'starting' && ports.length && ports.every((x) => open.includes(x))) {
+        // "running" once every launched app's port answers: an app left out of this start (a PHP site's Vite
+        // without node_modules) never answers and must not keep the site "starting".
+        const launch = this.launchState.get(p.id);
+        const wanted = launch ? apps.filter((a) => a.port && launch.apps[a.dir] === 'starting').map((a) => a.port!) : ports;
+        if (this.processes.getStatus(p.id).status === 'starting' && wanted.length && wanted.every((x) => open.includes(x))) {
           this.processes.markRunning(p.id);
           this.processes.log(p.id, 'sys', `Ready → ${this.urlFor(p)}`);
           void this.screenshot(p.id);
@@ -1676,6 +1690,15 @@ export class Herd extends EventEmitter {
     try {
       const code = await stream(p.path, `${pm} install`, (t) => this.processes.log(id, 'sys', t), this.runtimeEnv(p));
       if (code !== 0) throw new Error(`${pm} install failed (exit ${code}); see the log`);
+      // Workspace members that are PHP / Python projects (apps/api with artisan or pyproject.toml): the package
+      // manager skips them, so their vendor/ or .venv comes from their own install.
+      const members = (this.stacks.get(id)?.apps ?? []).map((a) => a.dir).filter((d, i, all) => d !== '.' && all.indexOf(d) === i && !existsSync(join(p.path, d, 'package.json')));
+      const steps = await this.folderInstallSteps(p, members);
+      if (steps.length) {
+        this.dbTasks.set(id, 'installing dependencies');
+        this.changed();
+        await this.runInstallSteps(p, steps);
+      }
     } finally {
       this.dbTasks.delete(id);
       this.rescan();
@@ -1688,10 +1711,26 @@ export class Herd extends EventEmitter {
    */
   private async installFolderDeps(p: ProjectConfig, stack: StackInfo): Promise<void> {
     if (this.dbTasks.has(p.id)) throw new Error(`Busy: ${this.dbTasks.get(p.id)}`);
+    // One pass per folder (a PHP root lists its FPM app and its Vite app, both in `.`).
+    const steps = await this.folderInstallSteps(p, [...new Set(stack.apps.map((a) => a.dir))]);
+    if (!steps.length) return;
+    this.dbTasks.set(p.id, 'installing dependencies');
+    this.changed();
+    try {
+      await this.runInstallSteps(p, steps);
+    } finally {
+      this.dbTasks.delete(p.id);
+      this.rescan();
+    }
+  }
+
+  /** The install command(s) of each folder, from its manifests. */
+  private async folderInstallSteps(p: ProjectConfig, dirs: string[]): Promise<{ dir: string; command: string }[]> {
     const q = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`;
     const steps: { dir: string; command: string }[] = [];
-    for (const app of stack.apps) {
-      const dir = join(p.path, app.dir);
+    for (const rel of dirs) {
+      const dir = join(p.path, rel);
+      const app = { dir: rel };
       const has = (f: string) => existsSync(join(dir, f));
       if (has('package.json')) {
         const pm = detectPackageManager(dir, readJson<PackageJson>(join(dir, 'package.json')));
@@ -1714,19 +1753,16 @@ export class Herd extends EventEmitter {
         else if (req) steps.push({ dir: app.dir, command: `${uv} venv --allow-existing .venv && ${uv} pip install --python .venv/bin/python -r ${q(req)}` });
       }
     }
-    if (!steps.length) return;
-    this.dbTasks.set(p.id, 'installing dependencies');
-    this.changed();
-    try {
-      for (const st of steps) {
-        const tag = `[${basename(st.dir)}] `;
-        this.processes.log(p.id, 'sys', `${tag}$ ${st.command}`);
-        const code = await stream(join(p.path, st.dir), st.command, (t) => this.processes.log(p.id, 'sys', t.replace(/^(?=.)/gm, tag)), { ...this.runtimeEnv(p), ...pythons.uvEnv() });
-        if (code !== 0) throw new Error(`${st.command} in ${st.dir} failed (exit ${code}); see the log`);
-      }
-    } finally {
-      this.dbTasks.delete(p.id);
-      this.rescan();
+    return steps;
+  }
+
+  /** Runs install steps one after the other, in the site's log with the folder as the tag. */
+  private async runInstallSteps(p: ProjectConfig, steps: { dir: string; command: string }[]): Promise<void> {
+    for (const st of steps) {
+      const tag = `[${basename(st.dir)}] `;
+      this.processes.log(p.id, 'sys', `${tag}$ ${st.command}`);
+      const code = await stream(join(p.path, st.dir), st.command, (t) => this.processes.log(p.id, 'sys', t.replace(/^(?=.)/gm, tag)), { ...this.runtimeEnv(p), ...pythons.uvEnv() });
+      if (code !== 0) throw new Error(`${st.command} in ${st.dir} failed (exit ${code}); see the log`);
     }
   }
 
@@ -2061,8 +2097,10 @@ export class Herd extends EventEmitter {
       const key = `${p.id}:${app.dir}`;
       let port = store.ports[key];
       if (!port || taken.has(port)) {
+        // Even ports only: dev tools that open a second server on port + 1 (TanStack devtools) must not land on the
+        // next app's port.
         port = 4100;
-        while (taken.has(port) || Object.values(store.ports).includes(port)) port++;
+        while (taken.has(port) || Object.values(store.ports).includes(port)) port += 2;
         store.setPort(key, port);
       }
       taken.add(port);
@@ -2191,7 +2229,7 @@ export class Herd extends EventEmitter {
       if (!app.managedPort || !app.port || !(await isPortOpen(app.port))) continue;
       const used = new Set(Object.values(store.ports));
       let port = 4100;
-      while (used.has(port) || (await isPortOpen(port))) port++;
+      while (used.has(port) || (await isPortOpen(port))) port += 2;
       this.processes.log(p.id, 'sys', `Port ${app.port} is taken by another program; ${app.name} moves to ${port}.`);
       store.setPort(`${p.id}:${app.dir}`, port);
       moved = true;
@@ -2862,13 +2900,31 @@ export class Herd extends EventEmitter {
       if (!detectRealtime(p.path).reverb) this.processes.log(id, 'sys', 'Reverb is on, but laravel/reverb is not in composer.json (composer require laravel/reverb).');
       else specs.push({ label: 'reverb', cwd: p.path, command: `php artisan reverb:start --host=127.0.0.1 --port=${this.reverbPort(p)}`, env: base });
     }
+    // Projects of other runtimes in the site's folders (frontend/ with Vite, api/ with NestJS): each from its folder,
+    // on its managed port, like a folder layout.
+    const folders = stack.apps.filter((a) => a.dir !== '.' && a.kind !== 'assets');
+    if (folders.length) {
+      if (!(vite && !stack.jsDepsMissing) && (await this.reassignBusyPorts(p, stack))) return this.launchPhp(p, this.stacks.get(id)!);
+      const ports = this.portEnv(p, stack, true);
+      if (ports.summary) this.processes.log(id, 'sys', ports.summary);
+      const pm = stack.packageManager ?? 'npm';
+      for (const a of folders) {
+        specs.push({
+          label: basename(a.dir),
+          cwd: join(p.path, a.dir),
+          command: a.managedPort && a.flagCommand && a.port ? a.flagCommand.replace('{port}', String(a.port)) : (a.command ?? runScriptCommand(pm, 'dev')),
+          env: { ...base, ...ports.shared, ...(ports.apps.get(a.dir) ?? {}) },
+        });
+      }
+    }
     if (!specs.length) {
       this.processes.log(id, 'sys', `Nothing to start: the site is served by ${words.phpServer} all the time. (Enable the queue worker or scheduler in Settings.)`);
       return;
     }
     this.processes.startMany(id, specs);
+    this.launched(id, [...(vite && !stack.jsDepsMissing ? ['.'] : []), ...folders.map((a) => a.dir)]);
     // Without a dev server port to wait for (queue/scheduler only) the site is up right away.
-    if (!vite || stack.jsDepsMissing) this.processes.markRunning(id);
+    if ((!vite || stack.jsDepsMissing) && !folders.length) this.processes.markRunning(id);
     this.updateRoutes();
   }
 
