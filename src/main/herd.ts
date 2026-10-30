@@ -150,6 +150,9 @@ const RUST_NEED_LABEL: Record<RustChoice['needs'][number], string> = {
   solana: 'the Solana CLI',
   anchor: 'Anchor',
   wasm32: 'the WebAssembly target',
+  'sqlx-cli': 'the SQLx CLI',
+  'sea-orm-cli': 'the SeaORM CLI',
+  'diesel-cli': 'the Diesel CLI',
 };
 const NO_NODE = 'Node.js is not installed. Install it from the site\'s Overview (Install Node.js) or the Node.js page (sidebar), then try again.';
 
@@ -2004,7 +2007,7 @@ export class Herd extends EventEmitter {
   private perAppMode(p: ProjectConfig, stack: StackInfo): boolean {
     // Sibling projects (frontend/ + backend/) only run app by app: there is no root command for them.
     if (stack.layout === 'folders') return !p.devCommand;
-    const multi = stack.monorepo || stack.apps.some((a) => a.framework === 'go' && a.dir !== '.');
+    const multi = stack.monorepo || stack.apps.some((a) => (a.framework === 'go' || a.framework === 'rust') && a.dir !== '.');
     return multi && !p.devCommand && p.managedPorts !== false && stack.packageManager !== null;
   }
 
@@ -3322,7 +3325,8 @@ export class Herd extends EventEmitter {
       command = command.replace('{name}', `'${name.replace(/'/g, '')}'`);
     }
     if (task.needsBin && !(await hasCommand(task.needsBin, this.runtimeEnv(p)))) {
-      throw new Error(task.needsBin === 'wp' ? 'WP-CLI is not installed: brew install wp-cli' : `${task.needsBin} is not installed`);
+      const rust = rusts.RUST_TOOLS.find((x) => x.bin === task.needsBin);
+      throw new Error(task.needsBin === 'wp' ? 'WP-CLI is not installed: brew install wp-cli' : rust ? `${rust.label} is not installed: install it on the Rust page → Tools` : `${task.needsBin} is not installed`);
     }
     if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
     const label = `${task.tool} ${task.label.replace('…', '')}`;

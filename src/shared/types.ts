@@ -559,7 +559,7 @@ export interface RemoteRust {
   note: string | null;
 }
 
-export type RustToolId = 'trunk' | 'dioxus-cli' | 'cargo-leptos' | 'tauri-cli' | 'solana' | 'anchor';
+export type RustToolId = 'trunk' | 'dioxus-cli' | 'cargo-leptos' | 'tauri-cli' | 'solana' | 'anchor' | 'sqlx-cli' | 'sea-orm-cli' | 'diesel-cli';
 
 export interface RustToolState {
   id: RustToolId;

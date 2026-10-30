@@ -51,6 +51,19 @@ const LIB_MARK: Record<string, string> = {
   dbmate: 'go',
   'sql-migrate': 'go',
   tern: 'go',
+  diesel: 'diesel',
+  seaorm: 'seaorm',
+  'sqlx-rs': 'sqlx',
+  loco: 'loco',
+  rbatis: 'rust',
+  toasty: 'rust',
+  refinery: 'rust',
+  rusqlite: 'rust',
+  'tokio-postgres': 'rust',
+  postgres: 'rust',
+  mysql_async: 'rust',
+  mysql: 'rust',
+  mongodb: 'rust',
 };
 const TOOL_MARK: Record<string, string> = {
   Knex: 'knexdotjs',
@@ -85,6 +98,10 @@ const TOOL_MARK: Record<string, string> = {
   sqlc: 'sqlc',
   ent: 'ent',
   project: 'go',
+  Diesel: 'diesel',
+  SeaORM: 'seaorm',
+  SQLx: 'sqlx',
+  Loco: 'loco',
 };
 export const libMark = (id: string): StackIcon | null => STACK_ICONS[LIB_MARK[id] ?? ''] ?? null;
 export const toolMark = (tool: string): StackIcon | null => STACK_ICONS[TOOL_MARK[tool] ?? ''] ?? null;

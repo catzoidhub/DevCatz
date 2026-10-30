@@ -15,6 +15,7 @@ import {
 } from '../detect';
 import { detectRedis } from '../redis';
 import { detectGoApp, findGoModules } from './go';
+import { findRustApps } from './rust';
 import type { RuntimeDriver } from './types';
 
 const isPackage = (dir: string) => existsSync(join(dir, 'package.json'));
@@ -262,6 +263,8 @@ function detectNodeStack(root: string, domain: string): StackInfo {
 
   // Go services living next to the JS apps (e.g. api/ with a go.mod beside web/).
   for (const dir of findGoModules(root)) apps.push(detectGoApp(dir, root, ''));
+  // …and Rust crates (apps/api with a Cargo.toml): each runs `cargo run`, trunk, dx … from its folder.
+  for (const app of findRustApps(root)) if (!apps.some((a) => a.dir === app.dir)) apps.push(app);
 
   // The first web app owns the bare domain (one named web / frontend / app … before an admin); the others get `<dir>.<domain>`.
   apps.sort((a, b) => (a.kind === b.kind ? mainRank(a) - mainRank(b) : a.kind === 'web' ? -1 : 1));

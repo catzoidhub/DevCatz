@@ -105,7 +105,7 @@ export function runsPerApp(p: ProjectState): boolean {
   // Sibling projects (frontend/ + backend/) always run app by app, from their folders.
   if (p.stack.layout === 'folders') return !p.devCommand;
   if (p.stack.runtime === 'php') return false;
-  const multi = p.stack.monorepo || p.stack.apps.some((a) => a.framework === 'go' && a.dir !== '.');
+  const multi = p.stack.monorepo || p.stack.apps.some((a) => (a.framework === 'go' || a.framework === 'rust') && a.dir !== '.');
   return multi && !p.devCommand && p.managedPorts !== false && p.stack.packageManager !== null;
 }
 

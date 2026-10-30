@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { DataLib, PackageManager, StackInfo, StackTask } from '@shared/types';
 import { pythonDependencies } from './python';
 import { goDbInfo } from '../gorm';
+import { readCargo } from './rust';
 
 /**
  * The data layer of a site, for its Database tab: the ORMs, query builders
@@ -19,6 +20,8 @@ import { goDbInfo } from '../gorm';
  *   Go      GORM, ent, sqlc, sqlx, Bun, pgx, SQLBoiler, Squirrel, goqu and the
  *           migration tools goose, golang-migrate, Atlas, dbmate, sql-migrate,
  *           tern (their commands are in the Go card)
+ *   Rust    Diesel, SeaORM (its migration crate), SQLx, Loco's db commands, rbatis, Toasty, refinery, and the drivers
+ *           rusqlite, tokio-postgres / postgres, mysql_async, mongodb
  */
 
 type Json = Record<string, unknown>;
@@ -356,6 +359,110 @@ const GO_LIB: Record<string, [string, DataLib['kind']]> = {
   tern: ['tern', 'migrations'],
 };
 
+// ---------------------------------------------------------------- Rust
+
+/** Crates whose dependencies count: the root, each Rust app, and a workspace's members (entity/, migration/ …). */
+function rustCrates(root: string, stack: StackInfo): string[] {
+  const dirs = new Set(['.', ...stack.apps.filter((a) => a.framework === 'rust' || a.library === 'tauri').map((a) => a.dir)]);
+  for (const d of [...dirs]) {
+    for (const m of readCargo(join(root, d))?.members ?? []) {
+      if (m.endsWith('/*')) {
+        const base = join(d, m.slice(0, -2));
+        try {
+          for (const e of readdirSync(join(root, base))) dirs.add(join(base, e));
+        } catch {
+          /* missing */
+        }
+      } else dirs.add(join(d, m));
+    }
+  }
+  if (existsSync(join(root, 'src-tauri', 'Cargo.toml'))) dirs.add('src-tauri');
+  return [...dirs].filter((d) => existsSync(join(root, d, 'Cargo.toml')));
+}
+
+function rustLibs(root: string, stack: StackInfo, libs: DataLib[], tasks: StackTask[]): void {
+  const crates = rustCrates(root, stack);
+  if (!crates.length) return;
+  const deps = new Set(crates.flatMap((d) => readCargo(join(root, d))?.deps ?? []));
+  const has = (n: string) => deps.has(n);
+  // Commands run where Cargo.toml / .env sit: the app's own crate (a workspace's server app, else the root).
+  const app = stack.apps.find((a) => a.framework === 'rust' && existsSync(join(root, a.dir, 'migrations')))?.dir ?? '.';
+  const migrations = (d: string) => existsSync(join(root, d, 'migrations'));
+
+  if (has('diesel') || has('diesel-async')) {
+    const dir = existsSync(join(root, app, 'diesel.toml')) || migrations(app) ? app : '.';
+    libs.push({ id: 'diesel', name: 'Diesel', kind: 'orm', dir, note: existsSync(join(root, dir, 'diesel.toml')) ? 'diesel.toml · Diesel CLI commands below' : 'no diesel.toml yet: run "setup"' });
+    const d = (id: string, label: string, command: string, extra: Partial<StackTask> = {}) => t('Diesel', `diesel-${id}`, label, command, dir, { needsBin: 'diesel', ...extra });
+    tasks.push(
+      d('setup', 'setup', 'diesel setup'),
+      d('run', 'migration run', 'diesel migration run'),
+      d('list', 'migration list', 'diesel migration list'),
+      d('generate', 'migration generate…', 'diesel migration generate {name}', { needsName: true, namePlaceholder: 'create_users' }),
+      d('schema', 'print-schema', 'diesel print-schema'),
+      d('revert', 'migration revert', 'diesel migration revert', { danger: true }),
+      d('redo', 'migration redo', 'diesel migration redo', { danger: true }),
+      d('reset', 'database reset', 'diesel database reset', { danger: true }),
+    );
+  }
+  if (has('sea-orm')) {
+    // A SeaORM project carries its migrations as a crate of its own (migration/, run with cargo; no CLI needed).
+    const mig = crates.find((d) => /(^|\/)migration$/.test(d) && readCargo(join(root, d))?.deps.includes('sea-orm-migration'));
+    libs.push({ id: 'seaorm', name: 'SeaORM', kind: 'orm', dir: '.', note: mig ? `migrations in ${mig}/` : 'no migration crate (sea-orm-cli migrate init)' });
+    if (mig) {
+      const m = (id: string, label: string, args: string, extra: Partial<StackTask> = {}) => t('SeaORM', `seaorm-${id}`, label, `cargo run --manifest-path ${mig}/Cargo.toml -- ${args}`, '.', extra);
+      tasks.push(
+        m('up', 'migrate up', 'up'),
+        m('status', 'migrate status', 'status'),
+        // generate writes ./src/mXXXX.rs and lists it in ./src/lib.rs, so it runs inside the migration crate (the others
+        // stay at the root, where .env's relative SQLite path points).
+        t('SeaORM', 'seaorm-generate', 'migrate generate…', 'cargo run -- generate {name}', mig, { needsName: true, namePlaceholder: 'create_users_table' }),
+        m('down', 'migrate down', 'down', { danger: true }),
+        m('fresh', 'migrate fresh', 'fresh', { danger: true }),
+      );
+    }
+    const entities = crates.find((d) => /(^|\/)entity$/.test(d));
+    tasks.push(t('SeaORM', 'seaorm-entities', 'generate entity', `sea-orm-cli generate entity -o ${entities ? `${entities}/src` : 'src/entities'}`, '.', { needsBin: 'sea-orm-cli' }));
+  }
+  if (has('sqlx')) {
+    const dir = migrations(app) ? app : '.';
+    libs.push({ id: 'sqlx-rs', name: 'SQLx', kind: 'query-builder', dir, note: migrations(dir) ? `${dir === '.' ? '' : `${dir}/`}migrations · SQLx CLI commands below` : 'no migrations/ folder' });
+    const s = (id: string, label: string, command: string, extra: Partial<StackTask> = {}) => t('SQLx', `sqlx-${id}`, label, command, dir, { needsBin: 'sqlx', ...extra });
+    tasks.push(
+      s('create', 'database create', 'sqlx database create'),
+      s('run', 'migrate run', 'sqlx migrate run'),
+      s('info', 'migrate info', 'sqlx migrate info'),
+      s('add', 'migrate add…', 'sqlx migrate add -r {name}', { needsName: true, namePlaceholder: 'create_users' }),
+      s('prepare', 'prepare (offline)', 'cargo sqlx prepare'),
+      s('revert', 'migrate revert', 'sqlx migrate revert', { danger: true }),
+      s('reset', 'database reset', 'sqlx database reset -y', { danger: true }),
+    );
+  }
+  if (has('loco-rs')) {
+    libs.push({ id: 'loco', name: 'Loco (SeaORM)', kind: 'orm', dir: '.', note: 'cargo loco db commands below' });
+    tasks.push(
+      t('Loco', 'loco-migrate', 'db migrate', 'cargo loco db migrate', '.'),
+      t('Loco', 'loco-status', 'db status', 'cargo loco db status', '.'),
+      t('Loco', 'loco-entities', 'db entities', 'cargo loco db entities', '.'),
+      t('Loco', 'loco-seed', 'db seed', 'cargo loco db seed', '.'),
+      t('Loco', 'loco-migration', 'generate migration…', 'cargo loco generate migration {name}', '.', { needsName: true, namePlaceholder: 'create_users' }),
+      t('Loco', 'loco-reset', 'db reset', 'cargo loco db reset', '.', { danger: true }),
+    );
+  }
+  if (has('rbatis')) libs.push({ id: 'rbatis', name: 'Rbatis', kind: 'orm', dir: '.' });
+  if (has('toasty')) libs.push({ id: 'toasty', name: 'Toasty', kind: 'orm', dir: '.' });
+  if (has('refinery')) libs.push({ id: 'refinery', name: 'refinery', kind: 'migrations', dir: '.', note: 'runs its migrations from the code' });
+  for (const [dep, name] of [
+    ['rusqlite', 'rusqlite (SQLite)'],
+    ['tokio-postgres', 'tokio-postgres'],
+    ['postgres', 'postgres'],
+    ['mysql_async', 'mysql_async'],
+    ['mysql', 'mysql'],
+    ['mongodb', 'MongoDB driver'],
+  ] as const) {
+    if (has(dep)) libs.push({ id: dep, name, kind: 'driver', dir: '.' });
+  }
+}
+
 function goLibs(root: string, stack: StackInfo, libs: DataLib[]): void {
   for (const app of stack.apps.filter((a) => a.framework === 'go')) {
     const info = goDbInfo(root, app.dir, app.name);
@@ -377,6 +484,7 @@ export function withDataLibs(root: string, stack: StackInfo): StackInfo {
     // JS next to any runtime (Laravel's Vite has no data layer, but a Node API in a PHP repo might).
     if (stack.runtime === 'node' || stack.packageManager) jsLibs(root, stack, libs, tasks);
     goLibs(root, stack, libs);
+    rustLibs(root, stack, libs, tasks);
   } catch (e) {
     console.warn(`data libraries of ${root}: ${(e as Error).message}`);
   }

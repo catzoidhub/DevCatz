@@ -205,6 +205,9 @@ export const RUST_TOOLS: { id: RustToolId; label: string; bin: string; crate: st
   { id: 'tauri-cli', label: 'Tauri CLI', bin: 'cargo-tauri', crate: 'tauri-cli', why: 'cargo tauri dev for Tauri desktop apps without a package.json' },
   { id: 'solana', label: 'Solana CLI (Agave)', bin: 'solana', crate: null, why: 'The local validator and keys Anchor programs are built, deployed and tested with' },
   { id: 'anchor', label: 'Anchor (avm)', bin: 'anchor', crate: null, why: 'anchor build / test / localnet for Solana programs, through the Anchor version manager' },
+  { id: 'sqlx-cli', label: 'SQLx CLI', bin: 'sqlx', crate: 'sqlx-cli', why: 'sqlx database create / migrate run for SQLx projects (Database tab)' },
+  { id: 'sea-orm-cli', label: 'SeaORM CLI', bin: 'sea-orm-cli', crate: 'sea-orm-cli', why: 'Entities generated from the database for SeaORM projects (Database tab)' },
+  { id: 'diesel-cli', label: 'Diesel CLI', bin: 'diesel', crate: 'diesel_cli', why: 'diesel setup / migration run for Diesel projects (Database tab)' },
 ];
 
 export async function toolStates(): Promise<RustToolState[]> {

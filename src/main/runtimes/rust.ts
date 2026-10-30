@@ -188,7 +188,11 @@ export function detectRustApp(dir: string, root: string, domain: string, manifes
   });
   if (existsSync(join(dir, 'Anchor.toml'))) return app('api', anchorCommand(dir), 8899, { library: 'anchor' });
   if (existsSync(join(dir, 'src-tauri', 'tauri.conf.json'))) return app('web', 'cargo tauri dev', tauriDevPort(dir), { library: 'tauri' });
-  if (lib === 'leptos' && manifest?.leptosSsr) return app('web', 'cargo leptos watch', manifest.leptosPort ?? 3000);
+  if (lib === 'leptos' && manifest?.leptosSsr) {
+    // cargo-leptos has no --port: the server reads its address from LEPTOS_SITE_ADDR.
+    const port = manifest.leptosPort ?? 3000;
+    return app('web', 'cargo leptos watch', port, { portFlag: true, flagCommand: 'env LEPTOS_SITE_ADDR=127.0.0.1:{port} cargo leptos watch' });
+  }
   if (lib === 'dioxus') {
     const port = 8080;
     return app('web', `dx serve --port ${port}`, port, { portFlag: true, flagCommand: 'dx serve --port {port}' });
@@ -248,6 +252,29 @@ function detectRustStack(root: string, domain: string): StackInfo {
     warnings: [],
     libs: [],
   };
+}
+
+/**
+ * Rust crates beside a JS project (apps/api with a Cargo.toml next to apps/web): the same places Go modules are
+ * looked for. Only crates that serve something (a server, a WebAssembly frontend, Tauri, Anchor) become apps.
+ */
+export function findRustApps(root: string): (AppInfo & { command: string | null })[] {
+  const out: (AppInfo & { command: string | null })[] = [];
+  for (const base of ['.', 'apps', 'services', 'backend', 'server', 'packages'].map((d) => join(root, d))) {
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(base).sort();
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const d = join(base, e);
+      if (e.startsWith('.') || e === 'node_modules' || e === 'target' || !existsSync(join(d, 'Cargo.toml')) || existsSync(join(d, 'package.json'))) continue;
+      const app = detectRustApp(d, root, '');
+      if (app.command && app.port !== null) out.push(app);
+    }
+  }
+  return out;
 }
 
 export const rustDriver: RuntimeDriver = {

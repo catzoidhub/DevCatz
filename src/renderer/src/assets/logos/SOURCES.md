@@ -123,3 +123,6 @@ Rust frameworks (Simple Icons 13.21.0 for Rust, Actix, Rocket, Tauri, Leptos, Be
 - salvo.png — https://github.com/salvo-rs.png (Salvo's GitHub organisation avatar)
 - loco.png — https://github.com/loco-rs.png (Loco's GitHub organisation avatar)
 - sycamore.png — https://github.com/sycamore-rs.png (Sycamore's GitHub organisation avatar)
+- diesel.png — https://github.com/diesel-rs.png (Diesel's GitHub organisation avatar)
+- seaorm.png — https://github.com/SeaQL.png (SeaQL, the organisation behind SeaORM)
+- sqlx.png — https://github.com/launchbadge.png (LaunchBadge, the company behind SQLx; SQLx has no logo of its own)

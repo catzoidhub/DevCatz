@@ -268,7 +268,7 @@ const runtimes = computed(() => runtimesOf(p.value));
 const perApp = computed(() => runsPerApp(p.value));
 const RUNTIME_ICON = { node: ICONS.hexagon, bun: ICONS.bun, go: ICONS.go, php: ICONS.php, python: STACK_ICONS.python.d, rust: STACK_ICONS.rust.d };
 /** Rust sites: what is still missing (Rust itself, a framework CLI, Solana / Anchor, the wasm32 target), each with its install. */
-const RUST_NEED: Record<string, string> = { trunk: 'Trunk', 'dioxus-cli': 'Dioxus CLI', 'cargo-leptos': 'cargo-leptos', 'tauri-cli': 'Tauri CLI', solana: 'Solana CLI', anchor: 'Anchor', wasm32: 'WebAssembly target' };
+const RUST_NEED: Record<string, string> = { trunk: 'Trunk', 'dioxus-cli': 'Dioxus CLI', 'cargo-leptos': 'cargo-leptos', 'tauri-cli': 'Tauri CLI', solana: 'Solana CLI', anchor: 'Anchor', wasm32: 'WebAssembly target', 'sqlx-cli': 'SQLx CLI', 'sea-orm-cli': 'SeaORM CLI', 'diesel-cli': 'Diesel CLI' };
 const rustBusy = computed(() => {
   const i = state.value?.rust.installing;
   return i && i.phase !== 'done' && i.phase !== 'error' ? i : null;
