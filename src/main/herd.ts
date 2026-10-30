@@ -1055,7 +1055,8 @@ export class Herd extends EventEmitter {
         const code = await stream(join(p.path, lib.dir), runScriptCommand(pm, 'build'), (t) => this.processes.log(id, 'sys', t.replace(/^(?=.)/gm, `[${lib.name}] `)), base);
         if (code !== 0) throw new Error(`Building ${lib.name} failed (exit ${code}); see the log`);
       }
-      const label = (dir: string) => basename(dir);
+      // The root's own app: `api` beside its folders (a Go API next to admin/), else the site's folder name.
+      const label = (dir: string) => (dir !== '.' ? basename(dir) : stack.layout === 'folders' ? 'api' : basename(p.path));
       this.processes.startMany(id, [
         ...stack.libs
           .filter((l) => l.dev)
@@ -1142,7 +1143,7 @@ export class Herd extends EventEmitter {
     if (!subs || apps.length < 2) return;
     const want = new Map(apps.map((a) => [a.dir, a.dir in subs ? (subs[a.dir] ? `${subs[a.dir]}.${p.domain}` : p.domain) : a.domain]));
     const bareTaken = apps.some((a) => a.dir in subs && want.get(a.dir) === p.domain);
-    for (const a of apps) if (bareTaken && !(a.dir in subs) && want.get(a.dir) === p.domain) want.set(a.dir, `${slugify(basename(a.dir))}.${p.domain}`);
+    for (const a of apps) if (bareTaken && !(a.dir in subs) && want.get(a.dir) === p.domain) want.set(a.dir, `${a.dir === '.' ? (stack.layout === 'folders' ? 'api' : slugify(basename(p.path))) : slugify(basename(a.dir))}.${p.domain}`);
     const count = new Map<string, number>();
     for (const d of want.values()) count.set(d, (count.get(d) ?? 0) + 1);
     for (const a of apps) {

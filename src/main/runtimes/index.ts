@@ -31,7 +31,7 @@ export function detectStack(root: string, domain: string): StackInfo {
   const base = driver ? driver.detect(root, domain) : null;
   // A root that runs nothing itself (no manifest, a tooling-only package.json) but holds sibling projects
   // (frontend/ + backend/ …): every folder becomes an app. A JS workspace keeps its own detection.
-  if (!base || (!base.apps.length && !base.monorepo)) {
+  if (!base || (!base.apps.length && !base.monorepo) || (base.runtime === 'go' && !base.monorepo)) {
     const folders = detectFolders(root, domain, base);
     if (folders) return withDataLibs(root, folders);
   }

@@ -93,17 +93,21 @@ function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' |
 /**
  * The folder layout of `root`, or null when it is not one: at least two runnable folders, or one runnable folder
  * under a root that runs nothing itself (`base` = what the root's own driver found).
+ * A Go module at the root with a frontend of another runtime in a folder (go.mod + admin/ with Vite) is one too:
+ * the root runs as the `api` app next to the folders; folders of the root's own runtime stay its packages.
  */
 export function detectFolders(root: string, domain: string, base: StackInfo | null): StackInfo | null {
+  const rootApp = base?.runtime === 'go' && !base.monorepo ? folderApp(root, root) : null;
   const found = projectFolders(root)
     .map((d) => folderApp(root, d))
-    .filter((x): x is NonNullable<typeof x> => x !== null);
-  if (!found.length || (base?.apps.length && found.length < 2)) return null;
+    .filter((x): x is NonNullable<typeof x> => x !== null && x.runtime !== rootApp?.runtime);
+  if (rootApp && found.length) found.unshift(rootApp);
+  else if (!found.length || (base?.apps.length && found.length < 2)) return null;
   const apps = found.map((f) => f.app);
-  // The first web app owns the bare domain (the frontend); the others get `<folder>.<domain>`.
+  // The first web app owns the bare domain (the frontend); the others get `<folder>.<domain>` (the root: api.).
   apps.sort((a, b) => (a.kind === b.kind ? mainRank(a) - mainRank(b) || a.dir.localeCompare(b.dir) : a.kind === 'web' ? -1 : 1));
   apps.forEach((app, i) => {
-    app.domain = i === 0 ? domain : `${slugify(basename(app.dir))}.${domain}`;
+    app.domain = i === 0 ? domain : `${app.dir === '.' ? 'api' : slugify(basename(app.dir))}.${domain}`;
   });
   const runtimes = [...new Set(found.map((f) => f.runtime))];
   const node = found.find((f) => f.runtime === 'node');

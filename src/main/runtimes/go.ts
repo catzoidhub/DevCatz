@@ -17,7 +17,9 @@ const SERVICE_PORT = /REDIS|DB_|DATABASE|PG|POSTGRES|MYSQL|MARIA|SMTP|MAIL|S3|MI
  */
 export function detectGoApp(dir: string, root: string, domain: string): AppInfo & { command: string | null } {
   const env = readEnvFiles(join(dir, '.env'), join(dir, '.env.local'), join(root, '.env'), join(root, '.env.local'));
-  const mainFile = firstExisting(dir, ['main.go', 'cmd/server/main.go', 'cmd/api/main.go', 'cmd/main.go']);
+  const goMod = readText(join(dir, 'go.mod')) ?? '';
+  const name = goMod.match(/^module\s+(\S+)/m)?.[1] ?? basename(dir);
+  const mainFile = firstExisting(dir, ['main.go', 'cmd/server/main.go', 'cmd/api/main.go', 'cmd/main.go']) ?? cmdMain(dir, basename(name));
   const src = [mainFile, firstExisting(dir, ['config.go', 'internal/config/config.go', 'config/config.go'])]
     .map((f) => (f ? readText(f) ?? '' : ''))
     .join('\n');
@@ -31,9 +33,7 @@ export function detectGoApp(dir: string, root: string, domain: string): AppInfo 
     const literal = src.match(/["'`](?:[\w.]*:)?(\d{4,5})["'`]/);
     port = literal ? Number(literal[1]) : DEFAULT_PORTS.go;
   }
-  const goMod = readText(join(dir, 'go.mod')) ?? '';
   const library = goWebFramework(goMod);
-  const name = goMod.match(/^module\s+(\S+)/m)?.[1] ?? basename(dir);
   const airTool = /^\s*tool\s+github\.com\/(air-verse|cosmtrek)\/air\b/m.test(goMod) || /^tool\s*\([^)]*github\.com\/(air-verse|cosmtrek)\/air/ms.test(goMod);
   const mainRel = mainFile ? relative(dir, mainFile) : null;
   const runTarget = !mainRel || mainRel === 'main.go' ? '.' : `./${mainRel.replace(/\/main\.go$/, '')}`;
@@ -56,6 +56,19 @@ export function detectGoApp(dir: string, root: string, domain: string): AppInfo 
 }
 
 /** Go modules inside a JS monorepo: direct sub-folders and apps/*, services/*. */
+/**
+ * `cmd/<x>/main.go` named like the module, in any case (DialCatz-Den → cmd/dialcatz-den). Other programs under cmd/
+ * are often tools (a CLI next to a library), so they are left for the site's own dev command.
+ */
+function cmdMain(dir: string, module: string): string | null {
+  try {
+    const pick = readdirSync(join(dir, 'cmd')).find((e) => e.toLowerCase() === module.toLowerCase() && existsSync(join(dir, 'cmd', e, 'main.go')));
+    return pick ? join(dir, 'cmd', pick, 'main.go') : null;
+  } catch {
+    return null;
+  }
+}
+
 export function findGoModules(root: string): string[] {
   const dirs: string[] = [];
   const scan = (base: string) => {
