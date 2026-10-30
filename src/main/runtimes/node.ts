@@ -275,6 +275,8 @@ function detectNodeStack(root: string, domain: string): StackInfo {
   let devCommand: string | null = null;
   if (rootPkg?.scripts?.dev) devCommand = runScriptCommand(pm, 'dev');
   else if (apps.length === 1 && monorepo) devCommand = `cd ${apps[0].dir} && ${runScriptCommand(pm, 'dev')}`;
+  // No dev script at the root (bun / npm workspaces of apps/web + apps/api): Start runs every app from its folder.
+  else if (apps.length > 1 && monorepo) devCommand = `${apps.length} apps, each from its folder`;
   // Tauri (src-tauri/ beside a Vite frontend): `tauri dev` opens the app's window and starts the frontend through
   // its beforeDevCommand; the site's domain still shows the frontend in a browser.
   if (rootPkg?.scripts?.tauri && existsSync(join(root, 'src-tauri', 'tauri.conf.json')) && apps.length === 1) {
