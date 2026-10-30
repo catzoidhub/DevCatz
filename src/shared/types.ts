@@ -15,6 +15,8 @@ export type Framework =
   | 'express'
   | 'node'
   | 'go'
+  // Rust (cargo run, trunk, dx …; the web framework in `library`)
+  | 'rust'
   | 'mix'
   // PHP (served by PHP-FPM)
   | 'laravel'
@@ -184,7 +186,7 @@ export interface BuildTarget {
 export interface DepFolder {
   /** Relative to the site, e.g. `node_modules`, `apps/web/node_modules`, `vendor`, `.venv`. */
   path: string;
-  kind: 'node_modules' | 'vendor' | 'venv';
+  kind: 'node_modules' | 'vendor' | 'venv' | 'target';
   bytes: number;
 }
 /** A site's dependency folders and how long ago it was used. */
@@ -265,7 +267,7 @@ export interface StackInfo {
   prismaDir: string | null;
   node: string | null;
   /** `go` for Go modules (go.mod), `node` for package.json projects, `python` for pyproject/requirements/manage.py. */
-  runtime: 'node' | 'go' | 'php' | 'python';
+  runtime: 'node' | 'go' | 'php' | 'python' | 'rust';
   /** Framework commands for the Database tab (CodeIgniter spark, Yii, Symfony console, CakePHP, WP-CLI, Django, Alembic …). */
   tasks?: StackTask[];
   /** ORMs, query builders and migration tools the site uses (Database tab); their CLIs' commands are in `tasks`. */
@@ -286,7 +288,7 @@ export interface StackInfo {
    */
   layout?: 'workspaces' | 'folders';
   /** Languages of the folder apps besides the stack's own runtime (their tools go on PATH). */
-  subRuntimes?: ('node' | 'php' | 'python' | 'go')[];
+  subRuntimes?: ('node' | 'php' | 'python' | 'go' | 'rust')[];
 }
 
 export interface ProjectConfig {
@@ -541,6 +543,46 @@ export interface FpmStatus {
 /** Which Go toolchain a site's Go apps run with. Same shape as BunChoice. */
 export type GoChoice = BunChoice;
 
+/** A rustup toolchain (`stable-aarch64-apple-darwin`, `1.82.0-…`, `nightly-…`). */
+export interface InstalledRust {
+  name: string;
+  /** The name without the host triple: stable, nightly, 1.82.0. */
+  channel: string;
+  /** rustc's version, e.g. 1.91.0. */
+  version: string | null;
+  isDefault: boolean;
+}
+
+export interface RemoteRust {
+  /** stable / beta / nightly or a release number. */
+  name: string;
+  note: string | null;
+}
+
+export type RustToolId = 'trunk' | 'dioxus-cli' | 'cargo-leptos' | 'tauri-cli' | 'solana' | 'anchor';
+
+export interface RustToolState {
+  id: RustToolId;
+  label: string;
+  why: string;
+  installed: boolean;
+  version: string | null;
+}
+
+/** Which toolchain a site's Rust apps build with: rust-toolchain.toml's, else rustup's default. */
+export interface RustChoice {
+  /** rustc's version of that toolchain; null when it is not installed (or there is no Rust). */
+  version: string | null;
+  /** The toolchain name (stable, 1.82.0 …). */
+  toolchain: string | null;
+  reason: 'project' | 'default' | 'none';
+  /** `channel` from rust-toolchain.toml. */
+  spec: string | null;
+  missing: boolean;
+  /** CLIs this site's apps run with that are not installed (trunk, dx, solana, anchor …), and a missing wasm32 target. */
+  needs: (RustToolId | 'wasm32')[];
+}
+
 export interface InstalledPython {
   version: string;
   /** `mrcatz` = installed by DevCatz (uv into its folder); `system` = the user's own (Homebrew, python.org), read-only. */
@@ -623,6 +665,8 @@ export interface ProjectState extends ProjectConfig {
   bun: BunChoice;
   /** Only meaningful when the site has Go apps. */
   go: GoChoice;
+  /** Only meaningful when the site has Rust apps (or a Tauri app). */
+  rust: RustChoice;
   /** Only meaningful for Python sites. */
   python: PythonChoice;
   /** Only meaningful for PHP/Laravel sites. */
@@ -1319,6 +1363,18 @@ export interface AppState {
     installed: InstalledGo[];
     defaultVersion: string | null;
     installing: RuntimeInstallProgress | null;
+  };
+  rust: {
+    /** rustup's version, null when Rust is not installed. */
+    rustup: string | null;
+    toolchains: InstalledRust[];
+    /** Targets of the default toolchain (wasm32-unknown-unknown …). */
+    targets: string[];
+    tools: RustToolState[];
+    /** What is being installed: rustup, a toolchain, a target or a tool (`detail` = its last output line). */
+    installing: RuntimeInstallProgress | null;
+    /** macOS without the Xcode Command Line Tools: Rust cannot link. */
+    linkerMissing: boolean;
   };
   python: {
     /** uv version, null when DevCatz has not installed uv yet. */
@@ -2589,6 +2645,16 @@ export interface HerdApi {
   goInstall(version: string): Promise<void>;
   goUninstall(version: string): Promise<void>;
   goSetDefault(version: string | null): Promise<void>;
+  /** Downloads rustup-init and installs Rust (stable) the standard way: ~/.rustup and ~/.cargo. */
+  rustInstall(): Promise<void>;
+  rustRemote(refresh?: boolean): Promise<RemoteRust[]>;
+  rustToolchainInstall(name: string): Promise<void>;
+  rustToolchainUninstall(name: string): Promise<void>;
+  rustSetDefault(name: string): Promise<void>;
+  /** rustup target add (wasm32-unknown-unknown for WebAssembly frontends). */
+  rustTargetAdd(target: string): Promise<void>;
+  /** Installs a framework CLI (trunk, dx, cargo-leptos, cargo-tauri), Solana (Agave) or Anchor (avm). */
+  rustToolInstall(id: RustToolId): Promise<void>;
   /** Installs uv (Astral), which then installs Pythons and creates venvs. */
   uvInstall(): Promise<void>;
   pythonRemote(): Promise<RemotePython[]>;
@@ -2991,6 +3057,6 @@ export const API_METHODS: (keyof HerdApi)[] = [
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',
   'installDeps', 'depCommands', 'depRun', 'nodeRemote', 'nodeInstall', 'nodeUninstall', 'nodeSetDefault', 'shimPathSet',
   'bunRemote', 'bunInstall', 'bunUninstall', 'bunSetDefault',
-  'goRemote', 'goInstall', 'goUninstall', 'goSetDefault', 'uvInstall', 'pythonRemote', 'pythonInstall', 'pythonUninstall', 'pythonSetDefault',
+  'goRemote', 'goInstall', 'goUninstall', 'goSetDefault', 'rustInstall', 'rustRemote', 'rustToolchainInstall', 'rustToolchainUninstall', 'rustSetDefault', 'rustTargetAdd', 'rustToolInstall', 'uvInstall', 'pythonRemote', 'pythonInstall', 'pythonUninstall', 'pythonSetDefault',
   'phpRemote', 'phpInstall', 'phpUninstall', 'phpSetDefault', 'phpGetIni', 'phpSetIni', 'composerInstall', 'phpExtensions', 'phpExtInstall', 'phpExtSetEnabled', 'phpExtRemove', 'phpExtDismiss', 'phpOpenIni', 'restartServices', 'checkUpdates', 'runtimeUpdate', 'goDbInfo', 'goDbTask', 'stackTask', 'dbEngines', 'dbVersions', 'dbDefaults', 'dbCreate', 'dbCancelCreate', 'dbDismiss', 'dbUpdate', 'dbRemove', 'dbAction', 'dbOpenData', 'dbOpenBinaries', 'dbDetect', 'dbList', 'dbCreateDatabase', 'dbBuildAction', 'dbcatzOpen', 'dbcatzInstall', 'dbcatzCancelInstall', 'dbcatzDismiss', 'monitorSnapshot', 'monitorLive', 'monitorHistory', 'monitorExport', 'searchInstall', 'searchUpdate', 'searchCancelInstall', 'searchUninstall', 'searchAction', 'searchOpenData', 'searchIndexes', 'searchCreateIndex', 'searchDeleteIndex', 'searchGetSettings', 'searchSaveSettings', 'searchQuery', 'searchUpsert', 'searchImportFile', 'searchDeleteDoc', 'mailAction', 'mailList', 'mailGet', 'mailRaw', 'mailMarkRead', 'mailDelete', 'mailDeleteAll', 'mailSaveAttachment', 'mailAttachmentData', 'mailForward', 'mailForwardConfig', 'mailSetForwardConfig', 'mailEnv', 'mailSendTest', 'mailOpenData', 'exposeInstall', 'exposeCancelInstall', 'exposeUninstall', 'exposeCheckUpdates', 'exposeUpgrade', 'exposeCloudflareLogin', 'exposeCloudflareLogout', 'exposeSetAccount', 'exposeStart', 'exposeStop', 'exposeRequests', 'exposeClearRequests', 'exposeReplay', 'waInstall', 'waUpdate', 'waCancelInstall', 'waUninstall', 'waAction', 'waOpenData', 'waCheckUpdates', 'taskDismiss', 'gwInstall', 'gwUpdate', 'gwCancelInstall', 'gwUninstall', 'gwAction', 'gwOpenData', 'gwCheckUpdates', 'gwUpgrade', 'gwSetAutoStart', 'gwSend', 'gwEnv', 'gwSms', 'gwClearSms', 'waUpgrade', 'waSessionStart', 'waSessionQr', 'waSessionLogout', 'waSessionRemove', 'waSend', 'waContacts', 'waGroups', 'waMessages', 'waClearMessages', 'waHooks', 'waSetHook', 'waRemoveHook', 'waDeliveries', 'waReplay', 'waEnv', 'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitDiscard', 'gitCommit', 'gitSync', 'gitCancel', 'gitLog', 'gitShow', 'gitBranches', 'gitBranch', 'aiSettings', 'aiSetSettings', 'aiSetKey', 'aiModels', 'aiProbe', 'aiTest', 'aiCancel', 'aiPreviewExplain', 'aiExplain', 'aiPreviewCommit', 'aiCommit', 'aiPreviewDockerEdit', 'aiDockerEdit', 'aiPreviewEnv', 'aiEnv', 'aiPreviewSearch', 'aiSearch', 'aiPreviewWebhook', 'aiWebhook', 'aiPreviewAsk', 'aiAsk', 'aiRunAction', 'worktreeList', 'worktreeCreate', 'worktreeAdd', 'worktreeCheck', 'worktreeRemove', 'worktreePrune', 'gitStashes', 'gitStash', 'gitTags', 'gitTag', 'gitOperation', 'gitSquash', 'gitCherryPick', 'gitRevert', 'gitReset', 'gitRestoreFile', 'gitOpenFile', 'gitIgnoreSuggestions', 'gitIgnoreAdd', 'gitSetIdentity', 'gitAddRemote', 'gitPulls', 'gitCreatePull', 'gitCheckoutPull', 'gitAddAccount', 'gitRemoveAccount', 'gitRepos', 'gitSshKeys', 'gitSshGenerate', 'gitSshAddToAccount', 'gitClone', 'gitCancelClone', 'searchUpgrade', 'wsUpgrade', 'storageUpgrade', 'servicesCheckUpdates', 'serviceSetAutoStart', 'searchTasks', 'searchCancelTasks', 'searchClearTasks', 'searchBackups', 'searchCreateBackup', 'searchDeleteBackup', 'searchRevealBackup', 'searchRestoreBackup', 'searchExport', 'searchKeys', 'searchCreateKey', 'searchDeleteKey', 'searchEnv', 'storageEnv', 'scoutCommand', 'wsInstall', 'wsUpdate', 'wsCancelInstall', 'wsUninstall', 'wsAction', 'wsOpenData', 'wsStats', 'wsPublish', 'wsClientAuth', 'wsEnv', 'reverbEnv', 'laravelBroadcast', 'laravelTestBroadcast', 'storageInstall', 'storageUpdate', 'storageCancelInstall', 'storageUninstall', 'storageAction', 'storageOpenData', 'openLogsFolder', 'pickFile', 's3Buckets', 's3CreateBucket', 's3DeleteBucket', 's3SetPublic', 's3List', 's3Upload', 's3CancelUpload', 's3Download', 's3Delete', 's3MkDir', 'dockerStatus', 'dockerFiles', 'dockerServices', 'dockerGenerate', 'dockerWrite', 'dockerListFiles', 'dockerReadFile', 'dockerSaveFile', 'dockerCompose', 'startEngine', 'setFavorite', 'setSiteGroup', 'renameGroup', 'deleteGroup', 'toggleGroup', 'moveGroup', 'siteMenu', 'groupMenu', 'setSiteOrder', 'dbSetFavorite', 'dbSetGroup', 'dbGroupAction', 'dbSetOrder', 'dbMenu', 'dbGroupMenu', 'laravelLog', 'herdSites', 'setTld', 'installResolver', 'uninstallResolver', 'installCleanUrls', 'uninstallCleanUrls',
 ];

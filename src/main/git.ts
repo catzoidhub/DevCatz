@@ -396,6 +396,7 @@ export async function ignoreSuggestions(root: string, runtimes: string[]): Promi
   if (has('artisan')) wanted.push('/storage/logs/*.log', '/bootstrap/cache/*.php');
   if (runtimes.includes('python') || has('pyproject.toml') || has('requirements.txt')) wanted.push('.venv/', '__pycache__/', '*.pyc', '.pytest_cache/', '.mypy_cache/', '.ruff_cache/');
   if (runtimes.includes('go') || has('go.mod')) wanted.push('/bin/', '*.test', 'tmp/');
+  if (runtimes.includes('rust') || has('Cargo.toml')) wanted.push('/target/', '.anchor/', 'test-ledger/');
   wanted.push('.idea/', '.vscode/*', '!.vscode/extensions.json');
   const current = existsSync(join(root, '.gitignore')) ? readFileSync(join(root, '.gitignore'), 'utf8').split('\n').map((l) => l.trim()) : [];
   const missing = [...new Set(wanted)].filter((w) => !current.includes(w));

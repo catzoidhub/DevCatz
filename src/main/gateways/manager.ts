@@ -31,7 +31,7 @@ import { SmppCatcher } from './smpp';
 
 interface Hooks {
   projects(): ProjectConfig[];
-  runtime(siteId: string): 'node' | 'go' | 'php' | 'python' | null;
+  runtime(siteId: string): 'node' | 'go' | 'php' | 'python' | 'rust' | null;
   framework(siteId: string): string | null;
   takenDomains(): string[];
   /** Ports used elsewhere (WhatsApp engines …), for the conflict check. */

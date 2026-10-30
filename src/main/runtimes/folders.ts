@@ -7,6 +7,7 @@ import { detectGoApp } from './go';
 import { hasDependencies, mainRank, nodeDriver, portClashes, portFlagCommand } from './node';
 import { phpDriver } from './php';
 import { pythonDriver } from './python';
+import { detectRustApp, readCargo } from './rust';
 
 /**
  * Projects made of sibling projects (TODO §29): `frontend/` + `backend/`, `web/` + `api/`, `apps/*` and
@@ -42,10 +43,10 @@ export function projectFolders(root: string): string[] {
   return out;
 }
 
-const isProject = (d: string) => phpDriver.matches(d) || pythonDriver.matches(d) || existsSync(join(d, 'go.mod')) || existsSync(join(d, 'package.json'));
+const isProject = (d: string) => phpDriver.matches(d) || pythonDriver.matches(d) || existsSync(join(d, 'go.mod')) || existsSync(join(d, 'Cargo.toml')) || existsSync(join(d, 'package.json'));
 
 /** One folder as one app (its own dev command, run from that folder); null when it has nothing to run. */
-function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' | 'php' | 'python' | 'go'; depsMissing: boolean; warnings: string[] } | null {
+function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' | 'php' | 'python' | 'go' | 'rust'; depsMissing: boolean; warnings: string[] } | null {
   const rel = relative(root, dir);
   if (phpDriver.matches(dir)) {
     const s = phpDriver.detect(dir, '');
@@ -70,6 +71,10 @@ function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' |
     const command = venv ? `env VIRTUAL_ENV="${venv}" PATH="${venv}/bin:$PATH" PYTHONUNBUFFERED=1 ${app.command}` : `env PYTHONUNBUFFERED=1 ${app.command}`;
     return { runtime: 'python', depsMissing: s.depsMissing, warnings: s.warnings, app: { ...app, dir: rel, kind: 'api', devScript: app.command, command, domain: '' } };
   }
+  if (existsSync(join(dir, 'Cargo.toml'))) {
+    const app = detectRustApp(dir, root, '', readCargo(dir));
+    return app.command ? { runtime: 'rust', depsMissing: false, warnings: [], app } : null;
+  }
   if (existsSync(join(dir, 'go.mod')) && !existsSync(join(dir, 'package.json'))) {
     const app = detectGoApp(dir, root, '');
     return app.command ? { runtime: 'go', depsMissing: false, warnings: [], app: { ...app, kind: 'api' } } : null;
@@ -93,11 +98,11 @@ function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' |
 /**
  * The folder layout of `root`, or null when it is not one: at least two runnable folders, or one runnable folder
  * under a root that runs nothing itself (`base` = what the root's own driver found).
- * A Go module at the root with a frontend of another runtime in a folder (go.mod + admin/ with Vite) is one too:
+ * A Go module or Rust crate at the root with a frontend of another runtime in a folder (go.mod + admin/ with Vite) is one too:
  * the root runs as the `api` app next to the folders; folders of the root's own runtime stay its packages.
  */
 export function detectFolders(root: string, domain: string, base: StackInfo | null): StackInfo | null {
-  const rootApp = base?.runtime === 'go' && !base.monorepo ? folderApp(root, root) : null;
+  const rootApp = (base?.runtime === 'go' || base?.runtime === 'rust') && !base.monorepo ? folderApp(root, root) : null;
   const found = projectFolders(root)
     .map((d) => folderApp(root, d))
     .filter((x): x is NonNullable<typeof x> => x !== null && x.runtime !== rootApp?.runtime);

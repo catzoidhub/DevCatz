@@ -33,7 +33,7 @@ import { backIndex, backList, canBack, canForward, forwardList, goBack, goForwar
 import type { ProjectState } from '@shared/types';
 import { isWin, WIN_SECTIONS } from './platform';
 
-const PANELS = ['node', 'bun', 'go', 'php', 'python'];
+const PANELS = ['node', 'bun', 'go', 'rust', 'php', 'python'];
 
 /** Sidebar Git chip: changed files and commits to push / pull ("3 · ↑1"). */
 function gitBadge(p: ProjectState): string {

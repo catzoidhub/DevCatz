@@ -918,6 +918,23 @@ function api(): HerdApi {
       if (response === 0) await herd.goUninstall(version);
     },
     goSetDefault: (version) => herd.goSetDefault(version),
+    rustInstall: () => herd.rustInstall(),
+    rustRemote: (refresh) => herd.rustRemote(refresh),
+    rustToolchainInstall: (name) => herd.rustToolchainInstall(String(name)),
+    rustToolchainUninstall: async (name) => {
+      const { response } = await dialog.showMessageBox(win!, {
+        type: 'warning',
+        buttons: ['Uninstall', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        message: `Uninstall the Rust toolchain ${name}?`,
+        detail: 'rustup removes it; projects that ask for it in rust-toolchain.toml download it again on their next build.',
+      });
+      if (response === 0) await herd.rustToolchainUninstall(String(name));
+    },
+    rustSetDefault: (name) => herd.rustSetDefault(String(name)),
+    rustTargetAdd: (target) => herd.rustTargetAdd(String(target)),
+    rustToolInstall: (id) => herd.rustToolInstall(id),
     phpRemote: (refresh) => herd.phpRemote(refresh),
     phpInstall: (version) => herd.phpInstall(version),
     phpUninstall: async (version) => {

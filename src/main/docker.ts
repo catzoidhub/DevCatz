@@ -156,7 +156,9 @@ interface Ctx {
 
 const INTERNAL_PORT: Record<string, number> = { go: 8080, laravel: 8080, php: 8080, django: 8000, flask: 8000, fastapi: 8000, litestar: 8000, python: 8000 };
 const STATIC = new Set(['vite-vue', 'vite-react', 'vite', 'astro']);
-const portOf = (a: AppInfo) => (STATIC.has(a.framework) ? 80 : (INTERNAL_PORT[a.framework] ?? 3000));
+/** Rust WebAssembly frontends built by trunk: static files behind nginx. */
+const rustStatic = (a: AppInfo) => a.framework === 'rust' && !!a.command?.startsWith('trunk');
+const portOf = (a: AppInfo) => (STATIC.has(a.framework) || rustStatic(a) ? 80 : a.framework === 'rust' ? 8080 : (INTERNAL_PORT[a.framework] ?? 3000));
 
 /** Services that become containers (the Vite dev server of a Laravel site is built into its image instead). */
 const servedApps = (s: StackInfo) => s.apps.filter((a) => a.kind !== 'assets');
@@ -385,6 +387,69 @@ function goDockerfile(ctx: Ctx, a: AppInfo): string {
     `ENV ${/gin-gonic\/gin/.test(goMod) ? 'GIN_MODE=release ' : ''}${portEnv}`,
     'EXPOSE 8080',
     migrate ? `# Applies pending migrations, then starts the API.\nCMD ["sh", "-c", "migrate up && exec ${bin}"]` : `CMD ["${bin}"]`,
+    '',
+  ].join('\n');
+}
+
+/**
+ * Rust: the release build in rust:1-slim with cargo's registry and target/ as build caches, then the binary alone in
+ * debian-slim as a non-root user (port 8080 through PORT / ROCKET_PORT and the variables the code reads). trunk
+ * frontends (Yew, Sycamore, client-side Leptos) become static files behind nginx; Leptos SSR ships the server binary
+ * with its site/ folder. Tauri desktop apps and Anchor programs do not run in a container: their Dockerfile says so.
+ */
+function rustDockerfile(ctx: Ctx, a: AppInfo): string {
+  const cmd = a.command ?? '';
+  const head = GENERATED_MARK + ` for ${a.name} (Rust). Build context: the project root.`;
+  if (cmd.startsWith('cargo tauri') || cmd.startsWith('anchor') || a.port === null) {
+    const what = cmd.startsWith('anchor') ? 'An Anchor program is deployed to a Solana cluster (anchor deploy), not run in a container.' : cmd.startsWith('cargo tauri') ? 'A Tauri app is a desktop app: `cargo tauri build` makes its installers.' : 'This crate is not a server (no port): build it with `cargo build --release`.';
+    return [head, `# ${what}`, 'FROM scratch', ''].join('\n');
+  }
+  const dir = a.dir === '.' ? '.' : a.dir;
+  const caches = '--mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target';
+  if (rustStatic(a)) {
+    return [
+      head,
+      'FROM rust:1-slim AS build',
+      'RUN rustup target add wasm32-unknown-unknown && cargo install --locked trunk',
+      'WORKDIR /src',
+      'COPY . .',
+      `RUN ${caches} \\\n    cd ${dir} && trunk build --release --dist /out`,
+      '',
+      '# Runtime: the static files, every unknown path answered with index.html (client-side routing).',
+      'FROM nginx:alpine',
+      'RUN printf \'server { listen 80; root /usr/share/nginx/html; location / { try_files $uri /index.html; } }\\n\' > /etc/nginx/conf.d/default.conf',
+      'COPY --from=build /out/ /usr/share/nginx/html/',
+      'EXPOSE 80',
+      '',
+    ].join('\n');
+  }
+  const leptos = cmd.startsWith('cargo leptos');
+  const loco = cmd.startsWith('cargo loco');
+  const bin = loco ? `${a.name}-cli` : a.name;
+  const rocket = a.library === 'rocket';
+  const portEnv = [...new Set([rocket ? 'ROCKET_PORT' : 'PORT', ...a.portVars])].map((x) => `${x}=8080`);
+  const env = [...portEnv, ...(rocket ? ['ROCKET_ADDRESS=0.0.0.0'] : []), ...(leptos ? ['LEPTOS_SITE_ADDR=0.0.0.0:8080', 'LEPTOS_SITE_ROOT=site'] : []), ...(loco ? ['LOCO_ENV=production'] : [])];
+  return [
+    head,
+    'FROM rust:1-slim AS build',
+    'RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*',
+    ...(leptos ? ['RUN rustup target add wasm32-unknown-unknown && cargo install --locked cargo-leptos'] : []),
+    'WORKDIR /src',
+    'COPY . .',
+    leptos
+      ? `RUN ${caches} \\\n    cd ${dir} && cargo leptos build --release && mkdir -p /out && cp target/release/${bin} /out/app && cp -r target/site /out/site`
+      : `RUN ${caches} \\\n    cargo build --release -p ${a.name} && mkdir -p /out && cp target/release/${bin} /out/app`,
+    '',
+    '# Runtime: the binary alone, as a non-root user. It must listen on 0.0.0.0 (not 127.0.0.1) to be reachable.',
+    'FROM debian:bookworm-slim',
+    'RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* && useradd -r -u 10001 app',
+    'WORKDIR /app',
+    'COPY --from=build /out/ /app/',
+    ...(loco ? ['COPY --from=build /src/config /app/config'] : []),
+    'USER app',
+    `ENV ${env.join(' ')}`,
+    'EXPOSE 8080',
+    loco ? 'CMD ["/app/app", "start"]' : 'CMD ["/app/app"]',
     '',
   ].join('\n');
 }
@@ -956,7 +1021,7 @@ export function generate(
     const dockerfile = dockerfileOf(app, a);
     const php = isPhpFramework(a.framework);
     const sqlite = sqliteOf(actx, a);
-    let content = a.framework === 'go' ? goDockerfile(actx, a) : php ? phpDockerfile(actx, a) : isPythonFramework(a.framework) ? pythonDockerfile(actx, a) : jsDockerfile(actx, a);
+    let content = a.framework === 'go' ? goDockerfile(actx, a) : a.framework === 'rust' ? rustDockerfile(actx, a) : php ? phpDockerfile(actx, a) : isPythonFramework(a.framework) ? pythonDockerfile(actx, a) : jsDockerfile(actx, a);
     if (sqlite && !local) content = withSqliteFolder(content, sqlite.file, php);
     if (folders) content = content.replace('Build context: the project root.', `Build context: this folder (${app.dir}/), as docker-compose.yml at the project root builds it.`);
     files.push({ path: dockerfile, content });

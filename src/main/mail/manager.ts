@@ -24,7 +24,7 @@ interface Stored extends MailSummary {
 
 interface Hooks {
   projects(): ProjectConfig[];
-  runtime(siteId: string): 'node' | 'go' | 'php' | 'python' | null;
+  runtime(siteId: string): 'node' | 'go' | 'php' | 'python' | 'rust' | null;
   framework(siteId: string): string | null;
   changed(): void;
   /** A mail arrived (notification). */

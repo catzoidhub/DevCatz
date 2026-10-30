@@ -80,7 +80,7 @@ async function free() {
         <label v-for="f in info.folders" :key="f.path" class="flex cursor-pointer items-center gap-3 rounded-box border border-base-300/60 px-3 py-2">
           <input type="checkbox" class="checkbox checkbox-sm" :checked="picked.includes(f.path)" :disabled="running" @change="toggle(f.path, ($event.target as HTMLInputElement).checked)" />
           <code class="min-w-0 flex-1 truncate text-xs">{{ f.path }}</code>
-          <span class="badge badge-ghost badge-sm">{{ f.kind === 'venv' ? 'Python venv' : f.kind === 'vendor' ? 'Composer' : 'npm / bun' }}</span>
+          <span class="badge badge-ghost badge-sm">{{ f.kind === 'venv' ? 'Python venv' : f.kind === 'vendor' ? 'Composer' : f.kind === 'target' ? 'Cargo build' : 'npm / bun' }}</span>
           <span class="w-20 text-right font-mono text-sm tabular-nums">{{ bytes(f.bytes) }}</span>
         </label>
         <div class="flex items-center gap-3 pt-1">

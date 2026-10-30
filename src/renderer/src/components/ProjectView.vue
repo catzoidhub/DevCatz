@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type { BuildTarget, DbAction, PackageManager, ProjectState } from '@shared/types';
+import type { BuildTarget, DbAction, PackageManager, ProjectState, RustToolId } from '@shared/types';
 import { attempt, herd, navRequest, notify, siteTabRequest, state } from '../store';
 import { navVisit } from '../nav';
 import AiExplain from './AiExplain.vue';
@@ -249,7 +249,19 @@ async function installDeps() {
 
 const runtimes = computed(() => runtimesOf(p.value));
 const perApp = computed(() => runsPerApp(p.value));
-const RUNTIME_ICON = { node: ICONS.hexagon, bun: ICONS.bun, go: ICONS.go, php: ICONS.php, python: STACK_ICONS.python.d };
+const RUNTIME_ICON = { node: ICONS.hexagon, bun: ICONS.bun, go: ICONS.go, php: ICONS.php, python: STACK_ICONS.python.d, rust: STACK_ICONS.rust.d };
+/** Rust sites: what is still missing (Rust itself, a framework CLI, Solana / Anchor, the wasm32 target), each with its install. */
+const RUST_NEED: Record<string, string> = { trunk: 'Trunk', 'dioxus-cli': 'Dioxus CLI', 'cargo-leptos': 'cargo-leptos', 'tauri-cli': 'Tauri CLI', solana: 'Solana CLI', anchor: 'Anchor', wasm32: 'WebAssembly target' };
+const rustBusy = computed(() => {
+  const i = state.value?.rust.installing;
+  return i && i.phase !== 'done' && i.phase !== 'error' ? i : null;
+});
+async function installRustNeed(need: string) {
+  const ok = await attempt(() =>
+    (need === 'rust' ? herd.rustInstall() : need === 'wasm32' ? herd.rustTargetAdd('wasm32-unknown-unknown') : herd.rustToolInstall(need as RustToolId)).then(() => true),
+  );
+  if (ok) notify('success', `${need === 'rust' ? 'Rust' : RUST_NEED[need]} installed`);
+}
 
 const stop = () => attempt(() => herd.stop(p.value.id));
 const restart = () => attempt(() => herd.restart(p.value.id));
@@ -553,7 +565,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
           <div class="label-caps mb-2.5">Runtimes</div>
           <ul class="space-y-2.5">
             <li v-for="r in runtimes" :key="r.kind" class="flex items-start gap-2.5">
-              <svg class="mt-0.5 size-4 shrink-0 opacity-70" :viewBox="r.kind === 'python' ? '0 0 24 24' : '0 0 20 20'" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="RUNTIME_ICON[r.kind]" /></svg>
+              <svg class="mt-0.5 size-4 shrink-0 opacity-70" :viewBox="r.kind === 'python' || r.kind === 'rust' ? '0 0 24 24' : '0 0 20 20'" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="RUNTIME_ICON[r.kind]" /></svg>
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="font-medium">{{ r.label }}</span>
@@ -565,6 +577,28 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
             </li>
             <li v-if="!runtimes.length" class="text-xs opacity-60">No runtime detected.</li>
           </ul>
+          <!-- Rust: what Start still needs, installed from here (or the Rust page) -->
+          <div v-if="(p.rust.missing && runtimes.some((r) => r.kind === 'rust')) || p.rust.needs.length" class="mt-3 rounded-box bg-warning/10 p-3">
+            <div class="text-xs font-medium">This site needs before it can start</div>
+            <div v-if="rustBusy" class="mt-1 flex items-center gap-2 text-xs opacity-70">
+              <span class="loading loading-spinner loading-xs" /><span class="truncate">Installing {{ rustBusy.version }}… {{ rustBusy.detail }}</span>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <button v-if="p.rust.missing" class="btn btn-xs btn-primary" :disabled="!!rustBusy" @click="installRustNeed('rust')">Install Rust</button>
+              <template v-else>
+                <button
+                  v-for="n in p.rust.needs"
+                  :key="n"
+                  class="btn btn-xs"
+                  :disabled="!!rustBusy || (n === 'anchor' && p.rust.needs.includes('solana'))"
+                  :title="n === 'anchor' && p.rust.needs.includes('solana') ? 'Install the Solana CLI first' : ''"
+                  @click="installRustNeed(n)"
+                >
+                  Install {{ RUST_NEED[n] }}
+                </button>
+              </template>
+            </div>
+          </div>
       </div>
     </div>
     <div class="card min-w-0">

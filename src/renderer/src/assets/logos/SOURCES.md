@@ -112,3 +112,14 @@ More data libraries and migration tools (fw/*.png, 128 px):
 - pony.png — https://github.com/ponyorm.png (Pony ORM's GitHub organisation avatar)
 - TypeORM and Mongoose come from Simple Icons 13.21.0. Phinx (a CakePHP project) shows the CakePHP mark.
 - No logo of their own, so they show their language's mark: golang-migrate, dbmate, sql-migrate, tern, sqlx, pgx, Bun (uptrace's avatar is Uptrace's), SQLBoiler, Squirrel, goqu; Objection.js, db-migrate, Umzug (Node); Yoyo (Python); RedBeanPHP, Medoo (PHP).
+
+Rust frameworks (Simple Icons 13.21.0 for Rust, Actix, Rocket, Tauri, Leptos, Bevy, Solana / Anchor, WebAssembly and Hugging Face / Candle; the rest are each project's GitHub organisation avatar, 128 px):
+
+- axum.png — https://github.com/tokio-rs.png (Tokio, the organisation behind Axum)
+- yew.png — https://github.com/yewstack.png (Yew's GitHub organisation avatar)
+- dioxus.png — https://github.com/DioxusLabs.png (Dioxus's GitHub organisation avatar)
+- burn.png — https://github.com/tracel-ai.png (Tracel, the organisation behind Burn)
+- poem.png — https://github.com/poem-web.png (Poem's GitHub organisation avatar)
+- salvo.png — https://github.com/salvo-rs.png (Salvo's GitHub organisation avatar)
+- loco.png — https://github.com/loco-rs.png (Loco's GitHub organisation avatar)
+- sycamore.png — https://github.com/sycamore-rs.png (Sycamore's GitHub organisation avatar)

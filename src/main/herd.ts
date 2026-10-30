@@ -29,6 +29,7 @@ import { captureScreenshot, screenshotTime } from './screenshots';
 import * as nodes from './node';
 import * as buns from './bun';
 import * as golang from './golang';
+import * as rusts from './rust';
 import * as phps from './php';
 import * as phpext from './phpext';
 import { detectRealtime } from './realtime';
@@ -98,6 +99,11 @@ import type {
   InstalledPython,
   PythonChoice,
   InstalledGo,
+  InstalledRust,
+  RemoteRust,
+  RustChoice,
+  RustToolId,
+  RustToolState,
   FolderPreview,
   InstalledBun,
   RuntimeInstallProgress,
@@ -135,6 +141,16 @@ import { isPhpFramework } from '@shared/types';
 import { words } from '@shared/platform';
 
 /** LTS codenames for `lts/<name>` specs before nodejs.org has been asked. */
+/** What a Rust site still needs, as the Start error names it. */
+const RUST_NEED_LABEL: Record<RustChoice['needs'][number], string> = {
+  trunk: 'Trunk',
+  'dioxus-cli': 'the Dioxus CLI',
+  'cargo-leptos': 'cargo-leptos',
+  'tauri-cli': 'the Tauri CLI',
+  solana: 'the Solana CLI',
+  anchor: 'Anchor',
+  wasm32: 'the WebAssembly target',
+};
 const NO_NODE = 'Node.js is not installed. Install it from the site\'s Overview (Install Node.js) or the Node.js page (sidebar), then try again.';
 
 const LTS_NAMES = new Map([
@@ -184,6 +200,12 @@ export class Herd extends EventEmitter {
   private installedBuns: InstalledBun[] = [];
   private bunInstalling: RuntimeInstallProgress | null = null;
   private installedGos: InstalledGo[] = [];
+  private rustToolchains: InstalledRust[] = [];
+  private rustupVer: string | null = null;
+  private rustTargets: string[] = [];
+  private rustTools: RustToolState[] = [];
+  private rustInstalling: RuntimeInstallProgress | null = null;
+  private rustLinkerMissing = false;
   private installedPhps: InstalledPhp[] = [];
   private phpInstalling: RuntimeInstallProgress | null = null;
   readonly fpm = new FpmManager();
@@ -379,6 +401,7 @@ export class Herd extends EventEmitter {
     this.refreshNodes();
     await this.refreshBuns();
     await this.refreshGos();
+    await this.refreshRust();
     await this.refreshPythons();
     // Windows (Catzoid #57): PHP runs as php-cgi workers (fpm.ts); the DNS responder / resolver stay macOS-only.
     await this.refreshPhps();
@@ -1018,6 +1041,17 @@ export class Herd extends EventEmitter {
       if (go.missing && go.spec) this.processes.log(id, 'sys', `go.mod asks for Go ${go.spec}; only ${go.version} is installed.`);
       this.processes.log(id, 'sys', `Using Go ${go.version} (${go.reason})`);
     }
+    if (this.hasRust(p)) {
+      const rust = this.rustChoice(p, stack);
+      const fail = (msg: string): never => {
+        this.processes.log(id, 'sys', msg);
+        throw new Error(msg);
+      };
+      if (!this.rustupVer) fail('Rust is not installed. Install it on the Rust page (sidebar), then Start again.');
+      if (this.rustLinkerMissing) fail('Rust needs the Xcode Command Line Tools to link: run “xcode-select --install” in Terminal, then Start again.');
+      if (rust.needs.length) fail(`This site also needs ${rust.needs.map((n) => RUST_NEED_LABEL[n]).join(', ')}: install ${rust.needs.length > 1 ? 'them' : 'it'} on the site's Overview or the Rust page, then Start again.`);
+      this.processes.log(id, 'sys', `Using Rust ${rust.version ?? '?'} (${rust.toolchain ?? 'default'}${rust.reason === 'project' ? ', from rust-toolchain.toml' : ''})`);
+    }
     if (stack.packageManager === 'bun') {
       const bun = this.bunChoice(p);
       if (!bun.binDir) {
@@ -1221,6 +1255,7 @@ export class Herd extends EventEmitter {
       else if (fw.has('laravel')) hint = 'Scramble is installed: start the site and its document is served at /docs/api.json (local environment).';
       else if (fw.has('fastapi')) hint = 'FastAPI serves /openapi.json by itself: start the site and look again.';
       else if (fw.has('go')) hint = 'Go: `swag init` (github.com/swaggo/swag) writes docs/swagger.json from your handler comments.';
+      else if (fw.has('rust')) hint = 'Rust: utoipa (Axum, Actix Web, Rocket), poem-openapi or aide describe your handlers; serve the document at /openapi.json or save it as openapi.json.';
       else if (fw.has('express') || fw.has('node')) hint = 'Express & co.: put an openapi.yaml / swagger.json in the project (or serve one with swagger-jsdoc); DevCatz finds it.';
       else hint = 'Put an openapi.yaml or swagger.json in the project, or serve one at /openapi.json; DevCatz finds either.';
     }
@@ -1370,6 +1405,22 @@ export class Herd extends EventEmitter {
         const bin = slugify(basename(a.dir === '.' ? p.path : a.dir));
         seen.add(a.dir);
         targets.push({ id: a.dir, label: a.dir === '.' ? `${a.name} (go build)` : a.dir, command: `go build -o bin/${bin} ${target}`, cwd: a.dir });
+      } else if (a.framework === 'rust') {
+        if (seen.has(a.dir)) continue;
+        seen.add(a.dir);
+        const cmd = a.command ?? '';
+        const command = cmd.startsWith('anchor')
+          ? 'anchor build'
+          : cmd.startsWith('cargo tauri')
+            ? 'cargo tauri build'
+            : cmd.startsWith('cargo leptos')
+              ? 'cargo leptos build --release'
+              : cmd.startsWith('trunk')
+                ? 'trunk build --release'
+                : cmd.startsWith('dx ')
+                  ? 'dx bundle --release'
+                  : 'cargo build --release';
+        targets.push({ id: a.dir, label: a.dir === '.' ? `${a.name} (${command.split(' ').slice(0, 2).join(' ')})` : a.dir, command, cwd: a.dir });
       } else if (a.kind === 'assets' || isPhpFramework(a.framework)) jsBuild('.', a.kind === 'assets' ? 'Front-end assets' : a.name);
       else jsBuild(a.dir, a.dir === '.' ? a.name : a.dir);
     }
@@ -1550,6 +1601,7 @@ export class Herd extends EventEmitter {
     const pm = this.stacks.get(id)?.packageManager;
     if (p && this.stacks.get(id)?.runtime === 'php') return this.installPhpDeps(p);
     if (p && this.stacks.get(id)?.runtime === 'python') return this.installPythonDeps(p, this.stacks.get(id)!);
+    if (p && this.stacks.get(id)?.runtime === 'rust') return this.installRustDeps(p);
     if (!p || !pm) return;
     if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
     if (pm === 'bun' && !this.bunChoice(p).binDir) throw new Error('Bun is not installed. Install it on the Bun page (sidebar) first.');
@@ -1583,6 +1635,10 @@ export class Herd extends EventEmitter {
       }
       if (has('composer.json')) steps.push({ dir: app.dir, command: 'composer install --no-interaction' });
       if (has('go.mod')) steps.push({ dir: app.dir, command: 'go mod download' });
+      if (has('Cargo.toml')) {
+        if (!this.rustupVer) throw new Error('Rust is not installed. Install it on the Rust page (sidebar) first.');
+        steps.push({ dir: app.dir, command: 'cargo fetch' });
+      }
       const req = ['requirements.txt', 'requirements/dev.txt', 'requirements/base.txt'].find((f) => has(f));
       const pyproject = has('pyproject.toml') ? readFileSync(join(dir, 'pyproject.toml'), 'utf8') : '';
       if (pyproject || req) {
@@ -1651,6 +1707,13 @@ export class Herd extends EventEmitter {
         { id: 'go-update', tool: 'go', manifest: 'go.mod', label: 'update all', command: 'go get -u ./... && go mod tidy', danger: true },
       );
     }
+    if (has('Cargo.toml')) {
+      out.push(
+        { id: 'cargo-fetch', tool: 'cargo', manifest: 'Cargo.toml', label: 'fetch', command: 'cargo fetch' },
+        { id: 'cargo-check', tool: 'cargo', manifest: 'Cargo.toml', label: 'check', command: 'cargo check' },
+        { id: 'cargo-update', tool: 'cargo', manifest: 'Cargo.toml', label: 'update', command: 'cargo update', danger: true },
+      );
+    }
     return out;
   }
 
@@ -1667,6 +1730,7 @@ export class Herd extends EventEmitter {
     }
     if (cmd.tool === 'bun' && !this.bunChoice(p).binDir) throw new Error('Bun is not installed. Install it on the Bun page first.');
     if (cmd.tool === 'go' && !this.goChoice(p).binDir) throw new Error('Go is not installed. Install it on the Go page first.');
+    if (cmd.tool === 'cargo' && !this.rustupVer) throw new Error('Rust is not installed. Install it on the Rust page first.');
     let command = cmd.command;
     // Python tools run from the site's venv / uv (see runtimeEnv); pip-style updates need uv's binary.
     if (cmd.id === 'py-update' && command.startsWith('uv ')) {
@@ -2123,6 +2187,7 @@ export class Herd extends EventEmitter {
     this.refreshNodes();
     await this.refreshBuns();
     await this.refreshGos();
+    await this.refreshRust();
     await this.refreshPythons();
     await this.refreshPhps();
     this.syncFpm();
@@ -2216,6 +2281,8 @@ export class Herd extends EventEmitter {
       const go = this.goChoice(p);
       if (go.binDir) dirs.push(go.binDir);
     }
+    // cargo / rustup's proxies (they pick the toolchain from rust-toolchain.toml), trunk, dx, Solana, anchor.
+    if (this.hasRust(p)) dirs.push(...rusts.rustPathDirs());
     let phpEnv: Record<string, string> = {};
     const stackNow = this.stacks.get(p.id);
     if (stackNow?.runtime === 'php' || stackNow?.subRuntimes?.includes('php')) {
@@ -2382,6 +2449,134 @@ export class Herd extends EventEmitter {
     store.updateSettings({ goDefault: version });
     await this.refreshGos();
     this.changed();
+  }
+
+  // --------------------------------------------------------------------- rust
+
+  /** Rust apps, or a Tauri app (its src-tauri crate builds with cargo). */
+  private hasRust(p: ProjectConfig): boolean {
+    return (this.stacks.get(p.id)?.apps ?? []).some((a) => a.framework === 'rust' || a.library === 'tauri');
+  }
+
+  async refreshRust(): Promise<void> {
+    this.rustupVer = await rusts.rustupVersion();
+    this.rustToolchains = rusts.sortInstalled(await rusts.listInstalled());
+    this.rustTargets = await rusts.installedTargets();
+    this.rustTools = await rusts.toolStates();
+    this.rustLinkerMissing = this.rustupVer ? await rusts.linkerMissing() : false;
+  }
+
+  /** The toolchain (rust-toolchain.toml's, else rustup's default) and the CLIs / target the site's apps run with. */
+  rustChoice(p: ProjectConfig, stack: StackInfo | undefined = this.stacks.get(p.id)): RustChoice {
+    const apps = (stack?.apps ?? []).filter((a) => a.framework === 'rust' || a.library === 'tauri');
+    const none: RustChoice = { version: null, toolchain: null, reason: 'none', spec: null, missing: true, needs: [] };
+    if (!apps.length) return { ...none, missing: false };
+    const spec = rusts.readToolchainSpec(p.path) ?? apps.map((a) => rusts.readToolchainSpec(join(p.path, a.dir))).find(Boolean) ?? null;
+    const def = this.rustToolchains.find((t) => t.isDefault);
+    const tc = spec ? this.rustToolchains.find((t) => t.channel === spec || t.version === spec || t.channel.startsWith(`${spec}-`)) : def;
+    const needs = new Set<RustChoice['needs'][number]>();
+    for (const a of apps) {
+      const cmd = a.command ?? '';
+      if (cmd.startsWith('trunk')) needs.add('trunk').add('wasm32');
+      if (cmd.startsWith('dx ')) needs.add('dioxus-cli').add('wasm32');
+      if (cmd.startsWith('cargo leptos')) needs.add('cargo-leptos').add('wasm32');
+      if (cmd.startsWith('cargo tauri')) needs.add('tauri-cli');
+      if (cmd.startsWith('anchor')) needs.add('solana').add('anchor');
+    }
+    const installed = (n: RustChoice['needs'][number]) =>
+      n === 'wasm32' ? this.rustTargets.includes(rusts.WASM_TARGET) : this.rustTools.some((t) => t.id === n && t.installed);
+    return {
+      version: tc?.version ?? null,
+      toolchain: tc?.channel ?? spec,
+      reason: spec ? 'project' : def ? 'default' : 'none',
+      spec,
+      // rustup installs a rust-toolchain.toml channel by itself on the first cargo run; only no Rust at all is missing.
+      missing: !this.rustupVer,
+      needs: this.rustupVer ? [...needs].filter((n) => !installed(n)) : [],
+    };
+  }
+
+  /** One install at a time: rustup, a toolchain, the wasm32 target or a tool; progress lines in state.rust.installing. */
+  private async rustTask(what: string, work: (detail: (line: string) => void) => Promise<void>): Promise<void> {
+    if (this.rustInstalling && this.rustInstalling.phase !== 'done' && this.rustInstalling.phase !== 'error') {
+      throw new Error(`Already installing ${this.rustInstalling.version}`);
+    }
+    this.rustInstalling = { version: what, phase: 'extract', received: 0, total: 0 };
+    this.changed();
+    let last = 0;
+    try {
+      await work((detail) => {
+        this.rustInstalling = { version: what, phase: 'extract', received: 0, total: 0, detail };
+        // Cargo prints hundreds of lines a second while compiling: the window hears about every fifth of a second.
+        if (Date.now() - last > 200) {
+          last = Date.now();
+          this.changed();
+        }
+      });
+      this.rustInstalling = null;
+      await this.refreshRust();
+    } catch (err) {
+      this.rustInstalling = { version: what, phase: 'error', received: 0, total: 0, error: (err as Error).message };
+      throw err;
+    } finally {
+      this.changed();
+    }
+  }
+
+  rustInstall(): Promise<void> {
+    return this.rustTask('Rust', (detail) =>
+      rusts.installRustup((prog) => {
+        if (prog.phase === 'download') {
+          this.rustInstalling = { ...prog, version: 'Rust' };
+          this.changed();
+        } else if (prog.detail) detail(prog.detail);
+      }),
+    );
+  }
+
+  rustRemote(refresh = false): Promise<RemoteRust[]> {
+    return rusts.listRemote(refresh);
+  }
+
+  rustToolchainInstall(name: string): Promise<void> {
+    return this.rustTask(`Rust ${name}`, (detail) => rusts.installToolchain(name, detail));
+  }
+
+  async rustToolchainUninstall(name: string): Promise<void> {
+    await rusts.uninstallToolchain(name);
+    await this.refreshRust();
+    this.changed();
+  }
+
+  async rustSetDefault(name: string): Promise<void> {
+    await rusts.setDefault(name);
+    await this.refreshRust();
+    this.changed();
+  }
+
+  rustTargetAdd(target: string): Promise<void> {
+    return this.rustTask(target, (detail) => rusts.addTarget(target, detail));
+  }
+
+  rustToolInstall(id: RustToolId): Promise<void> {
+    const tool = rusts.RUST_TOOLS.find((t) => t.id === id);
+    if (!tool) throw new Error(`Unknown tool ${id}`);
+    return this.rustTask(tool.label, (detail) => rusts.installTool(id, detail));
+  }
+
+  /** `cargo fetch`, streamed into the site's log (cargo builds on Start anyway; this downloads the crates first). */
+  private async installRustDeps(p: ProjectConfig): Promise<void> {
+    if (this.dbTasks.has(p.id)) throw new Error(`Busy: ${this.dbTasks.get(p.id)}`);
+    if (!this.rustupVer) throw new Error('Rust is not installed. Install it on the Rust page (sidebar) first.');
+    this.dbTasks.set(p.id, 'cargo fetch');
+    this.changed();
+    try {
+      const code = await stream(p.path, 'cargo fetch', (t) => this.processes.log(p.id, 'sys', t), this.runtimeEnv(p));
+      if (code !== 0) throw new Error(`cargo fetch failed (exit ${code}); see the log`);
+    } finally {
+      this.dbTasks.delete(p.id);
+      this.rescan();
+    }
   }
 
   // ----------------------------------------------------------------- python
@@ -3857,6 +4052,7 @@ export class Herd extends EventEmitter {
       node: this.nodeChoice(p),
       bun: this.bunChoice(p),
       go: this.goChoice(p),
+      rust: this.rustChoice(p),
       python: this.pythonChoice(p),
       php: this.phpChoice(p),
       realtime: detectRealtime(p.path),
@@ -3946,6 +4142,14 @@ export class Herd extends EventEmitter {
         defaultVersion: store.settings.goDefault,
         installing: this.goInstalling,
       },
+      rust: {
+        rustup: this.rustupVer,
+        toolchains: this.rustToolchains,
+        targets: this.rustTargets,
+        tools: this.rustTools,
+        installing: this.rustInstalling,
+        linkerMissing: this.rustLinkerMissing,
+      },
       python: {
         uv: this.uvVer,
         installed: this.installedPythons,
@@ -4002,6 +4206,7 @@ function gitignoreFor(stack: StackInfo | undefined): string {
   if (runtimes.has('php')) blocks.push(laravel ? '# Laravel\n/vendor/\n/public/hot\n/public/storage\n/storage/*.key\n/storage/pail\n.phpunit.result.cache\nHomestead.json\nHomestead.yaml' : '# PHP\n/vendor/\n.phpunit.result.cache');
   if (runtimes.has('python')) blocks.push('# Python\n.venv/\nvenv/\n__pycache__/\n*.py[cod]\n.pytest_cache/\n.mypy_cache/\n.ruff_cache/\n*.egg-info/\ninstance/\ndb.sqlite3');
   if (runtimes.has('go')) blocks.push('# Go\nbin/\ntmp/\n*.exe\n*.test\n*.out');
+  if (runtimes.has('rust')) blocks.push('# Rust\n/target/\n**/*.rs.bk\n.anchor/\ntest-ledger/\ndist/');
   return `${blocks.join('\n\n')}\n`;
 }
 

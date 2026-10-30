@@ -4,7 +4,7 @@ import { STACK_ICONS, type StackIcon } from './stackicons';
 
 /** One language runtime a site uses, for the Runtimes card and the version pickers. */
 export interface RuntimeRow {
-  kind: 'node' | 'bun' | 'go' | 'php' | 'python';
+  kind: 'node' | 'bun' | 'go' | 'php' | 'python' | 'rust';
   label: string;
   version: string | null;
   /** Why this version, in words. */
@@ -17,7 +17,7 @@ export interface RuntimeRow {
 const appName = (dir: string, name: string) => (dir === '.' ? name : dir.split('/').pop()!);
 
 export const usesJs = (stack: StackInfo) =>
-  (stack.runtime === 'node' && stack.apps.some((a) => a.framework !== 'go')) || ((stack.runtime === 'php' || stack.runtime === 'python') && stack.apps.some((a) => a.kind === 'assets'));
+  (stack.runtime === 'node' && stack.apps.some((a) => a.framework !== 'go' && a.framework !== 'rust')) || ((stack.runtime === 'php' || stack.runtime === 'python') && stack.apps.some((a) => a.kind === 'assets'));
 export const usesPhp = (stack: StackInfo) => stack.runtime === 'php';
 export const usesPython = (stack: StackInfo) => stack.runtime === 'python';
 
@@ -27,6 +27,8 @@ export function pythonInstallLabel(stack: StackInfo): string {
   return t === 'poetry' ? 'poetry install' : t === 'pdm' ? 'pdm install' : t === 'pipenv' ? 'pipenv install' : t === 'uv' ? 'uv sync' : 'uv venv + pip install';
 }
 export const usesGo = (stack: StackInfo) => stack.apps.some((a) => a.framework === 'go');
+/** Rust apps, or a Tauri app (its src-tauri crate builds with cargo). */
+export const usesRust = (stack: StackInfo) => stack.apps.some((a) => a.framework === 'rust' || a.library === 'tauri');
 export const usesBun = (stack: StackInfo) => usesJs(stack) && stack.packageManager === 'bun';
 
 function nodeWhy(c: NodeChoice): string {
@@ -46,7 +48,7 @@ function choiceWhy(c: BunChoice, file: string): string {
 
 export function runtimesOf(p: ProjectState): RuntimeRow[] {
   const rows: RuntimeRow[] = [];
-  const js = p.stack.apps.filter((a) => a.framework !== 'go' && !isPhpFramework(a.framework) && !isPythonFramework(a.framework)).map((a) => appName(a.dir, a.name));
+  const js = p.stack.apps.filter((a) => a.framework !== 'go' && a.framework !== 'rust' && !isPhpFramework(a.framework) && !isPythonFramework(a.framework)).map((a) => appName(a.dir, a.name));
   const go = p.stack.apps.filter((a) => a.framework === 'go').map((a) => appName(a.dir, a.name));
   if (usesJs(p.stack)) {
     rows.push({ kind: 'node', label: 'Node.js', version: p.node.version, why: nodeWhy(p.node), missing: p.node.missing, apps: js });
@@ -59,6 +61,16 @@ export function runtimesOf(p: ProjectState): RuntimeRow[] {
     rows.unshift({ kind: 'php', label: 'PHP', version: c.version, why: why + (c.source === 'herd' ? ' · Laravel Herd build' : ''), missing: !c.version || c.missing, apps: [appName('.', p.name)] });
   }
   if (usesGo(p.stack)) rows.push({ kind: 'go', label: 'Go', version: p.go.version, why: choiceWhy(p.go, 'go.mod'), missing: !p.go.version, apps: go });
+  if (usesRust(p.stack)) {
+    const c = p.rust;
+    const rust = p.stack.apps.filter((a) => a.framework === 'rust' || a.library === 'tauri').map((a) => appName(a.dir, a.name));
+    const why = c.missing
+      ? 'not installed'
+      : c.reason === 'project'
+        ? `${c.toolchain} from rust-toolchain.toml${c.version ? '' : ' (rustup downloads it on the first build)'}`
+        : `${c.toolchain ?? 'default'} (rustup's default)`;
+    rows.push({ kind: 'rust', label: 'Rust', version: c.version, why, missing: c.missing, apps: rust });
+  }
   if (usesPython(p.stack)) {
     const c = p.python;
     const venv = p.stack.python?.venv;
@@ -129,6 +141,7 @@ const TAGS: Record<string, [string, string]> = {
   joomla: ['Joomla', 'joomla'],
   slim: ['Slim', 'slim'],
   go: ['Go', 'go'],
+  rust: ['Rust', 'rust'],
   nuxt: ['Nuxt', 'nuxtdotjs'],
   'vite-vue': ['Vue', 'vuedotjs'],
   'vite-react': ['React', 'react'],
@@ -148,7 +161,7 @@ const TAGS: Record<string, [string, string]> = {
 };
 
 /**
- * Web frameworks of Go, Python and Node apps (AppInfo.library): their own name
+ * Web frameworks of Go, Rust, Python and Node apps (AppInfo.library): their own name
  * and mark (Simple Icons, or the project's own logo in assets/logos/fw;
  * httprouter has none and keeps the Go mark).
  */
@@ -166,6 +179,25 @@ const LIBRARIES: Record<string, [string, string]> = {
   'go-zero': ['go-zero', 'gozero'],
   gofr: ['GoFr', 'gofr'],
   httprouter: ['httprouter', 'go'],
+  actix: ['Actix Web', 'actix'],
+  axum: ['Axum', 'axum'],
+  rocket: ['Rocket', 'rocket'],
+  warp: ['Warp', 'rust'],
+  poem: ['Poem', 'poem'],
+  salvo: ['Salvo', 'salvo'],
+  tide: ['Tide', 'rust'],
+  tonic: ['tonic (gRPC)', 'rust'],
+  hyper: ['hyper', 'rust'],
+  loco: ['Loco', 'loco'],
+  yew: ['Yew', 'yew'],
+  leptos: ['Leptos', 'leptos'],
+  dioxus: ['Dioxus', 'dioxus'],
+  sycamore: ['Sycamore', 'sycamore'],
+  tauri: ['Tauri', 'tauri'],
+  bevy: ['Bevy', 'bevy'],
+  burn: ['Burn', 'burn'],
+  candle: ['Candle', 'huggingface'],
+  anchor: ['Anchor (Solana)', 'solana'],
   starlette: ['Starlette', 'starlette'],
   quart: ['Quart', 'quart'],
   sanic: ['Sanic', 'sanic'],
@@ -190,7 +222,7 @@ export function frameworkTag(fw: string, library?: string | null): { label: stri
 /** The site's framework (or language) for the site list: its web app's mark and name (Laravel, Nuxt, Go, …). */
 export function stackTag(p: ProjectState): { label: string; icon: StackIcon } {
   const web = p.stack.apps.find((a) => a.kind === 'web') ?? p.stack.apps[0];
-  return frameworkTag(web?.framework ?? (p.stack.runtime === 'go' ? 'go' : p.stack.runtime === 'python' ? 'python' : 'node'), web?.library);
+  return frameworkTag(web?.framework ?? (p.stack.runtime === 'go' || p.stack.runtime === 'python' || p.stack.runtime === 'rust' ? p.stack.runtime : 'node'), web?.library);
 }
 
 /**

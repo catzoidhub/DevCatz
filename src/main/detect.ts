@@ -84,6 +84,7 @@ export const DEFAULT_PORTS: Record<Framework, number | null> = {
   express: 3000,
   node: null,
   go: 8080,
+  rust: 8080,
   mix: null,
   laravel: null,
   codeigniter: null,

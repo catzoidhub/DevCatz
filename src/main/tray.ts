@@ -6,7 +6,7 @@ import { dot, type DotColor } from './menuicons';
 import { words } from '@shared/platform';
 
 /** Where the window opens: the sites list, Settings, or the "new site" dialog. */
-export type NavTarget = 'sites' | 'settings' | 'new-site' | 'storage' | 'database' | 'websocket' | 'search' | 'monitoring' | 'mail' | 'whatsapp' | 'expose' | 'node' | 'bun' | 'go' | 'php' | 'update:check' | 'update:show';
+export type NavTarget = 'sites' | 'settings' | 'new-site' | 'storage' | 'database' | 'websocket' | 'search' | 'monitoring' | 'mail' | 'whatsapp' | 'expose' | 'node' | 'bun' | 'go' | 'rust' | 'php' | 'update:check' | 'update:show';
 
 export interface TrayActions {
   show(target: NavTarget): void;

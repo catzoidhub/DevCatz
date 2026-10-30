@@ -3,6 +3,7 @@ import { goDriver } from './go';
 import { phpDriver } from './php';
 import { nodeDriver } from './node';
 import { pythonDriver } from './python';
+import { rustDriver } from './rust';
 import type { RuntimeDriver } from './types';
 import { withDataLibs } from './datalibs';
 import { detectFolders, projectFolders } from './folders';
@@ -10,9 +11,10 @@ import { detectFolders, projectFolders } from './folders';
 /**
  * First match wins: PHP (composer.json + artisan/public/index.php) before Node, since Laravel apps also have a
  * package.json for Vite; Python (manage.py, pyproject, requirements) before Node for the same reason (Tailwind
- * in a Django app); a Go module with a package.json (frontend tooling) is treated as a Node project.
+ * in a Django app); Rust (Cargo.toml) before Node too, since Leptos / Yew / Anchor projects keep a package.json for
+ * Tailwind or tests; a Go module with a package.json (frontend tooling) is treated as a Node project.
  */
-export const DRIVERS: RuntimeDriver[] = [phpDriver, pythonDriver, nodeDriver, goDriver];
+export const DRIVERS: RuntimeDriver[] = [phpDriver, pythonDriver, rustDriver, nodeDriver, goDriver];
 
 export function isProjectDir(dir: string): boolean {
   return DRIVERS.some((d) => d.matches(dir));
@@ -31,7 +33,7 @@ export function detectStack(root: string, domain: string): StackInfo {
   const base = driver ? driver.detect(root, domain) : null;
   // A root that runs nothing itself (no manifest, a tooling-only package.json) but holds sibling projects
   // (frontend/ + backend/ …): every folder becomes an app. A JS workspace keeps its own detection.
-  if (!base || (!base.apps.length && !base.monorepo) || (base.runtime === 'go' && !base.monorepo)) {
+  if (!base || (!base.apps.length && !base.monorepo) || ((base.runtime === 'go' || base.runtime === 'rust') && !base.monorepo)) {
     const folders = detectFolders(root, domain, base);
     if (folders) return withDataLibs(root, folders);
   }

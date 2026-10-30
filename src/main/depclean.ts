@@ -7,7 +7,7 @@ import { isWin } from './platform';
 
 /**
  * Free disk space (TODO §30): the dependency folders of a site — node_modules (every app and package of a
- * monorepo), Composer's vendor/, a Python venv — that can be thrown away and installed again with
+ * monorepo), Composer's vendor/, a Python venv, Cargo's target/ — that can be thrown away and installed again with
  * "Install dependencies". Only real folders inside the project count: never a symlink, never outside it.
  */
 
@@ -28,6 +28,8 @@ export function depFolders(p: ProjectConfig, stack: StackInfo | undefined): { ab
     add(dir, 'node_modules', 'node_modules');
     if (existsSync(join(dir, 'composer.json'))) add(dir, 'vendor', 'vendor');
     for (const v of VENVS) if (existsSync(join(dir, v, 'pyvenv.cfg'))) add(dir, v, 'venv');
+    // Cargo's build folder: often the biggest of all (gigabytes); rebuilt on the next Start.
+    if (existsSync(join(dir, 'Cargo.toml'))) add(dir, 'target', 'target');
   }
   return out;
 }

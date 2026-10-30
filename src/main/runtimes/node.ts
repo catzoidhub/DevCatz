@@ -272,6 +272,12 @@ function detectNodeStack(root: string, domain: string): StackInfo {
   let devCommand: string | null = null;
   if (rootPkg?.scripts?.dev) devCommand = runScriptCommand(pm, 'dev');
   else if (apps.length === 1 && monorepo) devCommand = `cd ${apps[0].dir} && ${runScriptCommand(pm, 'dev')}`;
+  // Tauri (src-tauri/ beside a Vite frontend): `tauri dev` opens the app's window and starts the frontend through
+  // its beforeDevCommand; the site's domain still shows the frontend in a browser.
+  if (rootPkg?.scripts?.tauri && existsSync(join(root, 'src-tauri', 'tauri.conf.json')) && apps.length === 1) {
+    devCommand = `${runScriptCommand(pm, 'tauri')} dev`;
+    apps[0].library = 'tauri';
+  }
 
   const nvmrc = readText(join(root, '.nvmrc'))?.trim() || readText(join(root, '.node-version'))?.trim();
 
