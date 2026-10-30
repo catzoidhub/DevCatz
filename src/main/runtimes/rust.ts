@@ -153,6 +153,24 @@ function tauriDevPort(root: string): number | null {
   return port ? Number(port) : null;
 }
 
+/**
+ * `anchor localnet`: Anchor 1.x starts Surfpool by default, so it is asked for solana-test-validator (`legacy`, part of
+ * the Solana CLI DevCatz installs), and NO_DNA=1 makes it run without waiting for input in the background.
+ */
+function anchorCommand(dir: string): string {
+  const programs = join(dir, 'programs');
+  let major = 0;
+  try {
+    for (const p of readdirSync(programs)) {
+      const v = (readText(join(programs, p, 'Cargo.toml')) ?? '').match(/^\s*anchor-lang\s*=\s*(?:\{[^}]*version\s*=\s*)?["'][^\d]*(\d+)/m)?.[1];
+      if (v) major = Math.max(major, Number(v));
+    }
+  } catch {
+    /* no programs/ */
+  }
+  return major >= 1 ? 'env NO_DNA=1 anchor localnet --validator legacy' : 'anchor localnet';
+}
+
 /** One crate as an app (dir = the crate's folder). */
 export function detectRustApp(dir: string, root: string, domain: string, manifest = readCargo(dir)): AppInfo & { command: string | null } {
   const lib = rustLibrary(manifest?.deps ?? []);
@@ -168,7 +186,7 @@ export function detectRustApp(dir: string, root: string, domain: string, manifes
     portVars: [] as string[],
     ...more,
   });
-  if (existsSync(join(dir, 'Anchor.toml'))) return app('api', 'anchor localnet', 8899, { library: 'anchor' });
+  if (existsSync(join(dir, 'Anchor.toml'))) return app('api', anchorCommand(dir), 8899, { library: 'anchor' });
   if (existsSync(join(dir, 'src-tauri', 'tauri.conf.json'))) return app('web', 'cargo tauri dev', tauriDevPort(dir), { library: 'tauri' });
   if (lib === 'leptos' && manifest?.leptosSsr) return app('web', 'cargo leptos watch', manifest.leptosPort ?? 3000);
   if (lib === 'dioxus') {

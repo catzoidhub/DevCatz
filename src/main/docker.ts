@@ -400,8 +400,9 @@ function goDockerfile(ctx: Ctx, a: AppInfo): string {
 function rustDockerfile(ctx: Ctx, a: AppInfo): string {
   const cmd = a.command ?? '';
   const head = GENERATED_MARK + ` for ${a.name} (Rust). Build context: the project root.`;
-  if (cmd.startsWith('cargo tauri') || cmd.startsWith('anchor') || a.port === null) {
-    const what = cmd.startsWith('anchor') ? 'An Anchor program is deployed to a Solana cluster (anchor deploy), not run in a container.' : cmd.startsWith('cargo tauri') ? 'A Tauri app is a desktop app: `cargo tauri build` makes its installers.' : 'This crate is not a server (no port): build it with `cargo build --release`.';
+  const anchor = /(^|\s)anchor /.test(cmd);
+  if (cmd.startsWith('cargo tauri') || anchor || a.port === null) {
+    const what = anchor ? 'An Anchor program is deployed to a Solana cluster (anchor deploy), not run in a container.' : cmd.startsWith('cargo tauri') ? 'A Tauri app is a desktop app: `cargo tauri build` makes its installers.' : 'This crate is not a server (no port): build it with `cargo build --release`.';
     return [head, `# ${what}`, 'FROM scratch', ''].join('\n');
   }
   const dir = a.dir === '.' ? '.' : a.dir;

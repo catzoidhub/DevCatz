@@ -1409,7 +1409,7 @@ export class Herd extends EventEmitter {
         if (seen.has(a.dir)) continue;
         seen.add(a.dir);
         const cmd = a.command ?? '';
-        const command = cmd.startsWith('anchor')
+        const command = /(^|\s)anchor /.test(cmd)
           ? 'anchor build'
           : cmd.startsWith('cargo tauri')
             ? 'cargo tauri build'
@@ -2481,7 +2481,7 @@ export class Herd extends EventEmitter {
       if (cmd.startsWith('dx ')) needs.add('dioxus-cli').add('wasm32');
       if (cmd.startsWith('cargo leptos')) needs.add('cargo-leptos').add('wasm32');
       if (cmd.startsWith('cargo tauri')) needs.add('tauri-cli');
-      if (cmd.startsWith('anchor')) needs.add('solana').add('anchor');
+      if (/(^|\s)anchor /.test(cmd)) needs.add('solana').add('anchor');
     }
     const installed = (n: RustChoice['needs'][number]) =>
       n === 'wasm32' ? this.rustTargets.includes(rusts.WASM_TARGET) : this.rustTools.some((t) => t.id === n && t.installed);
