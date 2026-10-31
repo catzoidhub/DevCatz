@@ -2577,8 +2577,14 @@ export interface HerdApi {
   parkRestore(path: string): Promise<void>;
   /** Forgets a linked site whose folder is gone (its settings, ports, group place). */
   missingRemove(id: string): Promise<void>;
-  /** Points a linked site whose folder is gone at the folder where it is now (a picker); false when cancelled. */
-  missingLocate(id: string): Promise<boolean>;
+  /**
+   * Locate… for a linked site whose folder is gone: a folder picker. A folder that looks like the same project is used
+   * at once (`applied`); one that looks like another project comes back for the window to ask (missingLocateApply).
+   * Null when cancelled.
+   */
+  missingLocate(id: string): Promise<{ path: string; applied: boolean; name: string } | null>;
+  /** After asking: `use` = that folder becomes the missing site's; `link` = it becomes a new site (returns its id). */
+  missingLocateApply(id: string, path: string, mode: 'use' | 'link'): Promise<string | null>;
   /** `confirmDomain` must equal the site's domain (typed by the user): guards against a misclick. */
   removeProject(id: string, confirmDomain: string): Promise<void>;
   /** Puts one app of a monorepo / folder site on `<sub>.<site domain>` ('' = the site's own domain); `null` = the default. */
@@ -3136,7 +3142,7 @@ export interface HerdApi {
 }
 
 export const API_METHODS: (keyof HerdApi)[] = [
-  'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate',
+  'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
   'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',

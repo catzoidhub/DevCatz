@@ -490,6 +490,15 @@ function navigate(target: string) {
     dbGroupRequest.value = target.startsWith('db-new-group:') ? { mode: 'new', id: target.slice(13) } : { mode: 'rename', from: target.slice(16) };
     return;
   }
+  // Right-click → Locate… picked another project's folder: ask here, in DevCatz's own dialog.
+  if (target.startsWith('locate:')) {
+    try {
+      locateAsk.value = JSON.parse(target.slice(7));
+    } catch {
+      /* malformed */
+    }
+    return;
+  }
   if (target.startsWith('new-group:')) groupDialog.value = { mode: 'new', site: target.slice(10), name: '' };
   else if (target.startsWith('rename-group:')) groupDialog.value = { mode: 'rename', from: target.slice(13), name: target.slice(13) };
   else if (target === 'new-site') newSiteOpen.value = true;
@@ -512,7 +521,24 @@ async function parkFromDialog() {
 /** A linked site whose folder is gone stays in the list (dimmed); its page and right-click offer Locate… and Remove. */
 type Missing = AppState['missingSites'][number];
 const currentMissing = computed(() => (current.value ? null : (state.value?.missingSites.find((m) => m.id === selected.value) ?? null)));
-const locateMissing = (id: string) => attempt(() => herd.missingLocate(id));
+/** Locate… picked a folder that looks like another project: which way to use it (DevCatz's dialog, not the system's). */
+const locateAsk = ref<{ id: string; path: string; name: string } | null>(null);
+const locateBusy = ref(false);
+async function locateMissing(id: string) {
+  const r = await attempt(() => herd.missingLocate(id));
+  if (r && !r.applied) locateAsk.value = { id, path: r.path, name: r.name };
+}
+async function locateAnswer(mode: 'use' | 'link') {
+  const ask = locateAsk.value;
+  if (!ask) return;
+  locateBusy.value = true;
+  const site = state.value?.missingSites.find((m) => m.id === ask.id);
+  const id = await attempt(() => herd.missingLocateApply(ask.id, ask.path, mode), mode === 'link' ? `${ask.name} linked as a new site` : `${site?.name ?? 'The site'} now uses ${ask.name}`);
+  locateBusy.value = false;
+  locateAsk.value = null;
+  if (id) selected.value = id;
+}
+const locateSite = computed(() => (locateAsk.value ? (state.value?.missingSites.find((m) => m.id === locateAsk.value!.id) ?? null) : null));
 async function removeMissing(m: Missing) {
   if (await attempt(() => herd.missingRemove(m.id).then(() => true), `${m.name} removed`)) {
     if (selected.value === m.id) selected.value = projects.value[0]?.id ?? null;
@@ -831,6 +857,36 @@ async function park() {
       </div>
     </div>
   </div>
+  <!-- Locate… → a folder of another project: use it for the missing site, or link it as a new one. -->
+  <dialog v-if="locateAsk" open class="modal modal-open" @keydown.esc="!locateBusy && (locateAsk = null)">
+    <div class="modal-box w-[30rem] max-w-[95vw] space-y-3">
+      <div class="flex items-start gap-3">
+        <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10"><CatMood mood="question" class="size-8" /></span>
+        <div class="min-w-0">
+          <h3 class="text-lg font-semibold tracking-tight">This folder looks like another project</h3>
+          <p class="text-sm opacity-70">
+            It is <b>{{ locateAsk.name }}</b>, not {{ locateSite?.name ?? 'the missing site' }}.
+          </p>
+        </div>
+      </div>
+      <div class="rounded-box bg-base-200/60 p-3 text-xs">
+        <div class="label-caps mb-1">Folder</div>
+        <code class="selectable break-all">{{ locateAsk.path }}</code>
+      </div>
+      <ul class="space-y-1.5 text-xs opacity-80">
+        <li><b>Link as a new site</b>: it gets its own domain and default settings; {{ locateSite?.name ?? 'the missing site' }} stays in the list as gone.</li>
+        <li><b>Use it for {{ locateSite?.name ?? 'the site' }}</b>: it takes over {{ locateSite?.domain ?? 'its domain' }} and keeps its settings (dev command, runtime versions …).</li>
+      </ul>
+      <div class="modal-action flex-wrap">
+        <button class="btn btn-ghost btn-sm" :disabled="locateBusy" @click="locateAsk = null">Cancel</button>
+        <button class="btn btn-sm" :disabled="locateBusy" @click="locateAnswer('use')">Use it for {{ locateSite?.name ?? 'the site' }}</button>
+        <button class="btn btn-primary btn-sm" :disabled="locateBusy" @click="locateAnswer('link')">
+          <span v-if="locateBusy" class="loading loading-spinner loading-xs" />Link as a new site
+        </button>
+      </div>
+    </div>
+    <div class="modal-backdrop" @click="!locateBusy && (locateAsk = null)" />
+  </dialog>
   <ConfirmDialog
     v-if="confirmRequest"
     :title="confirmRequest.title"

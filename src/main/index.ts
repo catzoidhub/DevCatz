@@ -269,33 +269,19 @@ async function openTerminal(path: string): Promise<void> {
   await run('open', ['-a', apps[0] ?? 'Terminal', path]);
 }
 
-/** Locate… for a site whose folder is gone: a folder picker, then the site moves there (false when cancelled). */
-async function locateMissing(id: string): Promise<boolean> {
+/**
+ * Locate… for a site whose folder is gone: the folder picker, then the folder is used at once when it looks like the
+ * same project; one that looks like another project is handed back so the window asks (a DevCatz dialog).
+ */
+async function locateMissing(id: string): Promise<{ path: string; applied: boolean; name: string } | null> {
   const site = herd.missingSites().find((m) => m.id === id);
   if (!site) throw new Error('That site is not missing');
   const r = await dialog.showOpenDialog(win!, { title: `Where is ${site.name} now?`, message: `Where is ${site.name} now? (it was ${site.path})`, properties: ['openDirectory'] });
-  if (r.canceled || !r.filePaths[0]) return false;
+  if (r.canceled || !r.filePaths[0]) return null;
   const path = r.filePaths[0];
-  // A folder that looks like another project: ask before it takes over this site's domain and settings.
   const look = herd.looksLikeMissing(id, path);
-  if (!look.same) {
-    const { response } = await dialog.showMessageBox(win!, {
-      type: 'question',
-      buttons: [`Use it for ${site.name}`, 'Link as a new site', 'Cancel'],
-      defaultId: 1,
-      cancelId: 2,
-      message: `This folder looks like another project (${look.name}).`,
-      detail: `Used for ${site.name}, it takes over ${site.domain} and keeps ${site.name}'s settings (dev command, runtime versions …). Linked as a new site, it gets its own domain and default settings, and ${site.name} stays in the list as gone.`,
-    });
-    if (response === 2) return false;
-    if (response === 1) {
-      const linked = herd.link(path);
-      if (linked) win?.webContents.send('herd:navigate', `site:${linked.id}`);
-      return true;
-    }
-  }
-  herd.missingLocate(id, path);
-  return true;
+  if (look.same) herd.missingLocate(id, path);
+  return { path, applied: look.same, name: look.name };
 }
 
 function api(): HerdApi {
@@ -706,6 +692,11 @@ function api(): HerdApi {
     parkRestore: async (path) => herd.parkRestore(String(path)),
     missingRemove: async (id) => herd.missingRemove(String(id)),
     missingLocate: async (id) => locateMissing(String(id)),
+    missingLocateApply: async (id, path, mode) => {
+      if (mode === 'link') return herd.link(String(path))?.id ?? null;
+      herd.missingLocate(String(id), String(path));
+      return String(id);
+    },
     removeProject: async (id, confirmDomain) => {
       const p = herd.siteInfo(id);
       const expected = p ? new URL(p.url).hostname : '';
@@ -902,7 +893,14 @@ function api(): HerdApi {
         Menu.buildFromTemplate([
           { label: `${gone.name}: its folder is gone`, enabled: false },
           { type: 'separator' },
-          { label: 'Locate…', click: () => void locateMissing(id).catch(report) },
+          {
+            label: 'Locate…',
+            // Another project's folder: the window asks, in its own dialog.
+            click: () =>
+              void locateMissing(id)
+                .then((r) => r && !r.applied && win?.webContents.send('herd:navigate', `locate:${JSON.stringify({ id, path: r.path, name: r.name })}`))
+                .catch(report),
+          },
           { label: 'Remove', click: () => { try { herd.missingRemove(id); } catch (e) { report(e); } } },
         ]).popup({ window: win ?? undefined });
         return;
