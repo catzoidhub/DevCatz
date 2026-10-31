@@ -275,7 +275,26 @@ async function locateMissing(id: string): Promise<boolean> {
   if (!site) throw new Error('That site is not missing');
   const r = await dialog.showOpenDialog(win!, { title: `Where is ${site.name} now?`, message: `Where is ${site.name} now? (it was ${site.path})`, properties: ['openDirectory'] });
   if (r.canceled || !r.filePaths[0]) return false;
-  herd.missingLocate(id, r.filePaths[0]);
+  const path = r.filePaths[0];
+  // A folder that looks like another project: ask before it takes over this site's domain and settings.
+  const look = herd.looksLikeMissing(id, path);
+  if (!look.same) {
+    const { response } = await dialog.showMessageBox(win!, {
+      type: 'question',
+      buttons: [`Use it for ${site.name}`, 'Link as a new site', 'Cancel'],
+      defaultId: 1,
+      cancelId: 2,
+      message: `This folder looks like another project (${look.name}).`,
+      detail: `Used for ${site.name}, it takes over ${site.domain} and keeps ${site.name}'s settings (dev command, runtime versions …). Linked as a new site, it gets its own domain and default settings, and ${site.name} stays in the list as gone.`,
+    });
+    if (response === 2) return false;
+    if (response === 1) {
+      const linked = herd.link(path);
+      if (linked) win?.webContents.send('herd:navigate', `site:${linked.id}`);
+      return true;
+    }
+  }
+  herd.missingLocate(id, path);
   return true;
 }
 

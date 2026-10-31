@@ -20,6 +20,7 @@ import {
 } from './cleanurls';
 import { DB_TASK_LABELS, dbStatus, runDbAction, stream } from './database';
 import { detectPackageManager, readEnvFiles, readJson, readText, runScriptCommand, slugify, type PackageJson } from './detect';
+import { readCargo } from './runtimes/rust';
 import { detectStack, isLinkableDir, isProjectDir } from './runtimes';
 import { getShellEnv, hasCommand, isListening, isPortOpen, portOwner, run, setUserPath } from './env';
 import { isMac, isWin, joinPath, pathKey, shellCommand, splitPath } from './platform';
@@ -1033,6 +1034,31 @@ export class Herd extends EventEmitter {
       siteGroups: store.settings.siteGroups.map((g) => ({ ...g, sites: g.sites.filter((s) => s !== id) })),
     });
     this.rescan();
+  }
+
+  /**
+   * Whether a folder looks like the missing site's project (Locate…): the same folder name, or a manifest name
+   * (package.json, composer.json, Cargo.toml, go.mod, pyproject.toml) matching the site's name or old folder name.
+   */
+  looksLikeMissing(id: string, path: string): { same: boolean; name: string } {
+    const m = this.missingSites().find((x) => x.id === id);
+    const dir = resolve(path);
+    const folder = basename(dir);
+    const goMod = readText(join(dir, 'go.mod'))?.match(/^module\s+(\S+)/m)?.[1];
+    const pyName = readText(join(dir, 'pyproject.toml'))?.match(/^\s*name\s*=\s*["']([^"']+)/m)?.[1];
+    const names = [
+      readJson<PackageJson>(join(dir, 'package.json'))?.name,
+      readJson<{ name?: string }>(join(dir, 'composer.json'))?.name,
+      readCargo(dir)?.name,
+      goMod,
+      pyName,
+    ]
+      .filter((n): n is string => !!n)
+      .map((n) => n.split('/').pop()!);
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const wanted = m ? [m.name, basename(m.path)].map(norm) : [];
+    const same = !m || [folder, ...names].some((n) => wanted.includes(norm(n)));
+    return { same, name: names[0] ?? folder };
   }
 
   /** A missing site's folder moved: the site keeps its id and settings, at the new path. */
