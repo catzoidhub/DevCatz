@@ -837,6 +837,7 @@ function api(): HerdApi {
     goUninstall: (version) => herd.goUninstall(version),
     goSetDefault: (version) => herd.goSetDefault(version),
     rustInstall: () => herd.withCancel('rust', () => herd.rustInstall()),
+    rustInstallLinker: () => herd.withCancel('rust', () => herd.rustInstallLinker()),
     rustRemote: (refresh) => herd.rustRemote(refresh),
     rustToolchainInstall: (name) => herd.withCancel('rust', () => herd.rustToolchainInstall(String(name))),
     rustToolchainUninstall: (name) => herd.rustToolchainUninstall(String(name)),

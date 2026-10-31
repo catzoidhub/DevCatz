@@ -406,7 +406,7 @@ function rustLibs(root: string, stack: StackInfo, libs: DataLib[], tasks: StackT
   }
   if (has('sea-orm')) {
     // A SeaORM project carries its migrations as a crate of its own (migration/, run with cargo; no CLI needed).
-    const mig = crates.find((d) => /(^|\/)migration$/.test(d) && readCargo(join(root, d))?.deps.includes('sea-orm-migration'));
+    const mig = crates.find((d) => /(^|[\\/])migration$/.test(d) && readCargo(join(root, d))?.deps.includes('sea-orm-migration'));
     libs.push({ id: 'seaorm', name: 'SeaORM', kind: 'orm', dir: '.', note: mig ? `migrations in ${mig}/` : 'no migration crate (sea-orm-cli migrate init)' });
     if (mig) {
       const m = (id: string, label: string, args: string, extra: Partial<StackTask> = {}) => t('SeaORM', `seaorm-${id}`, label, `cargo run --manifest-path ${mig}/Cargo.toml -- ${args}`, '.', extra);
@@ -420,7 +420,7 @@ function rustLibs(root: string, stack: StackInfo, libs: DataLib[], tasks: StackT
         m('fresh', 'migrate fresh', 'fresh', { danger: true }),
       );
     }
-    const entities = crates.find((d) => /(^|\/)entity$/.test(d));
+    const entities = crates.find((d) => /(^|[\\/])entity$/.test(d));
     tasks.push(t('SeaORM', 'seaorm-entities', 'generate entity', `sea-orm-cli generate entity -o ${entities ? `${entities}/src` : 'src/entities'}`, '.', { needsBin: 'sea-orm-cli' }));
   }
   if (has('sqlx')) {

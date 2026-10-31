@@ -6,6 +6,7 @@ import { STACK_ICONS } from '../stackicons';
 import { attempt, herd, notify, state, runtimeTabRequest, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
+import { isWin } from '../platform';
 
 /**
  * Rust through rustup in its standard place (~/.rustup, ~/.cargo): toolchains, the WebAssembly target, and the CLIs
@@ -58,6 +59,11 @@ async function installTool(id: RustToolId, label: string, update = false) {
   if (await attempt(() => herd.rustToolInstall(id).then(() => true))) notify('success', `${label} ${update ? 'updated' : 'installed'}`);
   if (update) await herd.rustToolsCheck();
 }
+/** Where rustup keeps things, as this OS writes it (%USERPROFILE%\.cargo on Windows). */
+const home = (p: string) => (isWin ? `%USERPROFILE%\\${p.replace(/\//g, '\\')}` : `~/${p}`);
+async function installLinker() {
+  if (await attempt(() => herd.rustInstallLinker().then(() => true))) notify('success', 'Build Tools installed');
+}
 const setDefault = (name: string) => attempt(() => herd.rustSetDefault(name));
 async function uninstall(name: string) {
   if (await askConfirm({ title: `Uninstall the Rust toolchain ${name}?`, text: `rustup removes it; projects that ask for it in rust-toolchain.toml download it again on their next build.`, confirm: 'Uninstall' })) await attempt(() => herd.rustToolchainUninstall(name));
@@ -88,7 +94,7 @@ async function checkTools() {
 <template>
   <PageHeader title="Rust" :closable="false" tint="runtimes" :icon="STACK_ICONS.rust.d" icon-view-box="0 0 24 24">
     <p class="text-xs opacity-60">
-      Managed with <a class="link" @click="herd.openUrl('https://rustup.rs')">rustup</a> in its usual place (<code>~/.rustup</code>, <code>~/.cargo</code>), so your editor and
+      Managed with <a class="link" @click="herd.openUrl('https://rustup.rs')">rustup</a> in its usual place (<code>{{ home('.rustup') }}</code>, <code>{{ home('.cargo') }}</code>), so your editor and
       terminal use the same toolchains. A project’s <code>rust-toolchain.toml</code> picks its own.
     </p>
     <div role="tablist" class="seg no-drag mt-3">
@@ -107,6 +113,16 @@ async function checkTools() {
         </div>
       </div>
       <button class="btn btn-sm btn-primary shrink-0" :disabled="!!busy" @click="installRust">Install Rust</button>
+    </div>
+    <div v-else-if="b.linkerMissing && isWin" role="alert" class="alert alert-warning flex flex-wrap"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />
+      <div class="min-w-48 flex-1">
+        <div class="font-medium">The Visual Studio Build Tools (C++) are missing</div>
+        <div class="text-xs opacity-80">
+          Rust on Windows links programs with Microsoft’s linker. DevCatz downloads Microsoft’s installer (signature checked) with the C++ tools; Windows asks for administrator
+          rights, then the Visual Studio Installer shows its progress (a few GB).
+        </div>
+      </div>
+      <button class="btn btn-sm btn-primary shrink-0" :disabled="!!busy" @click="installLinker">Install Build Tools</button>
     </div>
     <div v-else-if="b.linkerMissing" role="alert" class="alert alert-warning flex flex-wrap"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />
       <div class="min-w-48 flex-1">
@@ -201,8 +217,9 @@ async function checkTools() {
             </button>
           </div>
           <p class="text-xs opacity-60">
-            Prebuilt through cargo-binstall where the project publishes one (else compiled by cargo). Solana comes from Anza’s installer, Anchor from avm (compiled once: a few
-            minutes).
+            Prebuilt through cargo-binstall where the project publishes one (else compiled by cargo).
+            <template v-if="isWin">Solana and Anchor run on Windows inside WSL, as their docs say: install them there.</template>
+            <template v-else>Solana comes from Anza’s installer, Anchor from avm (compiled once: a few minutes).</template>
           </p>
           <div class="grid gap-2 lg:grid-cols-2">
             <div v-for="t in b.tools" :key="t.id" class="flex flex-wrap items-center gap-3 rounded-box border border-base-300/60 px-3 py-2">
@@ -238,7 +255,7 @@ async function checkTools() {
               </button>
             </div>
           </div>
-          <p class="text-xs opacity-60">Installed into <code class="selectable">~/.cargo/bin</code> (Solana: <code>~/.local/share/solana</code>); new terminals find them too.</p>
+          <p class="text-xs opacity-60">Installed into <code class="selectable">{{ home('.cargo/bin') }}</code><template v-if="!isWin"> (Solana: <code>~/.local/share/solana</code>)</template>; new terminals find them too.</p>
         </div>
       </div>
     </template>
@@ -250,7 +267,7 @@ async function checkTools() {
           ? 'Moves Solana’s install folder (~/.local/share/solana/install) to the Trash; anchor test and the local validator stop working.'
           : askUninstall.id === 'anchor'
             ? 'Removes avm and moves its folder (~/.avm, every Anchor version) to the Trash.'
-            : 'cargo uninstall removes it from ~/.cargo/bin; sites and terminals will not find it any more.'
+            : `cargo uninstall removes it from ${home('.cargo/bin')}; sites and terminals will not find it any more.`
       "
       confirm="Remove"
       tone="error"

@@ -1207,8 +1207,9 @@ export class Herd extends EventEmitter {
         this.processes.log(id, 'sys', msg);
         throw new Error(msg);
       };
+      if (isWin && stack.apps.some((a) => a.library === 'anchor')) fail(`${rusts.SOLANA_WIN}.`);
       if (!this.rustupVer) fail('Rust is not installed. Install it on the Rust page (sidebar), then Start again.');
-      if (this.rustLinkerMissing) fail('Rust needs the Xcode Command Line Tools to link: run “xcode-select --install” in Terminal, then Start again.');
+      if (this.rustLinkerMissing) fail(isWin ? 'Rust needs the Visual Studio Build Tools (C++) to link: install them on the Rust page, then Start again.' : 'Rust needs the Xcode Command Line Tools to link: run “xcode-select --install” in Terminal, then Start again.');
       if (rust.needs.length) fail(`This site also needs ${rust.needs.map((n) => RUST_NEED_LABEL[n]).join(', ')}: install ${rust.needs.length > 1 ? 'them' : 'it'} on the site's Overview or the Rust page, then Start again.`);
       this.processes.log(id, 'sys', `Using Rust ${rust.version ?? '?'} (${rust.toolchain ?? 'default'}${rust.reason === 'project' ? ', from rust-toolchain.toml' : ''})`);
     }
@@ -2705,7 +2706,8 @@ export class Herd extends EventEmitter {
       spec,
       // rustup installs a rust-toolchain.toml channel by itself on the first cargo run; only no Rust at all is missing.
       missing: !this.rustupVer,
-      needs: this.rustupVer ? [...needs].filter((n) => !installed(n)) : [],
+      // Solana / Anchor are not installed on Windows (WSL only): Start says so instead.
+      needs: this.rustupVer ? [...needs].filter((n) => !installed(n) && !(isWin && (n === 'solana' || n === 'anchor'))) : [],
     };
   }
 
@@ -2741,6 +2743,18 @@ export class Herd extends EventEmitter {
       rusts.installRustup((prog) => {
         if (prog.phase === 'download') {
           this.rustInstalling = { ...prog, version: 'Rust' };
+          this.changed();
+        } else if (prog.detail) detail(prog.detail);
+      }),
+    );
+  }
+
+  /** Windows: the C++ Build Tools Rust links with (Microsoft's installer, UAC); the warning goes once they are there. */
+  async rustInstallLinker(): Promise<void> {
+    await this.rustTask('Build Tools', (detail) =>
+      rusts.installBuildTools((prog) => {
+        if (prog.phase === 'download') {
+          this.rustInstalling = { ...prog, version: 'Build Tools' };
           this.changed();
         } else if (prog.detail) detail(prog.detail);
       }),
@@ -3671,7 +3685,7 @@ export class Herd extends EventEmitter {
     }
     if (task.needsBin && !(await hasCommand(task.needsBin, this.runtimeEnv(p)))) {
       const rust = rusts.RUST_TOOLS.find((x) => x.bin === task.needsBin);
-      throw new Error(task.needsBin === 'wp' ? 'WP-CLI is not installed: brew install wp-cli' : rust ? `${rust.label} is not installed: install it on the Rust page → Tools` : `${task.needsBin} is not installed`);
+      throw new Error(task.needsBin === 'wp' ? (isWin ? 'WP-CLI is not installed: put wp-cli.phar and a wp.bat on your Path (wp-cli.org)' : 'WP-CLI is not installed: brew install wp-cli') : rust ? `${rust.label} is not installed: install it on the Rust page → Tools` : `${task.needsBin} is not installed`);
     }
     if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
     const label = `${task.tool} ${task.label.replace('…', '')}`;

@@ -78,10 +78,49 @@ export async function rustupVersion(): Promise<string | null> {
   return r?.stdout.match(/rustup ([\d.]+)/)?.[1] ?? null;
 }
 
-/** macOS links Rust programs with the Xcode Command Line Tools' linker; without them every build fails. */
+/** Visual Studio's own locator, there once any Visual Studio or Build Tools was installed. */
+const vswhere = () => join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft Visual Studio', 'Installer', 'vswhere.exe');
+
+/**
+ * Rust programs need a linker: on macOS the Xcode Command Line Tools', on Windows MSVC's (link.exe from Visual
+ * Studio or its Build Tools with the C++ tools) — without it every build fails.
+ */
 export async function linkerMissing(): Promise<boolean> {
-  if (isWin) return false;
+  if (isWin) {
+    if (!existsSync(vswhere())) return true;
+    const r = await run(vswhere(), ['-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath'], { timeout: 15_000 });
+    return !r.stdout.trim();
+  }
   return (await run('xcode-select', ['-p'], { timeout: 10_000 })).code !== 0;
+}
+
+/**
+ * Windows: Microsoft's Build Tools for Visual Studio with the C++ tools (the MSVC linker and the Windows SDK), what
+ * rustup's MSVC toolchain links with. The installer is checked for Microsoft's signature (no checksum is published),
+ * asks for administrator rights itself (UAC) and shows its own progress window; a few GB, several minutes.
+ */
+export async function installBuildTools(progress: (p: RuntimeInstallProgress) => void): Promise<void> {
+  const tmp = dataDir(`.buildtools-${Date.now()}`);
+  mkdirSync(tmp, { recursive: true });
+  try {
+    const exePath = join(tmp, 'vs_BuildTools.exe');
+    await downloadVerified('https://aka.ms/vs/17/release/vs_BuildTools.exe', exePath, '', (received, total) =>
+      progress({ version: 'Build Tools', phase: 'download', received, total }),
+    );
+    const sig = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$s = Get-AuthenticodeSignature -LiteralPath '${exePath}'; "$($s.Status)|$($s.SignerCertificate.Subject)"`], { timeout: 30_000 });
+    const [status, subject = ''] = sig.stdout.trim().split('|');
+    if (status !== 'Valid' || !/O=Microsoft Corporation/.test(subject)) throw new Error(`The Build Tools installer is not signed by Microsoft (${status || sig.stderr.trim()}); nothing was run`);
+    progress({ version: 'Build Tools', phase: 'extract', received: 0, total: 0, detail: 'Installing the C++ build tools (Visual Studio Installer window)…' });
+    const args = ['--passive', '--wait', '--norestart', '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--includeRecommended'].map((a) => `'${a}'`).join(',');
+    const ps = `try { $p = Start-Process -FilePath '${exePath}' -ArgumentList ${args} -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { Write-Error $_.Exception.Message; exit 1223 }`;
+    const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 3 * 3600_000 });
+    // 3010: installed, a restart finishes it; 1223: the administrator prompt was declined.
+    if (r.code === 1223) throw new Error('Cancelled');
+    if (r.code !== 0 && r.code !== 3010) throw new Error(`The Build Tools installer stopped (exit ${r.code})${r.stderr.trim() ? `: ${r.stderr.trim()}` : ''}`);
+    progress({ version: 'Build Tools', phase: 'done', received: 0, total: 0 });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 /** Downloads rustup-init (checksum from static.rust-lang.org) and installs rustup with the stable toolchain. */
@@ -216,7 +255,7 @@ export const RUST_TOOLS: { id: RustToolId; label: string; bin: string; crate: st
 
 export async function toolStates(refresh = false): Promise<RustToolState[]> {
   return Promise.all(
-    RUST_TOOLS.map(async (t) => {
+    RUST_TOOLS.filter((t) => !isWin || (t.id !== 'solana' && t.id !== 'anchor')).map(async (t) => {
       const path = toolPath(t.bin);
       let version: string | null = null;
       if (path) {
@@ -301,9 +340,13 @@ async function ensureBinstall(detail: (line: string) => void): Promise<string> {
   }
 }
 
+/** Solana's own docs send Windows to WSL: Anchor and the local validator are built for Linux and macOS. */
+export const SOLANA_WIN = 'Solana and Anchor run on Windows inside WSL (Windows Subsystem for Linux), as their docs say; DevCatz installs them on macOS';
+
 /** Solana's installer (agave-install-init, checksum from the GitHub release), which fetches the stable release. */
 async function installSolana(detail: (line: string) => void): Promise<void> {
   const rel = await latestRelease('anza-xyz/agave');
+  if (isWin) throw new Error(SOLANA_WIN);
   const asset = rel.assets.find((a) => a.name === exe(`agave-install-init-${TRIPLE}`));
   if (!asset?.digest?.startsWith('sha256:')) throw new Error(`No Solana installer with a checksum for this computer (Agave ${rel.tag})`);
   const tmp = dataDir(`.agave-${Date.now()}`);
@@ -325,6 +368,7 @@ async function installSolana(detail: (line: string) => void): Promise<void> {
 
 /** Anchor through avm (its version manager, compiled by cargo: a few minutes), then the latest Anchor. */
 async function installAnchor(detail: (line: string) => void): Promise<void> {
+  if (isWin) throw new Error(SOLANA_WIN);
   const cargo = toolPath('cargo');
   if (!cargo) throw new Error('Rust is not installed: install it first');
   if (!toolPath('avm')) {
