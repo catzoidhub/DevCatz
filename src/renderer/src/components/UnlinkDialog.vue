@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
 import type { ProjectState } from '@shared/types';
-import { attempt, herd, notify } from '../store';
+import { attempt, herd, notify, state } from '../store';
 import CopyName from './CopyName.vue';
 import CatMood from './CatMood.vue';
 
@@ -12,6 +12,8 @@ const emit = defineEmits<{ close: []; done: [] }>();
 const typed = ref('');
 const busy = ref(false);
 const input = ref<HTMLInputElement | null>(null);
+/** Parked, or linked inside a parked folder: unlinking leaves its folder out of the parked sites. */
+const inParked = computed(() => !!props.project.parkedFrom || (state.value?.settings.parkedDirs ?? []).includes(props.project.path.replace(/[\\/][^\\/]+$/, '')));
 const matches = computed(() => typed.value.trim().toLowerCase() === props.project.domain.toLowerCase());
 onMounted(() => nextTick(() => input.value?.focus()));
 
@@ -35,7 +37,9 @@ async function submit() {
           <h3 class="text-lg font-semibold tracking-tight">Unlink {{ project.name }}?</h3>
           <p class="text-xs opacity-70">
             The site is removed from DevCatz: its domain stops working and its dev server is stopped. The project folder and its files are not
-            touched; you can link it again any time.
+            touched;
+            <template v-if="inParked">it is in a parked folder and stays out of it until you bring it back in Settings → Parked folders.</template>
+            <template v-else>you can link it again any time.</template>
           </p>
         </div>
       </div>

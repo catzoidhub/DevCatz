@@ -77,6 +77,9 @@ const setLogin = (on: boolean) => attempt(() => herd.setLaunchAtLogin(on));
 const appDataPath = (...parts: string[]) => [words.appData, 'DevCatz', ...parts].join(words.sep);
 const untrust = () => attempt(() => herd.untrustCa(), isWin ? 'Removed from your Trusted Root certificates' : 'Removed from keychain');
 const unpark = (dir: string) => attempt(() => herd.unparkFolder(dir));
+/** Projects of a parked folder that were unlinked (their folder is left out until brought back). */
+const unlinkedIn = (dir: string) => (s.value.settings.parkIgnore ?? []).filter((p) => p.startsWith(`${dir}/`) || p.startsWith(`${dir}\\`));
+const restoreParked = (path: string) => attempt(() => herd.parkRestore(path), `${path.split(/[\\/]/).pop()} is a site again`);
 const setEditor = (editor: string) => attempt(() => herd.updateSettings({ editor }));
 const setBrowser = (browser: string) => attempt(() => herd.updateSettings({ browser }));
 const chosenBrowser = computed(() => (state.value?.settings.browser ? (state.value.browsers.list.find((b) => b.path === state.value!.settings.browser) ?? null) : (state.value?.browsers.systemDefault ?? null)));
@@ -491,10 +494,20 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <code>&lt;folder&gt;.{{ s.domain.tld }}</code>. A folder parked as a group keeps its sites (and new ones) in that sidebar group.
         </p>
         <ul class="space-y-1">
-          <li v-for="dir in s.settings.parkedDirs" :key="dir" class="flex items-center gap-2">
-            <code class="flex-1 truncate">{{ dir }}</code>
-            <span v-if="s.settings.parkGroups?.[dir]" class="badge badge-ghost badge-sm" title="Its sites, and new ones, go into this sidebar group">group: {{ s.settings.parkGroups[dir].group }}</span>
-            <button class="btn btn-ghost btn-xs" @click="unpark(dir)">Unpark</button>
+          <li v-for="dir in s.settings.parkedDirs" :key="dir">
+            <div class="flex items-center gap-2">
+              <code class="flex-1 truncate">{{ dir }}</code>
+              <span v-if="s.settings.parkGroups?.[dir]" class="badge badge-ghost badge-sm" title="Its sites, and new ones, go into this sidebar group">group: {{ s.settings.parkGroups[dir].group }}</span>
+              <button class="btn btn-ghost btn-xs" @click="unpark(dir)">Unpark</button>
+            </div>
+            <!-- Projects of this folder unlinked one by one: left out until brought back. -->
+            <ul v-if="unlinkedIn(dir).length" class="mt-1 space-y-0.5 pl-4">
+              <li v-for="path in unlinkedIn(dir)" :key="path" class="flex items-center gap-2 text-xs">
+                <span class="opacity-50">unlinked</span>
+                <code class="flex-1 truncate opacity-70">{{ path.slice(dir.length + 1) }}</code>
+                <button class="btn btn-ghost btn-xs" @click="restoreParked(path)">Bring back</button>
+              </li>
+            </ul>
           </li>
         </ul>
         <div><button class="btn btn-sm" @click="park">Park a folder…</button></div>

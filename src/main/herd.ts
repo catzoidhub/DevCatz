@@ -588,7 +588,7 @@ export class Herd extends EventEmitter {
       }
       for (const entry of entries.sort()) {
         const path = join(dir, entry);
-        if (entry.startsWith('.') || byPath.has(path)) continue;
+        if (entry.startsWith('.') || byPath.has(path) || (store.settings.parkIgnore ?? []).includes(path)) continue;
         try {
           if (!statSync(path).isDirectory() || !isProjectDir(path)) continue;
         } catch {
@@ -712,6 +712,8 @@ export class Herd extends EventEmitter {
     if (opts.managedPorts === false) project.managedPorts = false;
     if (opts.autoStart) project.autoStart = true;
     store.setProjects([...store.projects, project]);
+    // Linked by hand after being unlinked from a parked folder: it is a site again, not a left-out one.
+    if ((store.settings.parkIgnore ?? []).includes(path)) store.updateSettings({ parkIgnore: store.settings.parkIgnore.filter((x) => x !== path) });
     this.rescan();
     if (opts.start) this.start(project.id).catch((e) => console.warn(`start ${name}:`, e.message));
     return this.state(this.find(project.id)!);
@@ -724,8 +726,10 @@ export class Herd extends EventEmitter {
     if (wt?.worktreeOf && existsSync(wt.path) && !store.settings.worktreeIgnore.includes(wt.path)) {
       store.updateSettings({ worktreeIgnore: [...store.settings.worktreeIgnore, wt.path] });
     }
-    // A parked project comes back on rescan (with default settings); the UI
-    // offers "unpark folder" for those instead.
+    // A project inside a parked folder (parked, or linked by hand there) would come back on the next rescan as a parked
+    // site: its folder is left out from now on.
+    const inParked = wt && (wt.parkedFrom || store.settings.parkedDirs.includes(dirname(wt.path)));
+    if (wt && inParked && !(store.settings.parkIgnore ?? []).includes(wt.path)) store.updateSettings({ parkIgnore: [...(store.settings.parkIgnore ?? []), wt.path] });
     store.setProjects(store.projects.filter((x) => x.id !== id));
     this.rescan();
   }
@@ -1007,7 +1011,45 @@ export class Herd extends EventEmitter {
   unpark(dir: string): void {
     // The group stays (with its sites gone, it is empty until something else is put in it).
     const { [dir]: _gone, ...rest } = store.settings.parkGroups ?? {};
-    store.updateSettings({ parkedDirs: store.settings.parkedDirs.filter((d) => d !== dir), parkGroups: rest });
+    const ignore = (store.settings.parkIgnore ?? []).filter((p) => dirname(p) !== dir);
+    store.updateSettings({ parkedDirs: store.settings.parkedDirs.filter((d) => d !== dir), parkGroups: rest, parkIgnore: ignore });
+    this.rescan();
+  }
+
+  /** Linked sites whose folder is gone (rescan leaves them out; their settings stay until removed or located). */
+  missingSites(): AppState['missingSites'] {
+    return store.projects.filter((p) => !existsSync(p.path)).map((p) => ({ id: p.id, name: p.name, path: p.path, domain: p.domain }));
+  }
+
+  /** Forgets a missing site: its settings, its ports, its place in the sidebar. */
+  missingRemove(id: string): void {
+    const p = store.projects.find((x) => x.id === id);
+    if (!p || existsSync(p.path)) throw new Error('That site is not missing');
+    store.setProjects(store.projects.filter((x) => x.id !== id));
+    store.removePorts(id);
+    store.updateSettings({
+      favorites: store.settings.favorites.filter((f) => f !== id),
+      siteOrder: store.settings.siteOrder.filter((s) => s !== id),
+      siteGroups: store.settings.siteGroups.map((g) => ({ ...g, sites: g.sites.filter((s) => s !== id) })),
+    });
+    this.rescan();
+  }
+
+  /** A missing site's folder moved: the site keeps its id and settings, at the new path. */
+  missingLocate(id: string, path: string): void {
+    path = resolve(path);
+    const p = store.projects.find((x) => x.id === id);
+    if (!p) throw new Error('That site is gone');
+    if (!isLinkableDir(path)) throw new Error('No project in that folder (package.json, composer.json, go.mod, Cargo.toml, pyproject.toml …)');
+    const other = store.projects.find((x) => x.id !== id && x.path === path);
+    if (other) throw new Error(`That folder is already the site ${other.name}`);
+    store.setProjects(store.projects.map((x) => (x.id === id ? { ...x, path } : x)));
+    this.rescan();
+  }
+
+  /** An unlinked project of a parked folder becomes a site again. */
+  parkRestore(path: string): void {
+    store.updateSettings({ parkIgnore: (store.settings.parkIgnore ?? []).filter((p) => p !== path) });
     this.rescan();
   }
 
@@ -4417,6 +4459,7 @@ export class Herd extends EventEmitter {
   snapshot(editors: string[], login: { launchAtLogin: boolean; packaged: boolean }): AppState {
     return {
       projects: this.projects.map((p) => this.state(p)),
+      missingSites: this.missingSites(),
       settings: store.settings,
       ai: aiSettings(),
       cert: { caExists: this.certs.caExists(), caTrusted: this.caTrusted, caPath: this.certs.caPath },

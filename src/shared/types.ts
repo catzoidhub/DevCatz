@@ -774,6 +774,8 @@ export interface Settings {
    * site found there later joins too; one taken out of the group by hand stays out (it is in `seen`).
    */
   parkGroups: Record<string, { group: string; seen: string[] }>;
+  /** Projects in parked folders unlinked one by one: left out of the parked sites (Settings → Parked folders brings them back). */
+  parkIgnore: string[];
   /** Check nodejs.org / GitHub / go.dev / static-php.dev for newer patch releases and notify. */
   updateNotifications: boolean;
   /** DevCatz's own updates (Catzoid #54): check 30 s after launch and every 6 h. */
@@ -1381,6 +1383,8 @@ export interface BrowsersState {
 
 export interface AppState {
   projects: ProjectState[];
+  /** Linked sites whose folder is gone (deleted or moved outside DevCatz): their settings wait until removed or located. */
+  missingSites: { id: string; name: string; path: string; domain: string }[];
   settings: Settings;
   /** AI provider settings (no keys, only which providers have one). */
   ai: AiSettings;
@@ -2569,6 +2573,12 @@ export interface HerdApi {
   /** Parks a folder; with `group`, its sites (and the ones found there later) go into that sidebar group. */
   parkFolder(path: string, group?: string | null): Promise<void>;
   unparkFolder(path: string): Promise<void>;
+  /** A project of a parked folder that was unlinked becomes a site again. */
+  parkRestore(path: string): Promise<void>;
+  /** Forgets a linked site whose folder is gone (its settings, ports, group place). */
+  missingRemove(id: string): Promise<void>;
+  /** Points a linked site whose folder is gone at the folder where it is now (a picker); false when cancelled. */
+  missingLocate(id: string): Promise<boolean>;
   /** `confirmDomain` must equal the site's domain (typed by the user): guards against a misclick. */
   removeProject(id: string, confirmDomain: string): Promise<void>;
   /** Puts one app of a monorepo / folder site on `<sub>.<site domain>` ('' = the site's own domain); `null` = the default. */
@@ -3126,7 +3136,7 @@ export interface HerdApi {
 }
 
 export const API_METHODS: (keyof HerdApi)[] = [
-  'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder',
+  'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate',
   'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',

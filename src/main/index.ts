@@ -674,6 +674,16 @@ function api(): HerdApi {
     },
     parkFolder: async (path, group) => herd.park(String(path), typeof group === 'string' ? group : null),
     unparkFolder: async (path) => herd.unpark(path),
+    parkRestore: async (path) => herd.parkRestore(String(path)),
+    missingRemove: async (id) => herd.missingRemove(String(id)),
+    missingLocate: async (id) => {
+      const site = herd.missingSites().find((m) => m.id === id);
+      if (!site) throw new Error('That site is not missing');
+      const r = await dialog.showOpenDialog(win!, { title: `Where is ${site.name} now?`, message: `Where is ${site.name} now? (it was ${site.path})`, properties: ['openDirectory'] });
+      if (r.canceled || !r.filePaths[0]) return false;
+      herd.missingLocate(String(id), r.filePaths[0]);
+      return true;
+    },
     removeProject: async (id, confirmDomain) => {
       const p = herd.siteInfo(id);
       const expected = p ? new URL(p.url).hostname : '';

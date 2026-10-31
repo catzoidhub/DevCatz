@@ -94,6 +94,23 @@ watch(section, (v) => {
   }
 });
 const selected = ref<string | null>(null);
+/** The site chosen last, opened again on the next launch (remembered per window, like the section). */
+watch(selected, (id) => {
+  if (!id) return;
+  try {
+    localStorage.setItem('mrcatz-herd.site', id);
+  } catch {
+    /* storage unavailable */
+  }
+});
+function lastSite(): string | null {
+  try {
+    const id = localStorage.getItem('mrcatz-herd.site');
+    return id && projects.value.some((p) => p.id === id) ? id : null;
+  } catch {
+    return null;
+  }
+}
 /** Runtimes section: the runtime shown (remembered per window). */
 const runtime = ref<RuntimeId>(
   (() => {
@@ -360,7 +377,8 @@ const updateDot = computed(() => {
 onMounted(async () => {
   await init();
   ready.value = true;
-  selected.value = projects.value[0]?.id ?? null;
+  // The site open when DevCatz was closed, while it still exists; else the first one.
+  selected.value = lastSite() ?? projects.value[0]?.id ?? null;
   navVisit({ section: section.value, item: itemOf(section.value) ?? null });
   herd.onNavigate(navigate);
   const pending = await herd.takePendingNav();
@@ -491,6 +509,10 @@ async function parkFromDialog() {
   await park();
 }
 
+/** Sidebar notice: a linked site whose folder is gone — point it at the new place, or forget it. */
+const locateMissing = (id: string) => attempt(() => herd.missingLocate(id));
+const removeMissing = (m: { id: string; name: string }) => attempt(() => herd.missingRemove(m.id), `${m.name} removed`);
+
 async function park() {
   const dir = await herd.pickFolder();
   if (dir) parking.value = dir;
@@ -571,6 +593,18 @@ async function park() {
         <kbd v-if="!query" class="kbd kbd-xs opacity-60">/</kbd>
         <button v-else class="btn btn-ghost btn-xs btn-circle" title="Clear" @click="query = ''">×</button>
       </label>
+      <!-- Linked sites whose folder is gone (deleted or moved in Finder): remove them, or point them at the new place. -->
+      <div v-if="state.missingSites.length" class="mx-2 mb-1 rounded-box bg-warning/10 p-2 text-xs">
+        <div class="mb-1 font-medium">{{ state.missingSites.length === 1 ? 'A site’s folder is missing' : `${state.missingSites.length} sites’ folders are missing` }}</div>
+        <div v-for="m in state.missingSites" :key="m.id" class="mt-1.5">
+          <div class="truncate font-medium" :title="m.domain">{{ m.name }}</div>
+          <div class="truncate font-mono text-[10px] opacity-60" :title="m.path">{{ m.path }}</div>
+          <div class="mt-1 flex gap-1">
+            <button class="btn btn-xs" title="Pick the folder where it is now; the site keeps its settings" @click="locateMissing(m.id)">Locate…</button>
+            <button class="btn btn-ghost btn-xs" title="Forget this site and its settings" @click="removeMissing(m)">Remove</button>
+          </div>
+        </div>
+      </div>
       <ul class="menu w-full flex-1 flex-nowrap overflow-y-auto px-2 py-1" @dragend="dropTarget = null">
         <template v-for="sec in sections" :key="sec.key">
           <li

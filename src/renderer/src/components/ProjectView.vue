@@ -997,11 +997,8 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
         <button class="btn btn-primary btn-sm" type="submit" :disabled="!!domainTaken" :title="domainTaken ?? `Save (${keyLabel('mod+S')})`">Save <kbd class="kbd kbd-xs border-white/30 bg-white/15 text-inherit">{{ keyLabel('mod+S') }}</kbd></button>
         <button class="btn btn-ghost btn-sm" type="button" @click="rescan">Re-detect stack</button>
         <div class="flex-1" />
-        <button v-if="!p.parkedFrom" class="btn btn-error btn-outline btn-sm" type="button" @click="unlinking = true">Unlink…</button>
+        <button class="btn btn-error btn-outline btn-sm" type="button" @click="unlinking = true">Unlink…</button>
       </div>
-      <p v-if="p.parkedFrom" class="text-xs opacity-60">
-        This site comes from the parked folder <code>{{ p.parkedFrom }}</code>. Unpark the folder in Settings to remove it.
-      </p>
     </form>
   </section>
   <UnlinkDialog v-if="unlinking" :project="p" @close="unlinking = false" @done="unlinking = false" />

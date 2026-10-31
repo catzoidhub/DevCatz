@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS: Settings = {
   browser: '',
   parkedDirs: [],
   parkGroups: {},
+  parkIgnore: [],
   updateNotifications: true,
   appUpdateAuto: true,
   appUpdateChannel: 'stable',
@@ -131,6 +132,12 @@ class Store {
 
   setPort(key: string, port: number): void {
     this.data.ports[key] = port;
+    this.save();
+  }
+
+  /** Forgets the managed ports of one site (`<id>:<app dir>` keys). */
+  removePorts(siteId: string): void {
+    for (const key of Object.keys(this.data.ports)) if (key.startsWith(`${siteId}:`)) delete this.data.ports[key];
     this.save();
   }
 
