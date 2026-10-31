@@ -269,6 +269,16 @@ async function openTerminal(path: string): Promise<void> {
   await run('open', ['-a', apps[0] ?? 'Terminal', path]);
 }
 
+/** Locate… for a site whose folder is gone: a folder picker, then the site moves there (false when cancelled). */
+async function locateMissing(id: string): Promise<boolean> {
+  const site = herd.missingSites().find((m) => m.id === id);
+  if (!site) throw new Error('That site is not missing');
+  const r = await dialog.showOpenDialog(win!, { title: `Where is ${site.name} now?`, message: `Where is ${site.name} now? (it was ${site.path})`, properties: ['openDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return false;
+  herd.missingLocate(id, r.filePaths[0]);
+  return true;
+}
+
 function api(): HerdApi {
   const project = (id: string) => {
     const p = herd.find(id);
@@ -676,14 +686,7 @@ function api(): HerdApi {
     unparkFolder: async (path) => herd.unpark(path),
     parkRestore: async (path) => herd.parkRestore(String(path)),
     missingRemove: async (id) => herd.missingRemove(String(id)),
-    missingLocate: async (id) => {
-      const site = herd.missingSites().find((m) => m.id === id);
-      if (!site) throw new Error('That site is not missing');
-      const r = await dialog.showOpenDialog(win!, { title: `Where is ${site.name} now?`, message: `Where is ${site.name} now? (it was ${site.path})`, properties: ['openDirectory'] });
-      if (r.canceled || !r.filePaths[0]) return false;
-      herd.missingLocate(String(id), r.filePaths[0]);
-      return true;
-    },
+    missingLocate: async (id) => locateMissing(String(id)),
     removeProject: async (id, confirmDomain) => {
       const p = herd.siteInfo(id);
       const expected = p ? new URL(p.url).hostname : '';
@@ -873,6 +876,18 @@ function api(): HerdApi {
     toggleGroup: async (name) => herd.toggleGroup(name),
     moveGroup: async (name, delta) => herd.moveGroup(name, delta),
     siteMenu: async (id) => {
+      // A site whose folder is gone: point it at the new place, or forget it.
+      const gone = herd.missingSites().find((m) => m.id === id);
+      if (gone) {
+        const report = (e: unknown) => dialog.showErrorBox(gone.name, (e as Error).message);
+        Menu.buildFromTemplate([
+          { label: `${gone.name}: its folder is gone`, enabled: false },
+          { type: 'separator' },
+          { label: 'Locate…', click: () => void locateMissing(id).catch(report) },
+          { label: 'Remove', click: () => { try { herd.missingRemove(id); } catch (e) { report(e); } } },
+        ]).popup({ window: win ?? undefined });
+        return;
+      }
       const { favorites, siteGroups } = store.settings;
       const fav = favorites.includes(id);
       const current = siteGroups.find((g) => g.sites.includes(id))?.name ?? null;
