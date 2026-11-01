@@ -50,10 +50,11 @@ Found a bug? Use **Help → Report a Bug…** in the app, or [open an issue](htt
 
 ## Code signing
 
-Windows: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org). The installer is built by GitHub Actions from this repository and each
-signing request is approved by hand. macOS builds are signed with a Developer ID and notarized by Apple. Team roles,
-privacy and the full policy: [catzoid.com/legal/code-signing](https://catzoid.com/legal/code-signing).
+Windows: the installer is built by GitHub Actions from this repository but is **not code-signed yet**, so Windows
+SmartScreen warns when you open it (*More info → Run anyway*). Signing is free for open-source projects through the
+[SignPath Foundation](https://signpath.org), which asks for a project with more public use first — stars, forks,
+issues, pull requests and write-ups all help us get there. macOS builds are signed with a Developer ID and notarized
+by Apple. Full policy: [catzoid.com/legal/code-signing](https://catzoid.com/legal/code-signing).
 
 ## Licence
 

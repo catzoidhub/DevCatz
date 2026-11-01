@@ -2,10 +2,9 @@
 # Builds the NSIS installer on a Windows runner (icon and version info set without Wine). Once SignPath has approved the
 # project (secret SIGNPATH_API_TOKEN, variables SIGNPATH_ORGANIZATION_ID / _PROJECT_SLUG / _SIGNING_POLICY_SLUG), the
 # .exe is signed there (an approver approves each request on SignPath) and the signed .exe goes on the release.
-# Without signing the run keeps the unsigned .exe as a workflow artifact for testing in a VM. `unsigned_to_release`
-# (the user's call for 1.0.2, 2026-11-01) puts an unsigned .exe on the release for the time being — without latest.yml,
-# so no in-app update installs it, and the site offers only signed installers (apps/api/internal/winsign); a later run
-# with signing replaces it from the same tag.
+# Without signing (SignPath Foundation turned the project down for now, 2026-11-01; the user's call: ship unsigned) the
+# unsigned .exe, its .blockmap and latest.yml go on the release, so the site and in-app updates offer it. A later run
+# with signing replaces them from the same tag. `upload: false` keeps the .exe as a workflow artifact only (VM tests).
 name: Release Windows
 
 on:
@@ -15,13 +14,9 @@ on:
         description: Release tag to build (e.g. v1.0.0)
         required: true
       upload:
-        description: Upload the signed installer to the release
+        description: Upload the installer (signed when SignPath is set up) and latest.yml to the release
         type: boolean
         default: true
-      unsigned_to_release:
-        description: No signing yet — put the unsigned installer on the release (no latest.yml); replaced once signed
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -102,12 +97,12 @@ jobs:
         run: |
           gh release upload ${{ inputs.tag }} (Get-ChildItem dist -Filter '*-Setup-*.exe').FullName "$((Get-ChildItem dist -Filter '*-Setup-*.exe').FullName).blockmap" dist/latest.yml --clobber -R ${{ github.repository }}
 
-      - name: Upload the unsigned installer to the release (no latest.yml)
-        if: env.SIGNPATH_API_TOKEN == '' && inputs.unsigned_to_release
+      - name: Upload the unsigned installer to the release
+        if: env.SIGNPATH_API_TOKEN == '' && inputs.upload
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $exe = (Get-ChildItem dist -Filter '*-Setup-*.exe').FullName
           if ((Get-AuthenticodeSignature $exe).Status -eq 'Valid') { throw 'Signed already: use the normal upload' }
-          gh release upload ${{ inputs.tag }} $exe "$exe.blockmap" --clobber -R ${{ github.repository }}
+          gh release upload ${{ inputs.tag }} $exe "$exe.blockmap" dist/latest.yml --clobber -R ${{ github.repository }}
