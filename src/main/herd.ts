@@ -329,6 +329,34 @@ export class Herd extends EventEmitter {
   readonly reports = new Reports();
   /** Uninstall DevCatz in progress (Catzoid #55). */
   uninstallTask: TaskProgress | null = null;
+  /** Trust the local CA / clean URLs, shown as steps in Welcome and Settings (they can wait on an OS prompt a while). */
+  setupTask: { what: 'ca' | 'urls'; task: TaskProgress } | null = null;
+  private setupClear: ReturnType<typeof setTimeout> | undefined;
+
+  /** Runs one setup job step by step; the window shows it, and the finished state stays for a few seconds. */
+  private async setupSteps<T>(what: 'ca' | 'urls', title: string, steps: string[], work: (step: (i: number, detail?: string) => void) => Promise<T>, doneTitle: string): Promise<T> {
+    clearTimeout(this.setupClear);
+    const set = (p: Partial<TaskProgress>) => {
+      this.setupTask = { what, task: { ...(this.setupTask?.what === what ? this.setupTask.task : { kind: 'setup', title, steps, step: 0 }), ...p } };
+      this.changed();
+    };
+    this.setupTask = null;
+    set({ step: 0 });
+    try {
+      const r = await work((i, detail) => set({ step: i, detail }));
+      set({ step: steps.length, done: true, title: doneTitle, detail: undefined });
+      return r;
+    } catch (e) {
+      const msg = (e as Error).message;
+      set({ error: msg, cancelled: msg === 'Cancelled' });
+      throw e;
+    } finally {
+      this.setupClear = setTimeout(() => {
+        this.setupTask = null;
+        this.changed();
+      }, 8000);
+    }
+  }
   readonly monitor = new Monitor(() => this.monitorTargets());
   /** Watches public/hot of running Laravel+Vite sites to point it at the site's own origin. */
   private hotWatchers = new Map<string, FSWatcher>();
@@ -4268,15 +4296,24 @@ export class Herd extends EventEmitter {
     this.changed();
   }
 
-  async trustCa(): Promise<boolean> {
-    const r = await this.certs.trust();
-    this.refreshNodes();
-    await this.refreshBuns();
-    this.systemNode = await nodes.systemNode();
-    this.caTrusted = await this.certs.isTrusted();
-    this.changed();
-    if (!r.ok && !this.caTrusted) throw new Error(r.message || (isWin ? 'Windows did not add the certificate' : 'Keychain refused the certificate'));
-    return this.caTrusted;
+  trustCa(): Promise<boolean> {
+    const steps = [
+      'Prepare the DevCatz Local CA',
+      isWin ? 'Add it to your Trusted Root certificates — Windows asks “install this certificate?”' : 'Add it to your login keychain — macOS asks for your password or Touch ID',
+      'Check that it is trusted (Node.js and Bun get it too)',
+    ];
+    return this.setupSteps('ca', 'Trusting the DevCatz Local CA', steps, async (step) => {
+      step(1, isWin ? 'Waiting for your answer: if Windows’ question is not in front, click the flashing key icon in the taskbar' : 'Waiting for your password');
+      const r = await this.certs.trust();
+      step(2);
+      this.refreshNodes();
+      await this.refreshBuns();
+      this.systemNode = await nodes.systemNode();
+      this.caTrusted = await this.certs.isTrusted();
+      this.changed();
+      if (!r.ok && !this.caTrusted) throw new Error(/cancel|-128|1223/i.test(r.message) ? 'Cancelled' : r.message || (isWin ? 'Windows did not add the certificate' : 'Keychain refused the certificate'));
+      return this.caTrusted;
+    }, 'DevCatz Local CA trusted — reload your browser tabs');
   }
 
   async untrustCa(): Promise<boolean> {
@@ -4289,19 +4326,29 @@ export class Herd extends EventEmitter {
     return !this.caTrusted;
   }
 
-  async installCleanUrls(): Promise<boolean> {
-    // Only take 127.0.0.1:80/443 when nothing else (Laravel Herd's nginx) listens there.
-    const ours = cleanUrlsCoverIpv4();
-    const ipv4 = {
-      https: ours || !(await isListening('127.0.0.1', 443)),
-      http: ours || !(await isListening('127.0.0.1', 80)),
-    };
-    const r = await installCleanUrls(store.settings.httpsPort, store.settings.httpPort, ipv4);
-    if (!r.ok) throw new Error(r.message.includes('-128') ? 'Cancelled' : r.message);
-    this.cleanUrls = await cleanUrlsWorking();
-    this.cleanHttp = await cleanHttpWorking();
-    this.changed();
-    return this.cleanUrls;
+  installCleanUrls(): Promise<boolean> {
+    const steps = [
+      'Check ports 443 and 80',
+      isWin ? 'Forward ports 443 and 80 to DevCatz — administrator approval' : 'Install the two port forwarders — your administrator password',
+      'Check that sites answer without :' + store.settings.httpsPort,
+    ];
+    return this.setupSteps('urls', 'Turning on names without a port', steps, async (step) => {
+      // Only take 127.0.0.1:80/443 when nothing else (Laravel Herd's nginx) listens there.
+      const ours = cleanUrlsCoverIpv4();
+      const ipv4 = {
+        https: ours || !(await isListening('127.0.0.1', 443)),
+        http: ours || !(await isListening('127.0.0.1', 80)),
+      };
+      step(1, isWin ? 'netsh interface portproxy, through one administrator prompt' : 'LaunchDaemons with /usr/bin/nc, through one password prompt');
+      const r = await installCleanUrls(store.settings.httpsPort, store.settings.httpPort, ipv4);
+      if (!r.ok) throw new Error(r.message.includes('-128') ? 'Cancelled' : r.message);
+      step(2);
+      this.cleanUrls = await cleanUrlsWorking();
+      this.cleanHttp = await cleanHttpWorking();
+      this.changed();
+      if (!this.cleanUrls) throw new Error('The forwarding is installed, but https://<site>.localhost does not answer yet: try again in a moment, or see Settings → Project');
+      return this.cleanUrls;
+    }, 'Names without a port are on');
   }
 
   async uninstallCleanUrls(): Promise<boolean> {
@@ -4592,6 +4639,7 @@ export class Herd extends EventEmitter {
       toolUpdates: this.toolUpdateList,
       reports: this.reports.state(),
       uninstall: this.uninstallTask,
+      setup: this.setupTask,
       git: this.git.state(),
       mail: this.mail.state(),
       expose: this.expose.state(),

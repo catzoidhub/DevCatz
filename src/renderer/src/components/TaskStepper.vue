@@ -6,7 +6,7 @@ import type { TaskProgress } from '@shared/types';
 const props = defineProps<{ task: TaskProgress; compact?: boolean; cancellable?: boolean; dismissable?: boolean }>();
 const emit = defineEmits<{ cancel: []; dismiss: [] }>();
 const running = computed(() => !props.task.done && !props.task.error);
-const VERB: Record<TaskProgress['kind'], string> = { install: 'Install', uninstall: 'Uninstall', update: 'Update', share: 'Sharing' };
+const VERB: Record<TaskProgress['kind'], string> = { install: 'Install', uninstall: 'Uninstall', update: 'Update', share: 'Sharing', setup: 'Setup' };
 const DONE: Record<string, string> = { Installing: 'Installed', Uninstalling: 'Uninstalled', Updating: 'Updated', Sharing: 'Shared' };
 
 const percent = computed(() => {

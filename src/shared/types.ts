@@ -967,7 +967,7 @@ export interface StorageConfig {
 
 /** A multi-step job (install / uninstall) with the step it is on, for a stepper in the UI. */
 export interface TaskProgress {
-  kind: 'install' | 'uninstall' | 'update' | 'share';
+  kind: 'install' | 'uninstall' | 'update' | 'share' | 'setup';
   /** e.g. "Installing RustFS 1.0.3". */
   title: string;
   steps: string[];
@@ -1472,6 +1472,8 @@ export interface AppState {
   reports: ReportsState;
   /** Uninstall DevCatz in progress (Catzoid #55). */
   uninstall: TaskProgress | null;
+  /** Trust the local CA / clean URLs (Welcome, Settings): its steps while it runs, then the result for a few seconds. */
+  setup: { what: 'ca' | 'urls'; task: TaskProgress } | null;
   git: GitState;
   mail: MailState;
   expose: ExposeState;

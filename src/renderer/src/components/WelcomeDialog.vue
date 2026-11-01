@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TaskStepper from './TaskStepper.vue';
 import { confirmCleanUrls, confirmTrustCa } from '../confirms';
 import { computed, ref } from 'vue';
 import CatMood from './CatMood.vue';
@@ -74,11 +75,7 @@ async function done() {
                 <span v-if="busy === 'ca'" class="loading loading-spinner loading-xs" />Trust…
               </button>
             </div>
-            <!-- certutil's own question cannot take the focus from DevCatz: it often only flashes in the taskbar. -->
-            <p v-if="busy === 'ca' && isWin" class="mt-2 text-xs text-warning">
-              Windows now asks “Do you want to install this certificate?” in a window of its own. If it is not in front, click the
-                  flashing key icon in the taskbar, then <b>Yes</b>.
-            </p>
+            <TaskStepper v-if="s.setup?.what === 'ca'" :task="s.setup.task" compact class="mt-3" />
           </div>
 
           <div class="rounded-xl border border-base-300/70 bg-base-200/40 p-4">
@@ -97,6 +94,7 @@ async function done() {
                 <span v-if="busy === 'urls'" class="loading loading-spinner loading-xs" />Enable…
               </button>
             </div>
+            <TaskStepper v-if="s.setup?.what === 'urls'" :task="s.setup.task" compact class="mt-3" />
           </div>
         </div>
 

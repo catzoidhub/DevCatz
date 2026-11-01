@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TaskStepper from './TaskStepper.vue';
 import { confirmCleanUrls, confirmResolver, confirmTrustCa } from '../confirms';
 import { currentOS, words } from '@shared/platform';
 import PageHeader from './PageHeader.vue';
@@ -39,13 +40,10 @@ async function park() {
   if (dir) parking.value = dir;
 }
 
-const trusting = ref(false);
+// The steps show in the card (state.setup); the result stays there a few seconds.
 async function trust() {
   if (!(await confirmTrustCa())) return;
-  trusting.value = true;
-  const ok = await attempt(() => herd.trustCa());
-  trusting.value = false;
-  if (ok) await attempt(async () => undefined, 'Certificate authority trusted. Reload your browser tabs.');
+  await attempt(() => herd.trustCa());
 }
 
 const THEMES: { value: ThemeMode; label: string }[] = [
@@ -99,8 +97,8 @@ function pickBrowser(path: string) {
 
 async function cleanUrls(on: boolean) {
   if (on && !(await confirmCleanUrls())) return;
-  const ok = on ? await attempt(() => herd.installCleanUrls()) : await attempt(() => herd.uninstallCleanUrls());
-  if (ok) await attempt(async () => undefined, on ? 'Clean URLs enabled' : 'Clean URLs disabled');
+  if (on) await attempt(() => herd.installCleanUrls());
+  else if (await attempt(() => herd.uninstallCleanUrls())) notify('success', 'Clean URLs disabled');
 }
 const emit = defineEmits<{ close: [] }>();
 
@@ -387,17 +385,13 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <code>security.enterprise_roots.enabled</code>).
         </p>
         <div class="flex gap-2">
-          <button v-if="!s.cert.caTrusted" class="btn btn-primary btn-sm" :disabled="trusting" @click="trust">
-            <span v-if="trusting" class="loading loading-spinner loading-xs" />Trust certificate authority…
+          <button v-if="!s.cert.caTrusted" class="btn btn-primary btn-sm" :disabled="s.setup?.what === 'ca' && !s.setup.task.done && !s.setup.task.error" @click="trust">
+            Trust certificate authority…
           </button>
-          <!-- certutil's own question cannot take the focus from DevCatz: it often only flashes in the taskbar. -->
-          <p v-if="trusting && isWin" class="text-xs text-warning">
-            Windows now asks “Do you want to install this certificate?” in a window of its own. If it is not in front, click the
-            flashing key icon in the taskbar, then <b>Yes</b>.
-          </p>
           <button v-else class="btn btn-sm btn-outline" @click="untrust">{{ isWin ? 'Remove from Windows' : 'Remove from keychain' }}</button>
           <button class="btn btn-ghost btn-sm" @click="herd.revealCa()">Show ca.crt</button>
         </div>
+        <TaskStepper v-if="s.setup?.what === 'ca'" :task="s.setup.task" compact />
       </div>
     </div>
 
@@ -447,9 +441,10 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           The forwarder is installed but not answering. Make sure the proxy is listening; after changing the proxy ports, disable and enable it again.
         </p>
         <div class="flex gap-2">
-          <button v-if="!s.cleanUrls.installed" class="btn btn-sm btn-primary" @click="cleanUrls(true)">Enable clean URLs…</button>
+          <button v-if="!s.cleanUrls.installed" class="btn btn-sm btn-primary" :disabled="s.setup?.what === 'urls' && !s.setup.task.done && !s.setup.task.error" @click="cleanUrls(true)">Enable clean URLs…</button>
           <button v-if="s.cleanUrls.installed || s.cleanUrls.configured" class="btn btn-sm btn-outline" @click="cleanUrls(false)">Disable</button>
         </div>
+        <TaskStepper v-if="s.setup?.what === 'urls'" :task="s.setup.task" compact />
       </div>
     </div>
 
