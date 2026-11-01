@@ -473,8 +473,8 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
           </a>
         </PopMenu>
       </div>
-      <!-- Measuring copy: every tab at its natural width, never shown. -->
-      <div ref="measureRow" class="seg pointer-events-none invisible absolute top-0 left-0 whitespace-nowrap" aria-hidden="true">
+      <!-- Measuring copy: every tab at its natural width, never shown; fixed, so it never widens the page (a sideways scrollbar on a narrow window). -->
+      <div ref="measureRow" class="seg pointer-events-none invisible fixed top-0 left-0 whitespace-nowrap" aria-hidden="true">
         <a v-for="t in tabs" :key="t" :data-tab="t" class="seg-item normal-case">
           <SiteTabLabel :t="t" :project="p" :ws-status="wsStatus" :search-status="searchStatus" :s3-status="s3Status" />
         </a>

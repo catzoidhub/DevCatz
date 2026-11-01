@@ -97,7 +97,8 @@ function findApp(root: string, ctor: RegExp): string | null {
 
 function detectVenv(root: string): { dir: string | null; version: string | null } {
   for (const d of ['.venv', 'venv', 'env', '.env-py']) {
-    if (!has(root, `${d}/bin/python`)) continue;
+    // A venv keeps its programs in Scripts\ on Windows (python.exe), bin/ elsewhere.
+    if (!has(root, isWin ? `${d}/Scripts/python.exe` : `${d}/bin/python`)) continue;
     const cfg = readText(join(root, d, 'pyvenv.cfg')) ?? '';
     return { dir: d, version: cfg.match(/^version(?:_info)?\s*=\s*([\d.]+)/m)?.[1] ?? null };
   }

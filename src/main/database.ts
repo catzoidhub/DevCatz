@@ -50,10 +50,23 @@ export function stream(cwd: string, command: string, log: Log, env: Record<strin
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     killOnCancel(child);
-    child.stdout.on('data', (d: Buffer) => log(d.toString()));
-    child.stderr.on('data', (d: Buffer) => log(d.toString()));
+    // Whole lines only: a program that writes in pieces (uv, cargo) would otherwise leave half lines and torn colour
+    // codes in the log, one per chunk.
+    const lines = (stream: NodeJS.ReadableStream) => {
+      let rest = '';
+      stream.on('data', (d: Buffer) => {
+        const text = rest + d.toString();
+        const cut = Math.max(text.lastIndexOf('\n'), text.lastIndexOf('\r'));
+        rest = text.slice(cut + 1);
+        if (cut >= 0) log(text.slice(0, cut + 1));
+      });
+      return () => rest && log(rest);
+    };
+    const flush = [lines(child.stdout), lines(child.stderr)];
     child.on('error', (e) => log(e.message));
-    child.on('exit', (code) => {
+    // 'close' comes after the last output, 'exit' may come before it.
+    child.on('close', (code) => {
+      flush.forEach((f) => f());
       log(`→ exit ${code}`);
       resolve(code ?? 1);
     });
