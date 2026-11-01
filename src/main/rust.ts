@@ -85,13 +85,27 @@ const vswhere = () => join(process.env['ProgramFiles(x86)'] || 'C:\\Program File
  * Rust programs need a linker: on macOS the Xcode Command Line Tools', on Windows MSVC's (link.exe from Visual
  * Studio or its Build Tools with the C++ tools) — without it every build fails.
  */
-export async function linkerMissing(): Promise<boolean> {
-  if (isWin) {
-    if (!existsSync(vswhere())) return true;
-    const r = await run(vswhere(), ['-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath'], { timeout: 15_000 });
-    return !r.stdout.trim();
-  }
+export async function linkerMissing(arm = false): Promise<boolean> {
+  if (isWin) return !(await vsWithCpp(arm));
+
   return (await run('xcode-select', ['-p'], { timeout: 10_000 })).code !== 0;
+}
+
+/** MSVC's C++ tools for the toolchain's own CPU: x64, or ARM64 on a Windows on Arm PC (rustup picks aarch64 there). */
+const vcComponent = (arm: boolean) => (arm ? 'Microsoft.VisualStudio.Component.VC.Tools.ARM64' : 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64');
+
+/** The Visual Studio / Build Tools folder that has the C++ tools Rust links with, or null. */
+async function vsWithCpp(arm: boolean): Promise<string | null> {
+  if (!existsSync(vswhere())) return null;
+  const r = await run(vswhere(), ['-latest', '-products', '*', '-requires', vcComponent(arm), '-property', 'installationPath'], { timeout: 15_000 });
+  return r.stdout.trim() || null;
+}
+
+/** An installed Build Tools (with or without the C++ tools): the installer then modifies it instead of adding another. */
+async function buildToolsPath(): Promise<string | null> {
+  if (!existsSync(vswhere())) return null;
+  const r = await run(vswhere(), ['-latest', '-products', 'Microsoft.VisualStudio.Product.BuildTools', '-property', 'installationPath'], { timeout: 15_000 });
+  return r.stdout.trim() || null;
 }
 
 /**
@@ -99,7 +113,7 @@ export async function linkerMissing(): Promise<boolean> {
  * rustup's MSVC toolchain links with. The installer is checked for Microsoft's signature (no checksum is published),
  * asks for administrator rights itself (UAC) and shows its own progress window; a few GB, several minutes.
  */
-export async function installBuildTools(progress: (p: RuntimeInstallProgress) => void): Promise<void> {
+export async function installBuildTools(progress: (p: RuntimeInstallProgress) => void, arm = false): Promise<void> {
   const tmp = dataDir(`.buildtools-${Date.now()}`);
   mkdirSync(tmp, { recursive: true });
   try {
@@ -111,7 +125,13 @@ export async function installBuildTools(progress: (p: RuntimeInstallProgress) =>
     const [status, subject = ''] = sig.stdout.trim().split('|');
     if (status !== 'Valid' || !/O=Microsoft Corporation/.test(subject)) throw new Error(`The Build Tools installer is not signed by Microsoft (${status || sig.stderr.trim()}); nothing was run`);
     progress({ version: 'Build Tools', phase: 'extract', received: 0, total: 0, detail: 'Installing the C++ build tools (Visual Studio Installer window)…' });
-    const args = ['--passive', '--wait', '--norestart', '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--includeRecommended'].map((a) => `'${a}'`).join(',');
+    const existing = await buildToolsPath();
+    const args = [
+      ...(existing ? ['modify', '--installPath', `"${existing}"`] : []),
+      ...['--passive', '--wait', '--norestart', '--add', 'Microsoft.VisualStudio.Workload.VCTools', '--add', vcComponent(arm), '--includeRecommended'],
+    ]
+      .map((a) => `'${a}'`)
+      .join(',');
     const ps = `try { $p = Start-Process -FilePath '${exePath}' -ArgumentList ${args} -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { Write-Error $_.Exception.Message; exit 1223 }`;
     const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 3 * 3600_000 });
     // 3010: installed, a restart finishes it; 1223: the administrator prompt was declined.

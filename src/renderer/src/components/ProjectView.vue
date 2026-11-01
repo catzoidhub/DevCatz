@@ -265,7 +265,12 @@ async function repairElectron() {
 }
 async function installDeps() {
   tab.value = 'logs';
-  await attempt(() => herd.installDeps(p.value.id), 'Dependencies installed');
+  if (!(await attempt(() => herd.installDeps(p.value.id).then(() => true)))) return;
+  // The site is detected again after an install; when a folder still lacks its packages, say so instead of leaving
+  // the same "not installed" notice as if the button had done nothing.
+  await new Promise((r) => setTimeout(r, 1500));
+  if (p.value.stack.depsMissing) notify('error', `The install finished, but ${p.value.stack.warnings.find((w) => /missing/i.test(w)) ?? 'some dependencies are still missing'} See Logs.`);
+  else notify('success', 'Dependencies installed');
 }
 
 const runtimes = computed(() => runtimesOf(p.value));

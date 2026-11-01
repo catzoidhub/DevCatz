@@ -390,6 +390,23 @@ pre,
 .alert.alert-warning {
   --alert-tone: var(--color-warning);
 }
+/*
+ * An alert with an action (Install dependencies (npm install), Repair Electron …): on a narrow window the text wraps
+ * first, then the button moves below it, keeping its label inside — DaisyUI's grid squeezed the button until the label
+ * spilled out of the box.
+ */
+.alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.alert > .flex-1 {
+  min-width: 12rem;
+}
+.alert > .btn {
+  flex-shrink: 0;
+  max-width: 100%;
+}
 .toast .alert {
   box-shadow: var(--shadow-pop);
   /* Solid, so it never blends into the window behind it. */

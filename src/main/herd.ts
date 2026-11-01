@@ -1781,7 +1781,9 @@ export class Herd extends EventEmitter {
     if (p && this.stacks.get(id)?.runtime === 'php') return this.installPhpDeps(p);
     if (p && this.stacks.get(id)?.runtime === 'python') return this.installPythonDeps(p, this.stacks.get(id)!);
     if (p && this.stacks.get(id)?.runtime === 'rust') return this.installRustDeps(p);
-    if (!p || !pm) return;
+    if (!p) throw new Error('This site is not linked any more');
+    // A button that did nothing at all looked broken: say why there is nothing to run.
+    if (!pm) throw new Error('No package.json here to install from: use Re-detect stack (Settings) if the project changed');
     if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
     if (pm === 'bun' && !this.bunChoice(p).binDir) throw new Error('Bun is not installed. Install it on the Bun page (sidebar) first.');
     if (pm !== 'bun' && !this.nodeChoice(p).version) throw new Error(NO_NODE);
@@ -1812,11 +1814,11 @@ export class Herd extends EventEmitter {
   private async installFolderDeps(p: ProjectConfig, stack: StackInfo): Promise<void> {
     if (this.dbTasks.has(p.id)) throw new Error(`Busy: ${this.dbTasks.get(p.id)}`);
     // One pass per folder (a PHP root lists its FPM app and its Vite app, both in `.`).
-    const steps = await this.folderInstallSteps(p, [...new Set(stack.apps.map((a) => a.dir))]);
-    if (!steps.length) return;
     this.dbTasks.set(p.id, 'installing dependencies');
     this.changed();
     try {
+      const steps = await this.folderInstallSteps(p, [...new Set(stack.apps.map((a) => a.dir))]);
+      if (!steps.length) throw new Error('No package.json, composer.json, go.mod, Cargo.toml or pyproject.toml in the site’s folders to install from');
       await this.runInstallSteps(p, steps);
     } finally {
       this.dbTasks.delete(p.id);
@@ -2683,7 +2685,7 @@ export class Herd extends EventEmitter {
     this.rustToolchains = rusts.sortInstalled(await rusts.listInstalled());
     this.rustTargets = await rusts.installedTargets();
     this.rustTools = await rusts.toolStates();
-    this.rustLinkerMissing = this.rustupVer ? await rusts.linkerMissing() : false;
+    this.rustLinkerMissing = this.rustupVer ? await rusts.linkerMissing(this.rustArmHost()) : false;
   }
 
   /** The toolchain (rust-toolchain.toml's, else rustup's default) and the CLIs / target the site's apps run with. */
@@ -2755,6 +2757,11 @@ export class Herd extends EventEmitter {
     );
   }
 
+  /** rustup's default toolchain is for an Arm CPU (Windows on Arm): it links with MSVC's ARM64 tools. */
+  private rustArmHost(): boolean {
+    return (this.rustToolchains.find((t) => t.isDefault)?.channel ?? '').includes('aarch64');
+  }
+
   /** Windows: the C++ Build Tools Rust links with (Microsoft's installer, UAC); the warning goes once they are there. */
   async rustInstallLinker(): Promise<void> {
     await this.rustTask('Build Tools', (detail) =>
@@ -2763,7 +2770,7 @@ export class Herd extends EventEmitter {
           this.rustInstalling = { ...prog, version: 'Build Tools' };
           this.changed();
         } else if (prog.detail) detail(prog.detail);
-      }),
+      }, this.rustArmHost()),
     );
   }
 
