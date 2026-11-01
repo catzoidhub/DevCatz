@@ -129,7 +129,9 @@ export class AppUpdater {
         n.show();
       }
     } catch (e) {
-      this.set({ status: 'error', error: nice(e), lastChecked: Date.now() });
+      // No Windows build released yet (latest.yml missing): nothing newer for this copy, not a failure.
+      if (process.platform === 'win32' && /HttpError: 404|404/.test((e as Error)?.message ?? '')) this.set({ status: 'none', error: null, lastChecked: Date.now() });
+      else this.set({ status: 'error', error: nice(e), lastChecked: Date.now() });
     }
     return this.st;
   }

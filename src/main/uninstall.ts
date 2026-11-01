@@ -1,6 +1,6 @@
 import { app, shell } from 'electron';
-import { existsSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { AiProvider, TaskProgress, UninstallPlan } from '@shared/types';
 import { spawn } from 'node:child_process';
@@ -58,8 +58,72 @@ function smallLeftovers(): string[] {
   ].filter((p) => existsSync(p));
 }
 
+/** Windows: what electron-updater keeps for DevCatz outside the data folder. */
+function winLeftovers(): string[] {
+  const local = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local');
+  return [join(local, 'devcatz-updater')].filter((p) => existsSync(p));
+}
+
+/**
+ * Windows: a detached PowerShell that finishes what cannot be done while DevCatz runs, in a small window of its own so
+ * the user sees it happen (DevCatz's own dialog is gone by then): waits for DevCatz to quit, stops programs still
+ * running from its data folder (a runtime it installed holds its files), runs the NSIS uninstaller silently (the app,
+ * its desktop / Start menu shortcuts, its entry in Installed apps), removes the devcatz:// link, moves the folders to
+ * the Recycle Bin, then says it is done and removes itself.
+ */
+function afterQuitWin(uninstaller: string | null, dataDir: string, folders: string[]): void {
+  const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
+  const script = String.raw`$ErrorActionPreference = 'SilentlyContinue'
+$exe = ${q(process.execPath)}
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
+Add-Type -Namespace Win -Name Dpi -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();'
+[Win.Dpi]::SetProcessDPIAware() | Out-Null
+[Windows.Forms.Application]::EnableVisualStyles()
+$f = New-Object Windows.Forms.Form
+$f.Text = 'Uninstalling DevCatz'; $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false
+$f.StartPosition = 'CenterScreen'; $f.ClientSize = New-Object Drawing.Size(460, 250); $f.Font = New-Object Drawing.Font('Segoe UI', 9.5); $f.TopMost = $true
+$f.Icon = [Drawing.Icon]::ExtractAssociatedIcon($exe)
+$title = New-Object Windows.Forms.Label; $title.Text = 'Removing DevCatz from this PC'; $title.Font = New-Object Drawing.Font('Segoe UI Semibold', 11)
+$title.SetBounds(20, 16, 420, 26); $f.Controls.Add($title)
+$names = @('Waiting for DevCatz to close', 'Stopping programs it started', 'Removing the app, its shortcuts and its entry in Installed apps', 'Moving its data and settings to the Recycle Bin')
+$rows = @(); $y = 52
+foreach ($n in $names) { $l = New-Object Windows.Forms.Label; $l.Text = "○  $n"; $l.ForeColor = [Drawing.Color]::Gray; $l.SetBounds(20, $y, 420, 22); $f.Controls.Add($l); $rows += $l; $y += 26 }
+$bar = New-Object Windows.Forms.ProgressBar; $bar.SetBounds(20, 162, 420, 14); $bar.Maximum = $names.Count; $f.Controls.Add($bar)
+$note = New-Object Windows.Forms.Label; $note.Text = 'Your projects and their files are not touched.'; $note.ForeColor = [Drawing.Color]::Gray; $note.SetBounds(20, 184, 300, 40); $f.Controls.Add($note)
+$ok = New-Object Windows.Forms.Button; $ok.Text = 'Close'; $ok.SetBounds(350, 206, 90, 30); $ok.Enabled = $false; $ok.Add_Click({ $f.Close() }); $f.Controls.Add($ok)
+$f.Show(); [Windows.Forms.Application]::DoEvents()
+function Step($i) { if ($i -gt 0) { $rows[$i - 1].Text = '✓  ' + $names[$i - 1]; $rows[$i - 1].ForeColor = [Drawing.Color]::FromArgb(22, 128, 61) }; if ($i -lt $rows.Count) { $rows[$i].Text = '●  ' + $names[$i]; $rows[$i].ForeColor = [Drawing.SystemColors]::ControlText }; $bar.Value = $i; [Windows.Forms.Application]::DoEvents() }
+function Wait($cond) { for ($i = 0; $i -lt 240 -and (& $cond); $i++) { Start-Sleep -Milliseconds 250; [Windows.Forms.Application]::DoEvents() } }
+Step 0; Wait { Get-Process | Where-Object { $_.Path -eq $exe } }
+Step 1; Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like ${q(`${dataDir}\\*`)} } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+Step 2
+${uninstaller ? `$u = Start-Process -FilePath ${q(uninstaller)} -ArgumentList '/S' -PassThru; Wait { -not $u.HasExited }
+# The uninstaller hands over to a copy of itself in the temp folder and returns at once: wait for the app to go.
+Wait { Test-Path $exe }` : ''}
+# The devcatz:// link Electron registered for this user (the uninstaller leaves it), when it still points here.
+$link = 'HKCU:\Software\Classes\devcatz'; if ((Get-ItemProperty "$link\shell\open\command").'(default)' -like "*$exe*") { Remove-Item -Recurse -Force $link }
+Step 3
+foreach ($p in @(${folders.map(q).join(', ')})) { if (Test-Path $p) { try { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p, 'OnlyErrorDialogs', 'SendToRecycleBin') } catch { Remove-Item -Recurse -Force $p } }; [Windows.Forms.Application]::DoEvents() }
+Step 4
+$title.Text = 'DevCatz has been removed'
+$note.Text = 'Your projects and their files are not touched. Its data is in the Recycle Bin until you empty it.'
+$ok.Enabled = $true; $ok.Focus() | Out-Null
+Remove-Item -Force $MyInvocation.MyCommand.Path
+$t = New-Object Windows.Forms.Timer; $t.Interval = 30000; $t.Add_Tick({ $f.Close() }); $t.Start()
+while ($f.Visible) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 50 }
+`;
+  const file = join(tmpdir(), `devcatz-uninstall-${Date.now()}.ps1`);
+  // UTF-8 with a byte-order mark: Windows PowerShell 5 reads a file without one as the ANSI code page (✓ ● ○).
+  writeFileSync(file, `﻿${script.replace(/\r?\n/g, '\r\n')}`);
+  spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', file], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+}
+
 export function uninstallPlan(): UninstallPlan {
-  const others = OTHER_APPS.filter((n) => ['/Applications', join(homedir(), 'Applications')].some((d) => existsSync(join(d, `${n}.app`))));
+  // Windows: each Catzoid app installs per user into %LOCALAPPDATA%\Programs\<App>\<App>.exe.
+  const local = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local');
+  const others = OTHER_APPS.filter((n) =>
+    isWin ? existsSync(join(local, 'Programs', n, `${n}.exe`)) : ['/Applications', join(homedir(), 'Applications')].some((d) => existsSync(join(d, `${n}.app`))),
+  );
   return {
     app: appBundle(),
     homebrew: caskroom() !== null,
@@ -97,6 +161,16 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
   app.setLoginItemSettings({ openAtLogin: false });
 
   set({ step: 3, detail: opts.removeData ? plan.dataDir : 'Kept: the data folder' });
+  if (isWin) {
+    // The data folder is also this running app's own profile, which Windows keeps locked: the folders go to the
+    // Recycle Bin from a helper that waits until DevCatz has quit (with the app's own uninstaller, step 4).
+    if (removeShared) for (const k of plan.sharedKeys) await setSharedKey(k as AiProvider, '').catch(() => undefined);
+    const folders = [...(opts.removeData ? [plan.dataDir, ...winLeftovers()] : []), ...(removeShared && existsSync(plan.sharedDir) ? [plan.sharedDir] : [])];
+    set({ step: 4, detail: plan.app ?? 'A development build: the app stays' });
+    afterQuitWin(plan.app, plan.dataDir, folders);
+    set({ step: 5, done: true, detail: '' });
+    return;
+  }
   if (opts.removeData) {
     if (!isWin) await run('/usr/bin/security', ['delete-generic-password', '-s', 'DevCatz Safe Storage'], { timeout: 15_000 }).catch(() => undefined);
     for (const p of [...smallLeftovers(), plan.dataDir]) await shell.trashItem(p).catch(() => rmSync(p, { recursive: true, force: true }));
@@ -110,13 +184,12 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
   if (plan.homebrew) {
     const brew = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'].find((b) => existsSync(b));
     if (brew) await run(brew, ['uninstall', '--cask', 'devcatz'], { timeout: 300_000 });
-  } else if (plan.app && isWin) {
-    // Silent (/S) and after DevCatz is gone: the uninstaller cannot remove a running DevCatz.exe.
-    spawn(plan.app, ['/S'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
   } else if (plan.app) {
     await shell.trashItem(plan.app);
   }
   set({ step: 5, done: true, detail: '' });
 }
 
-export const UNINSTALL_STEPS = ['Stop everything', 'Remove port forwarding and DNS files', 'Remove the local certificate authority', 'Remove data and settings', 'Move DevCatz to the Trash'];
+export const UNINSTALL_STEPS = isWin
+  ? ['Stop everything', 'Remove port forwarding and the Path entry', 'Remove the local certificate authority', 'Remove data and settings (once DevCatz has quit)', 'Remove DevCatz with its uninstaller']
+  : ['Stop everything', 'Remove port forwarding and DNS files', 'Remove the local certificate authority', 'Remove data and settings', 'Move DevCatz to the Trash'];
