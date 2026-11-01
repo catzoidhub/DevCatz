@@ -1,8 +1,11 @@
 # Windows x64 installer (Catzoid #57 / #16), started by hand: `gh workflow run release-windows.yml -f tag=v1.0.0`.
 # Builds the NSIS installer on a Windows runner (icon and version info set without Wine). Once SignPath has approved the
 # project (secret SIGNPATH_API_TOKEN, variables SIGNPATH_ORGANIZATION_ID / _PROJECT_SLUG / _SIGNING_POLICY_SLUG), the
-# .exe is signed there and only a signed .exe goes on the release. Without signing the run keeps the unsigned .exe as
-# a workflow artifact for testing in a VM — never on the release (the site and the in-app updates read the release).
+# .exe is signed there (an approver approves each request on SignPath) and the signed .exe goes on the release.
+# Without signing the run keeps the unsigned .exe as a workflow artifact for testing in a VM. `unsigned_to_release`
+# (the user's call for 1.0.2, 2026-11-01) puts an unsigned .exe on the release for the time being — without latest.yml,
+# so no in-app update installs it, and the site offers only signed installers (apps/api/internal/winsign); a later run
+# with signing replaces it from the same tag.
 name: Release Windows
 
 on:
@@ -15,6 +18,10 @@ on:
         description: Upload the signed installer to the release
         type: boolean
         default: true
+      unsigned_to_release:
+        description: No signing yet — put the unsigned installer on the release (no latest.yml); replaced once signed
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -56,9 +63,10 @@ jobs:
             dist/latest.yml
 
       # SignPath: the inputs come from the project page once it is approved; check them then.
+      # The approver approves by hand on SignPath: the run waits for it up to 2 h.
       - name: Sign (SignPath)
         if: env.SIGNPATH_API_TOKEN != ''
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -66,6 +74,7 @@ jobs:
           signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
           output-artifact-directory: signed
 
       - name: Use the signed installer, refresh latest.yml
@@ -92,3 +101,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload ${{ inputs.tag }} (Get-ChildItem dist -Filter '*-Setup-*.exe').FullName "$((Get-ChildItem dist -Filter '*-Setup-*.exe').FullName).blockmap" dist/latest.yml --clobber -R ${{ github.repository }}
+
+      - name: Upload the unsigned installer to the release (no latest.yml)
+        if: env.SIGNPATH_API_TOKEN == '' && inputs.unsigned_to_release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $exe = (Get-ChildItem dist -Filter '*-Setup-*.exe').FullName
+          if ((Get-AuthenticodeSignature $exe).Status -eq 'Valid') { throw 'Signed already: use the normal upload' }
+          gh release upload ${{ inputs.tag }} $exe "$exe.blockmap" --clobber -R ${{ github.repository }}

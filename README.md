@@ -48,6 +48,13 @@ bun run package      # a signed DMG in dist/ (notarized when a notarytool profil
 
 Found a bug? Use **Help → Report a Bug…** in the app, or [open an issue](https://github.com/catzoidhub/DevCatz/issues).
 
+## Code signing
+
+Windows: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org). The installer is built by GitHub Actions from this repository and each
+signing request is approved by hand. macOS builds are signed with a Developer ID and notarized by Apple. Team roles,
+privacy and the full policy: [catzoid.com/legal/code-signing](https://catzoid.com/legal/code-signing).
+
 ## Licence
 
 DevCatz is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License

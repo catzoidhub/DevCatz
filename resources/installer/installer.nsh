@@ -14,7 +14,7 @@
 
   !macro customWelcomePage
     !define MUI_WELCOMEPAGE_TITLE "Welcome to DevCatz"
-    !define MUI_WELCOMEPAGE_TEXT "Your projects on their own names, like https://shop.localhost, with the right runtime, a database a click away, and mail, storage and search when they need them.$\r$\n$\r$\nDevCatz installs for your account only: no administrator rights needed, and nothing changes outside its own folders until you choose it inside the app.$\r$\n$\r$\nClick Next to continue."
+    !define MUI_WELCOMEPAGE_TEXT "Your projects on their own names, like https://shop.localhost, with the right runtime, a database a click away, and mail, storage and search when they need them.$\r$\n$\r$\nDevCatz installs for your account only: no administrator rights needed, and nothing changes outside its own folders until you choose it inside the app.$\r$\n$\r$\nPrivacy: DevCatz checks catzoid.com for updates and sends crash reports only if you agree; both can be turned off in Settings. Policy: catzoid.com/legal/privacy$\r$\n$\r$\nClick Next to continue."
     !insertmacro skipPageIfUpdated
     !insertmacro MUI_PAGE_WELCOME
 
