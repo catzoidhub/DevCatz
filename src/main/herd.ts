@@ -342,6 +342,8 @@ export class Herd extends EventEmitter {
     };
     this.setupTask = null;
     set({ step: 0 });
+    // Done: gone after a few seconds; a failure stays longer so it can be read.
+    let keep = 4000;
     try {
       const r = await work((i, detail) => set({ step: i, detail }));
       set({ step: steps.length, done: true, title: doneTitle, detail: undefined });
@@ -349,12 +351,13 @@ export class Herd extends EventEmitter {
     } catch (e) {
       const msg = (e as Error).message;
       set({ error: msg, cancelled: msg === 'Cancelled' });
+      keep = msg === 'Cancelled' ? 4000 : 15000;
       throw e;
     } finally {
       this.setupClear = setTimeout(() => {
         this.setupTask = null;
         this.changed();
-      }, 8000);
+      }, keep);
     }
   }
   readonly monitor = new Monitor(() => this.monitorTargets());
@@ -4316,14 +4319,23 @@ export class Herd extends EventEmitter {
     }, 'DevCatz Local CA trusted — reload your browser tabs');
   }
 
-  async untrustCa(): Promise<boolean> {
-    await this.certs.untrust();
-    this.refreshNodes();
-    await this.refreshBuns();
-    this.systemNode = await nodes.systemNode();
-    this.caTrusted = await this.certs.isTrusted();
-    this.changed();
-    return !this.caTrusted;
+  untrustCa(): Promise<boolean> {
+    const steps = [
+      isWin ? 'Remove it from your Trusted Root certificates — Windows asks “delete this certificate?”' : 'Remove it from your login keychain — macOS asks for your password',
+      'Check that it is gone',
+    ];
+    return this.setupSteps('ca', 'Removing the DevCatz Local CA', steps, async (step) => {
+      step(0, isWin ? 'Waiting for your answer: if Windows’ question is not in front, click the flashing key icon in the taskbar' : 'Waiting for your password');
+      await this.certs.untrust();
+      step(1);
+      this.refreshNodes();
+      await this.refreshBuns();
+      this.systemNode = await nodes.systemNode();
+      this.caTrusted = await this.certs.isTrusted();
+      this.changed();
+      if (this.caTrusted) throw new Error(isWin ? 'The certificate is still in your Trusted Root certificates (the question was answered No?)' : 'The certificate is still in the keychain');
+      return true;
+    }, 'DevCatz Local CA removed');
   }
 
   installCleanUrls(): Promise<boolean> {
@@ -4351,13 +4363,21 @@ export class Herd extends EventEmitter {
     }, 'Names without a port are on');
   }
 
-  async uninstallCleanUrls(): Promise<boolean> {
-    const r = await uninstallCleanUrls();
-    if (!r.ok) throw new Error(r.message.includes('-128') ? 'Cancelled' : r.message);
-    this.cleanUrls = await cleanUrlsWorking();
-    this.cleanHttp = await cleanHttpWorking();
-    this.changed();
-    return !this.cleanUrls;
+  uninstallCleanUrls(): Promise<boolean> {
+    const steps = [
+      isWin ? 'Remove the forwarding of ports 443 and 80 — administrator approval' : 'Remove the two port forwarders — your administrator password',
+      'Check that sites answer on :' + store.settings.httpsPort + ' again',
+    ];
+    return this.setupSteps('urls', 'Turning off names without a port', steps, async (step) => {
+      step(0, isWin ? 'netsh interface portproxy, through one administrator prompt' : 'LaunchDaemons, through one password prompt');
+      const r = await uninstallCleanUrls();
+      if (!r.ok) throw new Error(r.message.includes('-128') ? 'Cancelled' : r.message);
+      step(1);
+      this.cleanUrls = await cleanUrlsWorking();
+      this.cleanHttp = await cleanHttpWorking();
+      this.changed();
+      return !this.cleanUrls;
+    }, 'Names without a port are off');
   }
 
   // ------------------------------------------------------------------ monitoring

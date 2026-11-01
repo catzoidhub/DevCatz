@@ -76,7 +76,10 @@ const quitApp = () => attempt(() => herd.quitApp());
 const setLogin = (on: boolean) => attempt(() => herd.setLaunchAtLogin(on));
 /** A path under DevCatz's data folder, as this OS writes it (placeholders only). */
 const appDataPath = (...parts: string[]) => [words.appData, 'DevCatz', ...parts].join(words.sep);
-const untrust = () => attempt(() => herd.untrustCa(), isWin ? 'Removed from your Trusted Root certificates' : 'Removed from keychain');
+// Steps and result show in the card (state.setup).
+const untrust = () => attempt(() => herd.untrustCa());
+/** A trust / clean-URL job is running: its buttons wait. */
+const setupBusy = (what: 'ca' | 'urls') => !!state.value?.setup && state.value.setup.what === what && !state.value.setup.task.done && !state.value.setup.task.error;
 const unpark = (dir: string) => attempt(() => herd.unparkFolder(dir));
 /** Projects of a parked folder that were unlinked (their folder is left out until brought back). */
 const unlinkedIn = (dir: string) => (s.value.settings.parkIgnore ?? []).filter((p) => p.startsWith(`${dir}/`) || p.startsWith(`${dir}\\`));
@@ -98,7 +101,7 @@ function pickBrowser(path: string) {
 async function cleanUrls(on: boolean) {
   if (on && !(await confirmCleanUrls())) return;
   if (on) await attempt(() => herd.installCleanUrls());
-  else if (await attempt(() => herd.uninstallCleanUrls())) notify('success', 'Clean URLs disabled');
+  else await attempt(() => herd.uninstallCleanUrls());
 }
 const emit = defineEmits<{ close: [] }>();
 
@@ -385,10 +388,10 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <code>security.enterprise_roots.enabled</code>).
         </p>
         <div class="flex gap-2">
-          <button v-if="!s.cert.caTrusted" class="btn btn-primary btn-sm" :disabled="s.setup?.what === 'ca' && !s.setup.task.done && !s.setup.task.error" @click="trust">
+          <button v-if="!s.cert.caTrusted" class="btn btn-primary btn-sm" :disabled="setupBusy('ca')" @click="trust">
             Trust certificate authority…
           </button>
-          <button v-else class="btn btn-sm btn-outline" @click="untrust">{{ isWin ? 'Remove from Windows' : 'Remove from keychain' }}</button>
+          <button v-else class="btn btn-sm btn-outline" :disabled="setupBusy('ca')" @click="untrust">{{ isWin ? 'Remove from Windows' : 'Remove from keychain' }}</button>
           <button class="btn btn-ghost btn-sm" @click="herd.revealCa()">Show ca.crt</button>
         </div>
         <TaskStepper v-if="s.setup?.what === 'ca'" :task="s.setup.task" compact />
@@ -441,8 +444,8 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           The forwarder is installed but not answering. Make sure the proxy is listening; after changing the proxy ports, disable and enable it again.
         </p>
         <div class="flex gap-2">
-          <button v-if="!s.cleanUrls.installed" class="btn btn-sm btn-primary" :disabled="s.setup?.what === 'urls' && !s.setup.task.done && !s.setup.task.error" @click="cleanUrls(true)">Enable clean URLs…</button>
-          <button v-if="s.cleanUrls.installed || s.cleanUrls.configured" class="btn btn-sm btn-outline" @click="cleanUrls(false)">Disable</button>
+          <button v-if="!s.cleanUrls.installed" class="btn btn-sm btn-primary" :disabled="setupBusy('urls')" @click="cleanUrls(true)">Enable clean URLs…</button>
+          <button v-if="s.cleanUrls.installed || s.cleanUrls.configured" class="btn btn-sm btn-outline" :disabled="setupBusy('urls')" @click="cleanUrls(false)">Disable</button>
         </div>
         <TaskStepper v-if="s.setup?.what === 'urls'" :task="s.setup.task" compact />
       </div>
