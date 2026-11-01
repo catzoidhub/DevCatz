@@ -82,7 +82,8 @@ export function siteBase(): string {
 export function readShared(): Shared {
   if (cache) return cache;
   try {
-    const v = JSON.parse(readFileSync(FILE, 'utf8')) as Shared;
+    // A byte-order mark (Notepad / PowerShell 5 on Windows) is not JSON: dropped first.
+    const v = JSON.parse(readFileSync(FILE, 'utf8').replace(/^\uFEFF/, '')) as Shared;
     cache = v && typeof v === 'object' ? { ...v, version: 1 } : { version: 1 };
   } catch {
     cache = { version: 1 };

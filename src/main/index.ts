@@ -276,7 +276,8 @@ function broadcast(channel: string, payload: unknown): void {
 /** Windows: starts a command line detached (an editor's CLI, Windows Terminal); false when it could not start. */
 function startDetached(command: string, args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: false, shell: true });
+    // One command line (the caller quotes paths): Node warns about separate args with shell (DEP0190).
+    const child = spawn([command, ...args].join(' '), { detached: true, stdio: 'ignore', windowsHide: false, shell: true });
     child.once('error', () => resolve(false));
     child.once('spawn', () => {
       child.unref();

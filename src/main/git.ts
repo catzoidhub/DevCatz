@@ -144,7 +144,8 @@ export async function gitVersion(): Promise<string | null> {
 export async function repoRoot(dir: string): Promise<string | null> {
   if (!existsSync(dir)) return null;
   const r = await git(dir, ['rev-parse', '--show-toplevel'], { timeout: 10_000 });
-  const root = r.code === 0 ? r.stdout.trim() : null;
+  // resolve(): git prints C:/Users/… on Windows; paths are compared with Node's C:\Users\….
+  const root = r.code === 0 ? resolve(r.stdout.trim()) : null;
   // A repository at the home folder (a stray `git init ~`) is not the site's: every site would look changed.
   return root && resolve(root) !== resolve(homedir()) ? root : null;
 }
@@ -242,9 +243,10 @@ export async function status(dir: string): Promise<Omit<GitStatus, 'remotes'> & 
 
 /** A path inside the repository (no escaping it with ../ or an absolute path). */
 export function inside(root: string, file: string): string {
-  const abs = resolve(root, file);
-  if (abs !== root && !abs.startsWith(root + sep)) throw new Error(`${file} is outside the repository`);
-  return relative(root, abs);
+  const base = resolve(root);
+  const abs = resolve(base, file);
+  if (abs !== base && !abs.startsWith(base + sep)) throw new Error(`${file} is outside the repository`);
+  return relative(base, abs) || '.';
 }
 
 export async function diff(root: string, file: string, staged: boolean): Promise<string> {
