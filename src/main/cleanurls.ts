@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { request } from 'node:https';
+import { DNS_HOST } from './dns';
 import { run } from './env';
 import { isWin } from './platform';
 import { PING_PATH } from './proxy';
@@ -98,33 +99,40 @@ async function refreshWinRules(): Promise<void> {
 
 /**
  * Windows' counterpart of /etc/resolver: Name Resolution Policy Table rules (`Add-DnsClientNrptRule`) send every name
- * under `.<tld>` — and `.localhost`, which only browsers resolve on their own — to DevCatz's DNS on 127.0.0.1:53
+ * under `.<tld>` — and `.localhost`, which only browsers resolve on their own — to DevCatz's DNS on DNS_HOST:53
  * (NRPT has no port setting). Marked with the comment "DevCatz"; adding / removing them needs administrator rights.
+ * A rule of ours naming another server (127.0.0.1, before DevCatz had its own address) counts as missing.
  */
-type NrptRule = { namespace: string; ours: boolean };
+type NrptRule = { namespace: string; ours: boolean; current: boolean };
 let winNrpt: NrptRule[] = [];
 const NRPT_MARK = 'DevCatz';
 
 export async function refreshNrpt(): Promise<void> {
   if (!isWin) return;
-  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "Get-DnsClientNrptRule | ForEach-Object { ($_.Namespace -join ',') + '|' + $_.Comment }"], { timeout: 20_000 });
+  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "Get-DnsClientNrptRule | ForEach-Object { ($_.Namespace -join ',') + '|' + $_.Comment + '|' + ($_.NameServers -join ',') }"], { timeout: 20_000 });
   winNrpt = r.stdout
     .split(/\r?\n/)
     .filter((l) => l.includes('|'))
     .flatMap((l) => {
-      const [ns, comment] = l.trim().split('|');
-      return ns.split(',').map((n) => ({ namespace: n.trim().toLowerCase(), ours: comment.trim() === NRPT_MARK }));
+      const [ns, comment, servers = ''] = l.trim().split('|');
+      const ours = comment.trim() === NRPT_MARK;
+      return ns.split(',').map((n) => ({ namespace: n.trim().toLowerCase(), ours, current: ours && servers.split(',').map((x) => x.trim()).includes(DNS_HOST) }));
     });
 }
 
 /** `.localhost` too: programs (Node, PHP, Python, curl) on Windows do not resolve `x.localhost` without it. */
 function installNrpt(tld: string) {
-  const want = [...new Set([`.${tld}`, '.localhost'])].filter((ns) => !winNrpt.some((r) => r.namespace === ns && r.ours));
+  const want = [...new Set([`.${tld}`, '.localhost'])].filter((ns) => !winNrpt.some((r) => r.namespace === ns && r.current));
   if (!want.length) return Promise.resolve({ ok: true, message: '' });
   if (want.some((ns) => winNrpt.some((r) => r.namespace === ns && !r.ours))) {
     return Promise.resolve({ ok: false, message: `Another tool already has a DNS rule for ${want.join(' / ')}; remove it in that tool first.` });
   }
-  const lines = [...want.map((ns) => `Add-DnsClientNrptRule -Namespace '${ns}' -NameServers '127.0.0.1' -Comment '${NRPT_MARK}' | Out-Null`), 'Clear-DnsClientCache'];
+  // Our older rules for these names (another server address) go first.
+  const lines = [
+    ...want.map((ns) => `Get-DnsClientNrptRule | Where-Object { $_.Comment -eq '${NRPT_MARK}' -and $_.Namespace -contains '${ns}' } | Remove-DnsClientNrptRule -Force`),
+    ...want.map((ns) => `Add-DnsClientNrptRule -Namespace '${ns}' -NameServers '${DNS_HOST}' -Comment '${NRPT_MARK}' | Out-Null`),
+    'Clear-DnsClientCache',
+  ];
   return runAsAdminWin(lines.join('\n')).finally(refreshNrpt);
 }
 
@@ -253,7 +261,10 @@ const resolverFile = (tld: string) => `/etc/resolver/${tld}`;
 
 /** `ours` = our file, `foreign` = someone else's (e.g. Laravel Herd's dnsmasq for .test), `none` = absent. */
 export function resolverStatus(tld: string): 'ours' | 'foreign' | 'none' {
-  if (isWin) return winNrpt.find((r) => r.namespace === `.${tld}`)?.ours ? 'ours' : winNrpt.some((r) => r.namespace === `.${tld}`) ? 'foreign' : 'none';
+  if (isWin) {
+    const r = winNrpt.filter((x) => x.namespace === `.${tld}`);
+    return r.some((x) => x.current) ? 'ours' : r.some((x) => !x.ours) ? 'foreign' : 'none';
+  }
   try {
     return RESOLVER_MARKS.some((m) => readFileSync(resolverFile(tld), 'utf8').includes(m)) ? 'ours' : 'foreign';
   } catch {
@@ -293,7 +304,7 @@ export function systemLeftovers(): string[] {
   if (isWin)
     return [
       ...winRules.map((r) => `Port forward ${r.listen.includes(':') ? `[${r.listen}]` : r.listen}:${r.port} → ${r.target}`),
-      ...winNrpt.filter((r) => r.ours).map((r) => `DNS rule *${r.namespace} → DevCatz (127.0.0.1)`),
+      ...winNrpt.filter((r) => r.ours).map((r) => `DNS rule *${r.namespace} → DevCatz (${DNS_HOST})`),
     ];
   const out: string[] = [];
   for (const s of ['https', 'http'] as const) if (existsSync(daemonFile(s))) out.push(daemonFile(s));

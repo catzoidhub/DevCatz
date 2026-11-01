@@ -66,7 +66,7 @@ import { FpmManager } from './fpm';
 import { redisDetails, redisPassword } from './redis';
 import { Proxy, type Route } from './proxy';
 import { store, tld } from './store';
-import { DNS_PORT, DnsServer } from './dns';
+import { DNS_HOST, DNS_PORT, DnsServer } from './dns';
 import { findUpdates, type RemoteLists } from './updates';
 import * as docker from './docker';
 import * as gorm from './gorm';
@@ -2176,7 +2176,7 @@ export class Herd extends EventEmitter {
     const t = tld();
     const names = isWin && t !== 'localhost' ? `*.${t} and *.localhost` : `*.${t}`;
     const steps = [
-      `Start DevCatz's DNS on 127.0.0.1:${DNS_PORT}`,
+      `Start DevCatz's DNS on ${DNS_HOST}:${DNS_PORT}`,
       isWin ? `Add Windows DNS rules (NRPT) for ${names} — administrator approval` : `Create /etc/resolver/${t} — your administrator password`,
       `Check that ${names} resolve to this ${isWin ? 'PC' : 'Mac'}`,
     ];
@@ -2196,6 +2196,15 @@ export class Herd extends EventEmitter {
       if (!this.resolves) throw new Error(`The ${isWin ? 'rules are' : 'resolver is'} in place, but *.${t} does not resolve yet: try again in a moment`);
       return true;
     }, `*.${t} resolves to this ${isWin ? 'PC' : 'Mac'}`);
+  }
+
+  /** Settings → Default domain → Try again: after the program holding the DNS port is gone. */
+  async restartDns(): Promise<boolean> {
+    await this.dns.start(tld());
+    await this.checkResolution();
+    this.changed();
+    if (this.dns.error) throw new Error(this.dns.error);
+    return this.resolves;
   }
 
   uninstallResolver(): Promise<boolean> {

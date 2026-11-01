@@ -854,6 +854,7 @@ function api(): HerdApi {
     setTld: (next, dryRun) => herd.setTld(next, dryRun),
     installResolver: () => herd.installResolver(),
     uninstallResolver: () => herd.uninstallResolver(),
+    restartDns: () => herd.restartDns(),
     quitApp: async () => void quit('window'),
     startAll: async () => herd.startAll(),
     stopAll: () => herd.stopAll(),

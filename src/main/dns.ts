@@ -1,4 +1,5 @@
 import { createSocket, type Socket } from 'node:dgram';
+import { udpPortOwner } from './env';
 
 /**
  * Tiny authoritative DNS server for the custom dev TLD (e.g. `.test`).
@@ -10,8 +11,32 @@ import { createSocket, type Socket } from 'node:dgram';
  * proxy. `.localhost` needs none of this: the OS and browsers resolve it
  * themselves.
  */
-// Windows: NRPT rules name a DNS server but no port, so DevCatz answers on 53 there (no rights needed to bind it).
-export const DNS_PORT = process.platform === 'win32' ? 53 : 53531;
+// Windows: NRPT rules name a DNS server but no port, so DevCatz answers on 53 there (no rights needed to bind it) —
+// on a loopback address of its own, out of the way of whatever else uses 127.0.0.1:53 or 0.0.0.0:53 (Internet
+// Connection Sharing / Hyper-V, Docker, a local resolver). Windows routes all of 127.0.0.0/8 to loopback.
+const WIN = process.platform === 'win32';
+export const DNS_PORT = WIN ? 53 : 53531;
+export const DNS_HOST = WIN ? '127.53.0.1' : '127.0.0.1';
+
+/** Why the port could not be taken, in words: who has it and what to do (no admin rights needed to look). */
+async function bindError(err: NodeJS.ErrnoException): Promise<string> {
+  const at = `${DNS_HOST}:${DNS_PORT}`;
+  const what = WIN ? '*.localhost and the default domain do not resolve outside browsers' : 'the default domain does not resolve';
+  // Windows answers EACCES, not EADDRINUSE, when another program holds the port exclusively.
+  const o = err.code === 'EADDRINUSE' || err.code === 'EACCES' ? await udpPortOwner(DNS_PORT).catch(() => null) : null;
+  if (err.code === 'EADDRINUSE' || o) {
+    if (!o) return `Port ${DNS_PORT} (${at}) is taken by another program, so ${what}. Close it, then Try again.`;
+    const who = `${o.service ? `${o.service} (${o.name}, pid ${o.pid})` : `${o.name} (pid ${o.pid})`}`;
+    const hint = /SharedAccess/i.test(o.service ?? '')
+      ? 'It is Internet Connection Sharing (Mobile hotspot, Hyper-V\'s Default Switch): turn off Mobile hotspot, or stop "Internet Connection Sharing (ICS)" in Services'
+      : /docker|vpnkit/i.test(o.name)
+        ? 'Docker Desktop holds it: quit Docker Desktop'
+        : 'Close that program';
+    return `Port ${DNS_PORT} is taken by ${who} for every address, so ${what}. ${hint}, then Try again.`;
+  }
+  if (err.code === 'EACCES') return `${WIN ? 'Windows' : 'macOS'} refused ${at} to DevCatz (a firewall or security tool?), so ${what}.`;
+  return `DNS: ${err.code ?? err.message} on ${at}`;
+}
 
 const TYPE_A = 1;
 const TYPE_AAAA = 28;
@@ -84,13 +109,15 @@ export class DnsServer {
       const reply = answer(msg, zones);
       if (reply) socket.send(reply, rinfo.port, rinfo.address);
     });
+    let failed: NodeJS.ErrnoException | null = null;
     await new Promise<void>((resolve) => {
       socket.once('error', (err) => {
-        this.error = `DNS: ${(err as NodeJS.ErrnoException).code ?? err.message} on 127.0.0.1:${DNS_PORT}`;
+        failed = err as NodeJS.ErrnoException;
         resolve();
       });
-      socket.bind(DNS_PORT, '127.0.0.1', () => resolve());
+      socket.bind(DNS_PORT, DNS_HOST, () => resolve());
     });
+    if (failed) this.error = await bindError(failed);
     if (!this.error) this.socket = socket;
   }
 

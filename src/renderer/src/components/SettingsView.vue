@@ -70,6 +70,7 @@ async function applyTld() {
 // Steps and result show in the card (state.setup).
 const installResolver = async () => (await confirmResolver()) && attempt(() => herd.installResolver());
 const uninstallResolver = () => attempt(() => herd.uninstallResolver());
+const restartDns = () => attempt(() => herd.restartDns(), 'DNS is running');
 
 const setStartAll = (startAllOnLaunch: boolean) => attempt(() => herd.updateSettings({ startAllOnLaunch }));
 const setTheme = (theme: ThemeMode) => attempt(() => herd.updateSettings({ theme }));
@@ -365,7 +366,10 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
             <span class="badge badge-sm" :class="s.domain.resolves ? 'badge-success' : 'badge-warning'">
               {{ s.domain.resolves ? `*.${s.domain.tld} resolves` : `*.${s.domain.tld} does not resolve yet` }}
             </span>
-            <span v-if="s.domain.dnsError" class="text-xs text-error">{{ s.domain.dnsError }}</span>
+          </div>
+          <div v-if="s.domain.dnsError" class="mt-1 flex items-start gap-2">
+            <p class="flex-1 text-xs text-error">{{ s.domain.dnsError }}</p>
+            <button class="btn btn-xs" @click="restartDns">Try again</button>
           </div>
           <p v-if="s.domain.resolver === 'foreign'" class="mt-1 text-xs text-warning">
             <template v-if="isWin">Another tool has a DNS rule (NRPT) for <code>.{{ s.domain.tld }}</code>. Remove it there first.</template>

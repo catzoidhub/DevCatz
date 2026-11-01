@@ -211,6 +211,25 @@ export async function portOwner(port: number): Promise<string | null> {
   return pid ? `${name ?? 'process'} (pid ${pid})` : null;
 }
 
+/** Who has a UDP port (DNS): Windows — netstat, plus the service inside svchost; macOS — lsof. */
+export async function udpPortOwner(port: number): Promise<{ name: string; pid: string; service?: string } | null> {
+  if (isWin) {
+    const { stdout } = await run('netstat', ['-ano', '-p', 'UDP']);
+    const pid = stdout
+      .split(/\r?\n/)
+      .map((l) => l.trim().split(/\s+/))
+      .find((c) => c[0] === 'UDP' && c[1]?.endsWith(`:${port}`))?.[3];
+    if (!pid) return null;
+    const t = await run('tasklist', ['/SVC', '/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH']);
+    const m = t.stdout.match(/^"([^"]+)","\d+","([^"]*)"/);
+    const service = m?.[2] && m[2] !== 'N/A' ? m[2] : undefined;
+    return { name: m?.[1] ?? 'process', pid, service };
+  }
+  const { stdout } = await run('lsof', ['-nP', `-iUDP:${port}`, '-Fpc']);
+  const pid = stdout.match(/^p(\d+)/m)?.[1];
+  return pid ? { name: stdout.match(/^c(.+)$/m)?.[1] ?? 'process', pid } : null;
+}
+
 /** True when something listens on host:port (one address only, unlike isPortOpen). */
 export function isListening(host: string, port: number, timeout = 400): Promise<boolean> {
   return new Promise((resolve) => {

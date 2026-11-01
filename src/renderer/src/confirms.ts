@@ -52,7 +52,7 @@ export function confirmResolver(): Promise<boolean> {
     const zones = t === 'localhost' ? '*.localhost' : `*.${t} and *.localhost`;
     return askConfirm({
       title: `Resolve ${zones} to this PC?`,
-      text: `Browsers already know *.localhost, but Node, PHP, Python and curl on Windows do not. DevCatz adds Windows DNS rules (NRPT, marked "DevCatz") so ${zones} names are answered by DevCatz's own DNS on 127.0.0.1. Nothing else on the network changes. Windows asks for administrator rights next.`,
+      text: `Browsers already know *.localhost, but Node, PHP, Python and curl on Windows do not. DevCatz adds Windows DNS rules (NRPT, marked "DevCatz") so ${zones} names are answered by DevCatz's own DNS on this PC (127.53.0.1, its own loopback address, so it stays out of the way of other DNS tools). Nothing else on the network changes. Windows asks for administrator rights next.`,
       confirm: 'Install',
       tone: 'primary',
     });
