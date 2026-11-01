@@ -1,4 +1,5 @@
 import { app, nativeImage, shell } from 'electron';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -9,9 +10,9 @@ import { isWin } from './platform';
 
 /**
  * Web browsers for Settings → General → Browser: the ones installed here, the
- * system default (whatever macOS opens https links with), and opening a page
+ * system default (whatever the OS opens https links with), and opening a page
  * in the chosen one. Only http(s) links go to the chosen browser; other links
- * (dbcatz://, mailto: …) keep going to the app macOS picks for them.
+ * (dbcatz://, mailto: …) keep going to the app the OS picks for them.
  */
 
 const KNOWN = [
@@ -64,15 +65,16 @@ async function iconOf(path: string): Promise<string> {
       return path;
     }
   })();
-  let img = await nativeImage.createThumbnailFromPath(real, { width: 64, height: 64 }).catch(() => null);
-  if (!img || img.isEmpty()) img = await icnsImage(real);
+  // Windows: the program's own icon.
+  let img = isWin ? null : await nativeImage.createThumbnailFromPath(real, { width: 64, height: 64 }).catch(() => null);
+  if (!isWin && (!img || img.isEmpty())) img = await icnsImage(real);
   if (!img || img.isEmpty()) img = await app.getFileIcon(real, { size: 'normal' }).catch(() => null);
   const url = img && !img.isEmpty() ? img.toDataURL() : '';
   icons.set(path, url);
   return url;
 }
 
-const nameOf = (path: string) => basename(path).replace(/\.app$/i, '');
+const nameOf = (path: string) => basename(path).replace(/\.(app|exe)$/i, '');
 
 /** The bundle's .icns (CFBundleIconFile) turned into a 64 px PNG with sips. */
 async function icnsImage(app: string): Promise<Electron.NativeImage | null> {
@@ -136,8 +138,7 @@ function friendlyPath(path: string): string {
  * anything changed.
  */
 export async function refreshBrowsers(): Promise<boolean> {
-  // Windows, stage 1: links open in the system default browser; no list to pick from.
-  if (isWin) return false;
+  if (isWin) return refreshWinBrowsers();
   const found = new Map<string, string>(); // name → path
   for (const p of await httpsHandlers().catch(() => [])) if (existsSync(p) && (await isBrowser(p))) found.set(nameOf(p), friendlyPath(p));
   for (const name of KNOWN)
@@ -155,6 +156,44 @@ export async function refreshBrowsers(): Promise<boolean> {
   for (const [name, path] of found) list.push({ name, path, icon: await iconOf(path) });
   list.sort((a, b) => a.name.localeCompare(b.name));
   const systemDefault = defPath ? (list.find((b) => b.name === nameOf(defPath)) ?? null) : null;
+  const next: BrowsersState = { list, systemDefault };
+  const changed = JSON.stringify(next) !== JSON.stringify(state);
+  state = next;
+  return changed;
+}
+
+/**
+ * Windows: the browsers Windows itself lists in Default apps — each one registers under
+ * SOFTWARE\Clients\StartMenuInternet (per machine or per user) with its program in shell\open\command; the
+ * default is whatever opens https links.
+ */
+async function refreshWinBrowsers(): Promise<boolean> {
+  const found = new Map<string, string>(); // name → program
+  for (const hive of ['HKLM', 'HKCU']) {
+    const r = await run('reg', ['query', `${hive}\\SOFTWARE\\Clients\\StartMenuInternet`, '/s', '/ve'], { timeout: 15_000 });
+    // Blocks of "HKEY_…\StartMenuInternet\<id>" then "(Default) REG_SZ <name>", and "…\<id>\shell\open\command" then the program.
+    let key = '';
+    const names = new Map<string, string>();
+    const programs = new Map<string, string>();
+    for (const line of r.stdout.split(/\r?\n/)) {
+      if (/^HKEY_/i.test(line)) key = line.trim();
+      const m = line.match(/^\s+\(Default\)\s+REG_(?:EXPAND_)?SZ\s+(.+)$/);
+      if (!m || !key) continue;
+      const id = key.match(/StartMenuInternet\\([^\\]+)/i)?.[1];
+      if (!id) continue;
+      if (/StartMenuInternet\\[^\\]+$/i.test(key)) names.set(id, m[1].trim());
+      else if (/\\shell\\open\\command$/i.test(key)) programs.set(id, m[1].trim().replace(/^"([^"]+)".*$/, '$1').replace(/^(\S+\.exe).*$/i, '$1'));
+    }
+    // Internet Explorer is still registered on Windows 11, but it only hands pages to Edge.
+    for (const [id, program] of programs) if (existsSync(program) && !/iexplore\.exe$/i.test(program)) found.set(names.get(id) || basename(program, '.exe'), program);
+  }
+  const handler = await app.getApplicationInfoForProtocol('https://example.com').catch(() => null);
+  const defPath = handler?.path && existsSync(handler.path) ? handler.path : null;
+  const list: BrowserInfo[] = [];
+  for (const [name, path] of found) list.push({ name, path, icon: await iconOf(path) });
+  if (defPath && !list.some((b) => b.path.toLowerCase() === defPath.toLowerCase())) list.push({ name: handler!.name || basename(defPath, '.exe'), path: defPath, icon: await iconOf(defPath) });
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  const systemDefault = defPath ? (list.find((b) => b.path.toLowerCase() === defPath.toLowerCase()) ?? null) : null;
   const next: BrowsersState = { list, systemDefault };
   const changed = JSON.stringify(next) !== JSON.stringify(state);
   state = next;
@@ -184,6 +223,7 @@ export function browsersState(): BrowsersState {
 
 /** A browser setting is '' (system default) or the path of an installed browser. */
 export function validBrowser(path: string): boolean {
+  if (isWin) return path === '' || (/\.exe$/i.test(path) && existsSync(path));
   return path === '' || (/\.app$/i.test(path) && existsSync(join(path, 'Contents', 'Info.plist')));
 }
 
@@ -191,7 +231,17 @@ export function validBrowser(path: string): boolean {
 export async function openWeb(url: string): Promise<void> {
   const chosen = store.settings.browser;
   if (/^https?:\/\//i.test(url) && chosen && existsSync(chosen)) {
-    const r = await run('open', ['-a', chosen, url], { timeout: 30_000 });
+    if (isWin) {
+      // The browser's own program with the link; it hands it to its open window.
+      const child = spawn(chosen, [url], { detached: true, stdio: 'ignore' });
+      const ok = await new Promise<boolean>((resolve) => {
+        child.once('error', () => resolve(false));
+        child.once('spawn', () => resolve(true));
+      });
+      child.unref();
+      if (ok) return;
+    }
+    const r = isWin ? { code: 1, stderr: 'could not start it' } : await run('open', ['-a', chosen, url], { timeout: 30_000 });
     if (r.code === 0) return;
     console.warn(`open in ${chosen} failed (${r.stderr.trim()}); using the system default`);
   }

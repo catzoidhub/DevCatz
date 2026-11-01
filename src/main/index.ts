@@ -32,19 +32,61 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 const RESOURCES = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources');
-const EDITORS = ['Visual Studio Code', 'Cursor', 'Zed', 'WebStorm', 'PhpStorm', 'Sublime Text', 'Nova'];
+const EDITORS = isWin
+  ? ['Visual Studio Code', 'Cursor', 'Windsurf', 'Zed', 'WebStorm', 'PhpStorm', 'Sublime Text', 'Notepad++']
+  : ['Visual Studio Code', 'Cursor', 'Zed', 'WebStorm', 'PhpStorm', 'Sublime Text', 'Nova'];
 
 let herd: Herd;
 let win: BrowserWindow | null = null;
 let tray: HerdTray | null = null;
 let quitting = false;
 
+/** Windows: where each editor's installer puts its program — per user (AppData\Local\Programs) or for everyone. */
+function winEditorCandidates(e: string): string[] {
+  const local = join(process.env.LOCALAPPDATA ?? join(app.getPath('home'), 'AppData', 'Local'), 'Programs');
+  const pf = [process.env.ProgramFiles ?? 'C:\\Program Files', process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'];
+  // JetBrains: a versioned folder per install (Program Files\JetBrains\WebStorm 2026.2), or the Toolbox's.
+  const jetbrains = (product: string, exe: string) => [
+    join(local, product, 'bin', exe),
+    ...pf.flatMap((root) => {
+      try {
+        return readdirSync(join(root, 'JetBrains'))
+          .filter((d) => d.startsWith(product))
+          .sort()
+          .reverse()
+          .map((d) => join(root, 'JetBrains', d, 'bin', exe));
+      } catch {
+        return [];
+      }
+    }),
+  ];
+  switch (e) {
+    case 'Visual Studio Code':
+      return [join(local, 'Microsoft VS Code', 'Code.exe'), ...pf.map((r) => join(r, 'Microsoft VS Code', 'Code.exe'))];
+    case 'Cursor':
+      return [join(local, 'cursor', 'Cursor.exe'), ...pf.map((r) => join(r, 'Cursor', 'Cursor.exe'))];
+    case 'Windsurf':
+      return [join(local, 'Windsurf', 'Windsurf.exe'), ...pf.map((r) => join(r, 'Windsurf', 'Windsurf.exe'))];
+    case 'Zed':
+      return [join(local, 'Zed', 'Zed.exe'), ...pf.map((r) => join(r, 'Zed', 'Zed.exe'))];
+    case 'WebStorm':
+      return jetbrains('WebStorm', 'webstorm64.exe');
+    case 'PhpStorm':
+      return jetbrains('PhpStorm', 'phpstorm64.exe');
+    case 'Sublime Text':
+      return pf.map((r) => join(r, 'Sublime Text', 'sublime_text.exe'));
+    case 'Notepad++':
+      return pf.map((r) => join(r, 'Notepad++', 'notepad++.exe'));
+    default:
+      return [];
+  }
+}
+/** The editor's app (macOS) or program (Windows), when it is installed. */
 function editorPath(e: string): string | null {
-  return [`/Applications/${e}.app`, `${app.getPath('home')}/Applications/${e}.app`].find((p) => existsSync(p)) ?? null;
+  const candidates = isWin ? winEditorCandidates(e) : [`/Applications/${e}.app`, `${app.getPath('home')}/Applications/${e}.app`];
+  return candidates.find((p) => existsSync(p)) ?? null;
 }
 function installedEditors(): string[] {
-  // Windows, stage 1: no editor list; Open in Editor uses VS Code's `code` command when it is on the Path.
-  if (isWin) return [];
   return EDITORS.filter((e) => editorPath(e) !== null);
 }
 /** Browsers, the system default and the editors' icons (Settings → Open with); true when anything changed. */
@@ -245,6 +287,9 @@ function startDetached(command: string, args: string[]): Promise<boolean> {
 
 async function openEditor(path: string): Promise<void> {
   if (isWin) {
+    // The chosen editor's program with the folder / file, else VS Code's `code` on the Path, else File Explorer.
+    const exe = editorPath(store.settings.editor || installedEditors()[0] || '');
+    if (exe && (await startDetached(`"${exe}"`, [`"${path}"`]))) return;
     const where = await run('where', ['code']);
     if (where.code === 0 && (await startDetached('code', [`"${path}"`]))) return;
     await shell.openPath(path);
