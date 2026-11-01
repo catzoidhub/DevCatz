@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { STAR } from '../icons';
 import PopMenu from './PopMenu.vue';
 import { groupByType, sortList, useListView } from '../listview';
-import type { DbEngine, DbnginInstall, DbServiceState, ExternalDbService, StorageAction } from '@shared/types';
+import type { DbEngine, DbnginInstall, DbServiceState, ExternalDbService, StorageAction, DbEngineInfo } from '@shared/types';
 import StatusDot from './StatusDot.vue';
 import LogView from './LogView.vue';
 import TaskStepper from './TaskStepper.vue';
@@ -201,6 +201,10 @@ const clashWith = (s: DbServiceState) => external.value.find((e) => e.port === s
 
 const yesNo = (b: boolean) => (b ? 'Yes' : 'No');
 const openBinaries = (id: string) => attempt(() => herd.dbOpenBinaries(id));
+/** Where each engine's builds come from (note + repository / download page), shown on the service. */
+const engineInfo = ref<DbEngineInfo[]>([]);
+void attempt(() => herd.dbEngines()).then((l) => (engineInfo.value = l ?? []));
+const sourceOf = (engine: DbEngine) => engineInfo.value.find((e) => e.engine === engine) ?? null;
 </script>
 
 <template>
@@ -428,6 +432,11 @@ const openBinaries = (id: string) => attempt(() => herd.dbOpenBinaries(id));
                   <span class="label-caps block">Server binaries</span>
                   <code v-if="selected.binaryRoot" class="selectable break-all">{{ selected.binaryRoot }}</code>
                   <span v-else class="text-xs text-warning">Not installed: open Settings and save to install {{ selected.engineName }} {{ selected.version }}.</span>
+                </div>
+                <div v-if="sourceOf(selected.engine)" class="sm:col-span-2">
+                  <span class="label-caps block">Builds from</span>
+                  <span class="text-xs opacity-80">{{ sourceOf(selected.engine)!.sourceNote }}.</span>
+                  <a v-if="sourceOf(selected.engine)!.sourceUrl" class="link ml-1 text-xs" :title="sourceOf(selected.engine)!.sourceUrl!" @click="herd.openUrl(sourceOf(selected.engine)!.sourceUrl!)">{{ sourceOf(selected.engine)!.sourceUrl!.replace(/^https:\/\//, '') }}</a>
                 </div>
               </div>
               <div class="flex flex-wrap items-center gap-1.5 border-t border-base-300/60 pt-3">

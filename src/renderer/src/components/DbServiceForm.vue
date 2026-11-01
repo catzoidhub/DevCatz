@@ -304,7 +304,10 @@ async function cancel() {
               Start automatically when DevCatz launches
             </label>
           </fieldset>
-          <p v-if="info" class="text-xs opacity-50">Builds: {{ info.sourceNote }}.</p>
+          <p v-if="info" class="text-xs opacity-60">
+            Builds: {{ info.sourceNote }}.
+            <a v-if="info.sourceUrl" class="link" :title="info.sourceUrl" @click="herd.openUrl(info.sourceUrl)">{{ info.sourceUrl.replace(/^https:\/\//, '') }}</a>
+          </p>
         </template>
       </template>
 

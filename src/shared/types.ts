@@ -2304,6 +2304,8 @@ export interface DbEngineInfo {
   defaultPort: number;
   /** Where builds come from, shown in the form. */
   sourceNote: string;
+  /** Its repository / download page (opened from the form). */
+  sourceUrl: string | null;
   /** Set when something is missing to install (Homebrew, Xcode Command Line Tools). */
   requirement: string | null;
   installed: DbBinary[];

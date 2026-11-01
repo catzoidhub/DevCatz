@@ -131,6 +131,7 @@ export class DbServiceManager {
           description: e.description,
           defaultPort: e.defaultPort,
           sourceNote: e.sourceNote,
+          sourceUrl: e.sourceUrl ?? null,
           requirement: e.requirement ? await e.requirement() : null,
           installed: engine === 'sqlite' ? [this.binaryOf({ engine, version: (await e.version(SQLITE_ROOT)) ?? 'system' })!] : store.dbBinaries.filter((b) => b.engine === engine && existsSync(b.root)),
         };

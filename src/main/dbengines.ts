@@ -47,6 +47,8 @@ export interface EngineDef {
   description: string;
   defaultPort: number;
   sourceNote: string;
+  /** The page the builds come from (repository or download page), linked next to the note. */
+  sourceUrl?: string;
   /** Message when something needed to install is missing (Homebrew, Command Line Tools). */
   requirement?: () => Promise<string | null>;
   builds(): Promise<RemoteBuild[]>;
@@ -256,6 +258,7 @@ const mysql: EngineDef = {
   description: `Oracle’s MySQL Community Server; official ${isWin ? 'Windows' : 'macOS'} builds.`,
   defaultPort: 3306,
   sourceNote: isWin ? 'Official Windows x64 ZIP from cdn.mysql.com (MD5 from the CDN)' : 'Official macOS tarball from cdn.mysql.com (MD5 from the CDN)',
+  sourceUrl: 'https://dev.mysql.com/downloads/mysql/',
   async builds() {
     return cached('mysql', async () => {
       const lines: [string, string][] = [
@@ -383,6 +386,7 @@ const mariadb: EngineDef = {
   sourceNote: isWin
     ? 'Official Windows x64 ZIP from downloads.mariadb.org (SHA-256)'
     : 'Homebrew (MariaDB publishes no macOS builds); runs with DevCatz’s own data folder and port',
+  sourceUrl: isWin ? 'https://mariadb.org/download/' : 'https://formulae.brew.sh/formula/mariadb',
   async requirement() {
     if (isWin) return null;
     return brewBin() ? null : 'MariaDB comes from Homebrew. Install Homebrew from https://brew.sh first.';
@@ -499,6 +503,7 @@ const postgresql: EngineDef = {
   description: 'The advanced open-source SQL database.',
   defaultPort: 5432,
   sourceNote: 'Relocatable builds from github.com/theseus-rs/postgresql-binaries (SHA-256)',
+  sourceUrl: 'https://github.com/theseus-rs/postgresql-binaries',
   async builds() {
     return cached('postgresql', async () => {
       const tags: string[] = [];
@@ -615,7 +620,7 @@ async function valkeyWindowsBuilds(minMajor: number): Promise<RemoteBuild[]> {
  * Redis and its BSD fork Valkey: same build (plain `make`, no dependencies),
  * same flags; each publishes SHA-256s of its source tarballs in a *-hashes repo.
  */
-function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: string; sourceNote: string; hashes: string; minMajor: number }): EngineDef {
+function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: string; sourceNote: string; sourceUrl: string; hashes: string; minMajor: number }): EngineDef {
   const server = `bin/${exe(`${o.exe}-server`)}`;
   // Windows: neither publishes builds; both come from community projects (Redis: MSYS2, Valkey: MSVC).
   const winBuilds = true;
@@ -628,6 +633,7 @@ function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: strin
     description: o.description,
     defaultPort: 6379,
     sourceNote: isWin ? winSource : o.sourceNote,
+    sourceUrl: isWin ? (o.exe === 'redis' ? 'https://github.com/redis-windows/redis-windows' : 'https://github.com/SamuelMarks/valkey-windows') : o.sourceUrl,
     async requirement() {
       if (isWin) return winBuilds ? null : `${notOnWindows(o.name)} Use Redis instead: Valkey speaks the same protocol.`;
       if (cltOk === null) cltOk = (await run('xcode-select', ['-p'])).code === 0;
@@ -706,6 +712,8 @@ const redis = keyValue({
   name: 'Redis',
   description: 'In-memory key-value store for cache, queues and sessions.',
   sourceNote: 'Official source from download.redis.io (SHA-256 from redis-hashes), compiled on this Mac',
+
+  sourceUrl: 'https://github.com/redis/redis',
   hashes: 'https://raw.githubusercontent.com/redis/redis-hashes/master/README',
   minMajor: 5,
 });
@@ -715,6 +723,8 @@ const valkey = keyValue({
   name: 'Valkey',
   description: 'Open-source (BSD) fork of Redis by the Linux Foundation; drop-in for Redis clients.',
   sourceNote: 'Official source from github.com/valkey-io/valkey (SHA-256 from valkey-hashes), compiled on this Mac',
+
+  sourceUrl: 'https://github.com/valkey-io/valkey',
   hashes: 'https://raw.githubusercontent.com/valkey-io/valkey-hashes/main/README',
   minMajor: 7,
 });
@@ -732,6 +742,7 @@ const mongodb: EngineDef = {
   description: 'Document database (Community Server).',
   defaultPort: 27017,
   sourceNote: isWin ? 'Official Community Server Windows x64 ZIP from fastdl.mongodb.org (SHA-256)' : 'Official Community Server builds from fastdl.mongodb.org (SHA-256)',
+  sourceUrl: 'https://www.mongodb.com/try/download/community',
   async builds() {
     // Windows: the same release list; its `windows` x86_64 ZIPs (mongodb-win32-x86_64-windows-<v>/bin/mongod.exe).
     return cached(isWin ? 'mongodb-win' : 'mongodb', async () => {
@@ -782,6 +793,7 @@ const elasticsearch: EngineDef = {
   sourceNote: isWin
     ? 'Official Windows x64 ZIP from artifacts.elastic.co with the bundled JDK (SHA-512)'
     : 'Official builds from artifacts.elastic.co with the bundled JDK (SHA-512)',
+  sourceUrl: 'https://www.elastic.co/downloads/elasticsearch',
   async builds() {
     return cached(isWin ? 'elasticsearch-win' : 'elasticsearch', async () => {
       const tags: string[] = [];
