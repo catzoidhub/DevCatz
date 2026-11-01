@@ -186,8 +186,8 @@ function bottleTag(files: Record<string, unknown>): string {
 
 /** Each server's GitHub release asset for this computer (SHA-256 in the release): Windows x64 zips, macOS builds. */
 const RUSTFS_ASSET = isWin ? /^rustfs-windows-x86_64-v[\d.]+\.zip$/ : process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\d.]+\.zip$/ : /^rustfs-macos-x86_64-v[\d.]+\.zip$/;
-/** Windows: the MinIO-named builds in Pigsty's fork (later releases are renamed Silo, so they sit further down the list). */
-const MINIO_WIN_ASSET = /^minio_[\d.]+_windows_amd64\.tar\.gz$/;
+/** Windows: MinIO's own builds on its (archived) GitHub releases; the newest releases have none, so a few are looked through. */
+const MINIO_WIN_ASSET = /^minio\.windows-amd64\.RELEASE\.[\dT-]+Z\.exe$/;
 /** Silo (the same fork under its own name): Windows zips (older ones .tar.gz), macOS tarballs. */
 const SILO_ASSET = isWin
   ? /^silo_[\d.]+_windows_amd64\.(zip|tar\.gz)$/
@@ -222,21 +222,21 @@ export const ENGINES: Record<StorageKind, Engine> = {
   minio: {
     name: 'MinIO',
     exe: 'minio',
-    // Windows: MinIO, Inc. publishes no community build any more (dl.min.io answers 410; package managers now point to
-    // the commercial AIStor). Pigsty's community fork (pgsty/silo, AGPL-3.0) kept building the open-source server; its
-    // releases up to 2026-08-04 still carry the MinIO name and binary (minio.exe), same flags, env and data.
+    // Windows: dl.min.io answers 410 and package managers now point to the commercial AIStor, but the archived
+    // github.com/minio/minio still carries MinIO's own Windows builds (minio.windows-amd64.<release>.exe with a SHA-256)
+    // up to RELEASE.2025-09-07 — the last official one (2025-10-15 shipped as source only).
     description: isWin
-      ? 'The classic S3 server, as the community build Pigsty keeps maintaining (github.com/pgsty/silo, AGPL-3.0): its last release under the MinIO name (2026-08). Not published by MinIO, Inc.'
+      ? 'The classic S3 server: MinIO’s last official Windows build (2025-09, from its GitHub releases). The project is archived and gets no more updates; Silo continues it.'
       : 'The classic S3 server. Last community release (2025-10, upstream archived), from Homebrew’s build.',
-    sourceUrl: isWin ? 'https://github.com/pgsty/silo/releases' : 'https://formulae.brew.sh/formula/minio',
+    sourceUrl: isWin ? 'https://github.com/minio/minio/releases' : 'https://formulae.brew.sh/formula/minio',
     defaults: { apiPort: 9010, consolePort: 9011, apiDomain: 'minio', consoleDomain: 'console.minio', accessKey: 'minioadmin', secretKey: 'minioadmin' },
-    latest: async () => (isWin ? (await githubAsset('pgsty/silo', MINIO_WIN_ASSET, 100)).tag : brewLatest('minio')),
+    latest: async () => (isWin ? (await githubAsset('minio/minio', MINIO_WIN_ASSET, 20)).tag : brewLatest('minio')),
     async install(dir, progress, signal) {
       if (isWin) {
-        progress({ step: S.find, detail: 'github.com/pgsty/silo releases (community MinIO builds)' });
-        const a = await githubAsset('pgsty/silo', MINIO_WIN_ASSET, 100);
+        progress({ step: S.find, detail: 'github.com/minio/minio releases (MinIO’s own Windows builds)' });
+        const a = await githubAsset('minio/minio', MINIO_WIN_ASSET, 20);
         check(signal);
-        await installFrom(a.url, a.sha256, dir, 'minio', `MinIO ${a.tag.replace(/^RELEASE\./, '')} (community build)`, progress, signal);
+        await installFrom(a.url, a.sha256, dir, 'minio', `MinIO ${a.tag.replace(/^RELEASE\./, '')}`, progress, signal);
         return;
       }
       // MinIO stopped publishing binaries (dl.min.io answers 410); the last community release ships as a Homebrew bottle.
