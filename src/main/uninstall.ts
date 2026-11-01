@@ -71,8 +71,9 @@ function winLeftovers(): string[] {
  * its desktop / Start menu shortcuts, its entry in Installed apps), removes the devcatz:// link, moves the folders to
  * the Recycle Bin, then says it is done and removes itself.
  */
-function afterQuitWin(uninstaller: string | null, dataDir: string, folders: string[]): void {
+async function afterQuitWin(uninstaller: string | null, dataDir: string, folders: string[]): Promise<void> {
   const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
+  const task = `DevCatz uninstall ${Date.now()}`;
   const script = String.raw`$ErrorActionPreference = 'SilentlyContinue'
 $exe = ${q(process.execPath)}
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
@@ -109,12 +110,19 @@ $title.Text = 'DevCatz has been removed'
 $note.Text = 'Your projects and their files are not touched. Its data is in the Recycle Bin until you empty it.'
 $ok.Enabled = $true; $ok.Focus() | Out-Null
 Remove-Item -Force $MyInvocation.MyCommand.Path
+schtasks.exe /delete /tn ${q(task)} /f | Out-Null
 $t = New-Object Windows.Forms.Timer; $t.Interval = 30000; $t.Add_Tick({ $f.Close() }); $t.Start()
 while ($f.Visible) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 50 }
 `;
   const file = join(tmpdir(), `devcatz-uninstall-${Date.now()}.ps1`);
   // UTF-8 with a byte-order mark: Windows PowerShell 5 reads a file without one as the ANSI code page (✓ ● ○).
   writeFileSync(file, `﻿${script.replace(/\r?\n/g, '\r\n')}`);
+  // Started by Task Scheduler as a task of this user (no administrator rights needed), not as DevCatz's child: a child
+  // went with DevCatz when it quit, so the window never showed. The task removes itself at the end.
+  const ps = `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "${file}"`;
+  const made = await run('schtasks.exe', ['/create', '/tn', task, '/tr', ps, '/sc', 'once', '/st', '00:00', '/it', '/f'], { timeout: 20_000 });
+  if (made.code === 0 && (await run('schtasks.exe', ['/run', '/tn', task], { timeout: 20_000 })).code === 0) return;
+  console.warn('uninstall: schtasks', made.stderr.trim());
   spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', file], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
 }
 
@@ -167,7 +175,7 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
     if (removeShared) for (const k of plan.sharedKeys) await setSharedKey(k as AiProvider, '').catch(() => undefined);
     const folders = [...(opts.removeData ? [plan.dataDir, ...winLeftovers()] : []), ...(removeShared && existsSync(plan.sharedDir) ? [plan.sharedDir] : [])];
     set({ step: 4, detail: plan.app ?? 'A development build: the app stays' });
-    afterQuitWin(plan.app, plan.dataDir, folders);
+    await afterQuitWin(plan.app, plan.dataDir, folders);
     set({ step: 5, done: true, detail: '' });
     return;
   }

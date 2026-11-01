@@ -64,7 +64,7 @@ const close = () => !busy.value && (uninstallDialog.value = false);
           <CatMood mood="warning" class="size-10 shrink-0" />
           <div>
             <h3 class="text-lg font-semibold tracking-tight">Uninstall DevCatz?</h3>
-            <p class="text-sm opacity-70">This removes DevCatz and what it put on this Mac. It cannot be undone.</p>
+            <p class="text-sm opacity-70">This removes DevCatz and what it put on this {{ words.computer }}. It cannot be undone.</p>
           </div>
         </div>
 
@@ -116,7 +116,9 @@ const close = () => !busy.value && (uninstallDialog.value = false);
         </template>
         <div v-else class="py-4 text-center"><span class="loading loading-dots" /></div>
 
-        <p v-if="task?.done" class="text-sm opacity-70">Done. DevCatz quits now — thanks for trying it.</p>
+        <p v-if="task?.done" class="text-sm opacity-70">
+          {{ isWin ? 'DevCatz quits now; a small window finishes removing it (the app, its shortcuts and its data) — thanks for trying it.' : 'Done. DevCatz quits now — thanks for trying it.' }}
+        </p>
 
         <div class="modal-action mt-0">
           <button class="btn btn-ghost btn-sm" :disabled="busy" @click="close">{{ task?.error ? 'Close' : 'Cancel' }}</button>
