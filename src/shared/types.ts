@@ -1182,6 +1182,8 @@ export interface SearchState {
   urls: { http: string; httpLocal: string; admin: string | null } | null;
   /** Newer release available (from the same source as the installer), or null. */
   update: string | null;
+  /** No build for this platform (Typesense, Sonic on Windows): why, instead of Install. */
+  unavailable: string | null;
 }
 
 export interface SearchIndex {

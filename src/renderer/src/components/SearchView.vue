@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isWin } from '../platform';
+import { words } from '@shared/platform';
 import { SEARCH_LOGO } from '../logos';
 import { computed, ref, watch } from 'vue';
 import type { SearchIndex, SearchKind, SearchState, StorageAction } from '@shared/types';
@@ -215,6 +217,7 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.searchUninstal
                 <svg v-else class="size-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M6.3 4.2A1 1 0 0 0 5 5.1v9.8a1 1 0 0 0 1.5.9l8-4.9a1 1 0 0 0 0-1.8l-8-4.9Z" /></svg>
               </button>
             </template>
+            <span v-else-if="s.unavailable" class="badge badge-ghost badge-xs opacity-60" :title="s.unavailable">not on {{ words.os }}</span>
             <span v-else class="badge badge-ghost badge-xs">install</span>
           </a>
         </li>
@@ -240,11 +243,17 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.searchUninstal
           <div class="mx-auto max-w-xl space-y-4 pt-6">
             <p class="text-sm opacity-70">{{ selected.description }}</p>
             <TaskStepper v-if="selected.task && !form" :task="selected.task" :cancellable="selected.task.kind === 'install'" dismissable @dismiss="herd.taskDismiss('search', selected.kind)" @cancel="herd.searchCancelInstall(selected.kind)" />
-            <button class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
+            <div v-if="selected.unavailable" role="alert" class="alert text-sm">
+              <div class="min-w-48 flex-1">{{ selected.unavailable }}</div>
+              <button v-if="selected.kind === 'typesense'" class="btn btn-sm" @click="selectedKind = 'meilisearch'">Meilisearch</button>
+            </div>
+            <button v-else class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
               <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" />Install {{ selected.name }}…
             </button>
             <p class="text-xs opacity-60">
-              <template v-if="selected.kind === 'opensearch'">About 300 MB: the core build runs on Eclipse Temurin 21 (no official macOS build).</template>
+              <template v-if="selected.kind === 'opensearch' && isWin">About 1 GB to download: OpenSearch's Windows build only comes as the full bundle (its own Java included); DevCatz drops its plugins after unpacking.</template>
+              <template v-else-if="selected.kind === 'opensearch'">About 300 MB: the core build runs on Eclipse Temurin 21 (no official macOS build).</template>
+              <template v-else-if="selected.unavailable" />
               <template v-else-if="selected.kind === 'sonic'">Sonic has no macOS download of its own: DevCatz fetches Homebrew's build (checksum from formulae.brew.sh), no Homebrew needed.</template>
               <template v-else>Ports, domain, key and data folder are chosen before the download; the build is checksum-verified.</template>
             </p>

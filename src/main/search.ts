@@ -26,7 +26,7 @@ import type { Route } from './proxy';
 import { Cancelled, check, githubAsset } from './storage';
 import { brewLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
-import { removeTemp } from './platform';
+import { exe, isWin, removeTemp, TAR } from './platform';
 
 /**
  * Search engines, one instance per kind (like Object Storage), installed into
@@ -72,6 +72,19 @@ interface Engine {
   version(dir: string): Promise<string | null>;
   spec(c: SearchConfig, dir: string): { command: string; env: Record<string, string> };
   admin?: string;
+  /** No build for this platform: why, shown instead of Install (Typesense, Sonic on Windows). */
+  unavailable?: string;
+}
+
+/** Program names per platform (.exe on Windows). */
+const MEILI = exe('meilisearch');
+const ZINC = exe('zincsearch');
+const SEARCHD = exe('searchd');
+/** Marks the file executable and clears quarantine (macOS only). */
+async function unquarantine(path: string, recursive = false): Promise<void> {
+  if (isWin) return;
+  if (!recursive) chmodSync(path, 0o755);
+  await run('xattr', [recursive ? '-dr' : '-d', 'com.apple.quarantine', path]);
 }
 
 /** Downloads `url` into a fresh temp folder (next to DevCatz's data) and returns the file and its digest. */
@@ -102,7 +115,8 @@ async function fetchTmp(
 
 async function untar(file: string, into: string): Promise<void> {
   mkdirSync(into, { recursive: true });
-  const r = await run('tar', ['-xzf', file, '-C', into], { timeout: 600_000 });
+  // Windows' own bsdtar reads .zip and .tar.gz alike.
+  const r = await run(TAR, [isWin ? '-xf' : '-xzf', file, '-C', into], { timeout: 900_000 });
   if (r.code !== 0) throw new Error(`Unpacking failed: ${r.stderr.trim()}`);
 }
 
@@ -126,11 +140,19 @@ async function latestTag(repo: string): Promise<string> {
   return tag;
 }
 
+const MEILI_ASSET = isWin ? /^meilisearch-windows-amd64\.exe$/ : ARM ? /^meilisearch-macos-apple-silicon$/ : /^meilisearch-macos-amd64$/;
+const ZINC_ASSET = isWin ? /^zincsearch_.+_windows_x86_64\.tar\.gz$/ : ARM ? /^zincsearch_.+_darwin_arm64\.tar\.gz$/ : /^zincsearch_.+_darwin_x86_64\.tar\.gz$/;
+/** Manticore's own package repository: Windows x64 zips, macOS tarballs (no checksums published; HTTPS). */
+const MANTICORE_REPO = isWin
+  ? 'https://repo.manticoresearch.com/repository/manticoresearch_windows/release/x64/'
+  : 'https://repo.manticoresearch.com/repository/manticoresearch_macos/release/';
+const MANTICORE_FILE = isWin ? '-[\\w-]+-x64-main\\.zip' : `-[\\w-]+-osx[\\d.]+-${ARM ? 'arm64' : 'x86_64'}-main\\.tar\\.gz`;
+
 const ENGINES: Record<SearchKind, Engine> = {
   meilisearch: {
     name: 'Meilisearch',
     description: 'Fast, typo-tolerant search with a built-in mini dashboard; Laravel Scout’s default engine.',
-    exe: 'meilisearch',
+    exe: MEILI,
     fields: { key: 'Master key', extraPort: null, memory: false },
     features: { keys: true, facets: true, editSettings: true, schemaOnCreate: true, tasks: true, backups: true, filters: true, http: true },
     defaults: { port: 7700, extraPort: 0, domain: 'meilisearch' },
@@ -138,26 +160,26 @@ const ENGINES: Record<SearchKind, Engine> = {
     admin: '/',
     async install(dir, report, signal) {
       report({ step: S.find, detail: 'github.com/meilisearch/meilisearch releases' });
-      const a = await githubAsset('meilisearch/meilisearch', ARM ? /^meilisearch-macos-apple-silicon$/ : /^meilisearch-macos-amd64$/);
+      const a = await githubAsset('meilisearch/meilisearch', MEILI_ASSET);
       report({ title: `Installing Meilisearch ${a.tag}` });
-      const d = await fetchTmp(a.url, 'meilisearch', a.sha256, 'sha256', report, signal);
+      const d = await fetchTmp(a.url, MEILI, a.sha256, 'sha256', report, signal);
       try {
-        report({ step: S.place, detail: join(dir, 'meilisearch') });
-        chmodSync(d.file, 0o755);
-        place(d.file, join(dir, 'meilisearch'));
+        report({ step: S.place, detail: join(dir, MEILI) });
+        await unquarantine(d.file);
+        place(d.file, join(dir, MEILI));
       } finally {
         rmSync(d.tmp, { recursive: true, force: true });
       }
     },
-    latest: async () => (await githubAsset('meilisearch/meilisearch', ARM ? /^meilisearch-macos-apple-silicon$/ : /^meilisearch-macos-amd64$/)).tag.replace(/^v/, ''),
+    latest: async () => (await githubAsset('meilisearch/meilisearch', MEILI_ASSET)).tag.replace(/^v/, ''),
     async version(dir) {
-      const r = await run(join(dir, 'meilisearch'), ['--version'], { timeout: 15_000 });
+      const r = await run(join(dir, MEILI), ['--version'], { timeout: 15_000 });
       return r.stdout.match(/meilisearch\s+([\w.-]+)/)?.[1] ?? null;
     },
     spec(c, dir) {
       const data = c.dataDir;
       return {
-        command: `${q(join(dir, 'meilisearch'))} --db-path ${q(join(data, 'data.ms'))} --dump-dir ${q(join(data, 'dumps'))} --snapshot-dir ${q(join(data, 'snapshots'))} --http-addr 127.0.0.1:${c.port} --env development --no-analytics`,
+        command: `${q(join(dir, MEILI))} --db-path ${q(join(data, 'data.ms'))} --dump-dir ${q(join(data, 'dumps'))} --snapshot-dir ${q(join(data, 'snapshots'))} --http-addr 127.0.0.1:${c.port} --env development --no-analytics`,
         env: { MEILI_MASTER_KEY: c.key },
       };
     },
@@ -166,6 +188,9 @@ const ENGINES: Record<SearchKind, Engine> = {
     name: 'Typesense',
     description: 'Typo-tolerant search with strict schemas, faceting, geo and vector search; Laravel Scout driver.',
     exe: 'typesense-server',
+    unavailable: isWin
+      ? 'Typesense publishes no Windows build (only Docker / WSL). Meilisearch is the closest on Windows: typo-tolerant, faceting, a Laravel Scout driver.'
+      : undefined,
     fields: { key: 'Admin API key', extraPort: 'Peering port', memory: false },
     features: { keys: true, facets: true, editSettings: true, schemaOnCreate: false, tasks: false, backups: false, filters: true, http: true },
     defaults: { port: 8108, extraPort: 8107, domain: 'typesense' },
@@ -211,7 +236,7 @@ const ENGINES: Record<SearchKind, Engine> = {
   opensearch: {
     name: 'OpenSearch',
     description: 'Apache-licensed Elasticsearch fork: full query DSL, aggregations; runs on its own Java (Temurin 21).',
-    exe: 'opensearch/bin/opensearch',
+    exe: isWin ? 'opensearch/bin/opensearch.bat' : 'opensearch/bin/opensearch',
     fields: { key: null, extraPort: 'Transport port', memory: true },
     features: { keys: false, facets: true, editSettings: true, schemaOnCreate: false, tasks: false, backups: false, filters: true, http: true },
     defaults: { port: 9210, extraPort: 9310, domain: 'opensearch' },
@@ -221,16 +246,27 @@ const ENGINES: Record<SearchKind, Engine> = {
       const v = (await latestTag('opensearch-project/OpenSearch')).replace(/^v/, '');
       report({ title: `Installing OpenSearch ${v}` });
       const arch = ARM ? 'arm64' : 'x64';
-      const url = `https://artifacts.opensearch.org/releases/core/opensearch/${v}/opensearch-min-${v}-linux-${arch}.tar.gz`;
+      // Windows: only the full bundle exists (~1 GB, with its own Windows JDK); its plugins go, like the min build on macOS.
+      const url = isWin
+        ? `https://artifacts.opensearch.org/releases/bundle/opensearch/${v}/opensearch-${v}-windows-x64.zip`
+        : `https://artifacts.opensearch.org/releases/core/opensearch/${v}/opensearch-min-${v}-linux-${arch}.tar.gz`;
       const sumRes = await fetch(`${url}.sha512`);
       if (!sumRes.ok) throw new Error(`No checksum for OpenSearch ${v} (HTTP ${sumRes.status})`);
       const sha512 = (await sumRes.text()).trim().split(/\s+/)[0];
-      const d = await fetchTmp(url, 'opensearch.tar.gz', sha512, 'sha512', report, signal);
+      const d = await fetchTmp(url, isWin ? 'opensearch.zip' : 'opensearch.tar.gz', sha512, 'sha512', report, signal);
       try {
-        report({ step: S.unpack, detail: 'opensearch (core) + Java runtime' });
+        report({ step: S.unpack, detail: isWin ? 'opensearch (with its Java runtime)' : 'opensearch (core) + Java runtime' });
         await untar(d.file, join(d.tmp, 'x'));
         const root = readdirSync(join(d.tmp, 'x')).find((e) => e.startsWith('opensearch-'));
         if (!root) throw new Error('opensearch-* folder not found in the download');
+        if (isWin) {
+          // The bundle's plugins (security, ML, alerting …) need setup of their own; DevCatz runs plain OpenSearch.
+          const plugins = join(d.tmp, 'x', root, 'plugins');
+          for (const pl of readdirSync(plugins)) rmSync(join(plugins, pl), { recursive: true, force: true });
+          report({ step: S.place, detail: join(dir, 'opensearch') });
+          place(join(d.tmp, 'x', root), join(dir, 'opensearch'));
+          return;
+        }
         // Its JDK is for Linux; DevCatz runs it on Temurin for macOS.
         rmSync(join(d.tmp, 'x', root, 'jdk'), { recursive: true, force: true });
         check(signal);
@@ -270,7 +306,7 @@ const ENGINES: Record<SearchKind, Engine> = {
       const origin = c.allowedOrigins.trim() || '*';
       return {
         command:
-          `${q(join(dir, 'opensearch', 'bin', 'opensearch'))} -E http.port=${c.port} -E transport.port=${c.extraPort} -E network.host=127.0.0.1 ` +
+          `${q(join(dir, 'opensearch', 'bin', isWin ? 'opensearch.bat' : 'opensearch'))} -E http.port=${c.port} -E transport.port=${c.extraPort} -E network.host=127.0.0.1 ` +
           `-E discovery.type=single-node -E path.data=${q(join(c.dataDir, 'data'))} -E path.logs=${q(join(c.dataDir, 'logs'))} ` +
           `-E http.cors.enabled=true -E http.cors.allow-origin=${q(origin === '*' ? '*' : origin.split(/[\s,]+/)[0])} -E cluster.name=devcatz`,
         env: { OPENSEARCH_JAVA_HOME: javaHome(dir), OPENSEARCH_PATH_CONF: conf, OPENSEARCH_JAVA_OPTS: `-Xms${c.memoryMb}m -Xmx${c.memoryMb}m` },
@@ -280,46 +316,44 @@ const ENGINES: Record<SearchKind, Engine> = {
   manticore: {
     name: 'Manticore',
     description: 'SQL-first full-text search (MySQL protocol and HTTP JSON), real-time tables, very low memory.',
-    exe: 'manticore/bin/searchd',
+    exe: `manticore/bin/${SEARCHD}`,
     fields: { key: null, extraPort: 'SQL (MySQL) port', memory: false },
     features: { keys: false, facets: true, editSettings: false, schemaOnCreate: true, tasks: false, backups: false, filters: true, http: true },
     defaults: { port: 9308, extraPort: 9306, domain: 'manticore' },
     needsKey: false,
     async install(dir, report, signal) {
-      report({ step: S.find, detail: 'repo.manticoresearch.com (macOS builds)' });
-      const base = 'https://repo.manticoresearch.com/repository/manticoresearch_macos/release/';
+      report({ step: S.find, detail: `repo.manticoresearch.com (${isWin ? 'Windows' : 'macOS'} builds)` });
+      const base = MANTICORE_REPO;
       const listing = await (await fetch(base)).text();
-      const arch = ARM ? 'arm64' : 'x86_64';
-      const files = [...new Set([...listing.matchAll(new RegExp(`manticore-(\\d+)\\.(\\d+)\\.(\\d+)-[\\w-]+-osx[\\d.]+-${arch}-main\\.tar\\.gz`, 'g'))].map((m) => m[0]))];
+      const files = [...new Set([...listing.matchAll(new RegExp(`manticore-(\\d+)\\.(\\d+)\\.(\\d+)${MANTICORE_FILE}`, 'g'))].map((m) => m[0]))];
       const ver = (f: string) => f.match(/manticore-(\d+)\.(\d+)\.(\d+)/)!.slice(1).map(Number);
       const latest = files.sort((a, b) => {
         const [x, y] = [ver(a), ver(b)];
         return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
       }).at(-1);
-      if (!latest) throw new Error('No Manticore build for this Mac');
+      if (!latest) throw new Error(`No Manticore build for this ${isWin ? 'PC' : 'Mac'}`);
       report({ title: `Installing Manticore ${ver(latest).join('.')}` });
-      const d = await fetchTmp(base + latest, 'manticore.tar.gz', '', 'sha256', report, signal);
+      const d = await fetchTmp(base + latest, isWin ? 'manticore.zip' : 'manticore.tar.gz', '', 'sha256', report, signal);
       try {
         report({ step: S.unpack, detail: latest });
         await untar(d.file, join(d.tmp, 'x'));
-        if (!existsSync(join(d.tmp, 'x', 'bin', 'searchd'))) throw new Error('searchd not found in the download');
+        if (!existsSync(join(d.tmp, 'x', 'bin', SEARCHD))) throw new Error(`${SEARCHD} not found in the download`);
         report({ step: S.place, detail: join(dir, 'manticore') });
         place(join(d.tmp, 'x'), join(dir, 'manticore'));
-        await run('xattr', ['-dr', 'com.apple.quarantine', join(dir, 'manticore')]);
+        await unquarantine(join(dir, 'manticore'), true);
       } finally {
         rmSync(d.tmp, { recursive: true, force: true });
       }
     },
     latest: async () => {
-      const arch = ARM ? 'arm64' : 'x86_64';
-      const listing = await (await fetch('https://repo.manticoresearch.com/repository/manticoresearch_macos/release/')).text();
-      const vs = [...listing.matchAll(new RegExp(`manticore-(\\d+\\.\\d+\\.\\d+)-[\\w-]+-osx[\\d.]+-${arch}-main\\.tar\\.gz`, 'g'))].map((m) => m[1]);
+      const listing = await (await fetch(MANTICORE_REPO)).text();
+      const vs = [...listing.matchAll(new RegExp(`manticore-(\\d+\\.\\d+\\.\\d+)${MANTICORE_FILE}`, 'g'))].map((m) => m[1]);
       const best = vs.reduce<string | null>((a, b) => (!a || isNewer(b, a) ? b : a), null);
       if (!best) throw new Error('No Manticore build');
       return best;
     },
     async version(dir) {
-      const r = await run(join(dir, 'manticore', 'bin', 'searchd'), ['--version'], { timeout: 15_000 });
+      const r = await run(join(dir, 'manticore', 'bin', SEARCHD), ['--version'], { timeout: 15_000 });
       return `${r.stdout}${r.stderr}`.match(/Manticore\s+([\d.]+)/)?.[1] ?? null;
     },
     spec(c, dir) {
@@ -339,13 +373,14 @@ const ENGINES: Record<SearchKind, Engine> = {
         ].join('\n'),
       );
       mkdirSync(join(c.dataDir, 'data'), { recursive: true });
-      return { command: `${q(join(dir, 'manticore', 'bin', 'searchd'))} --nodetach --config ${q(file)}`, env: {} };
+      // Stay in the foreground: --nodetach on macOS, --console on Windows (its searchd knows no --nodetach).
+      return { command: `${q(join(dir, 'manticore', 'bin', SEARCHD))} ${isWin ? '--console' : '--nodetach'} --config ${q(file)}`, env: {} };
     },
   },
   zincsearch: {
     name: 'ZincSearch',
     description: 'Lightweight Elasticsearch alternative in one Go binary: Elasticsearch-compatible API (/es), web UI, low memory.',
-    exe: 'zincsearch',
+    exe: ZINC,
     fields: { key: 'Admin password', extraPort: null, memory: false },
     features: { keys: false, facets: true, editSettings: true, schemaOnCreate: false, tasks: false, backups: false, filters: true, http: true },
     defaults: { port: 4080, extraPort: 0, domain: 'zincsearch' },
@@ -353,27 +388,27 @@ const ENGINES: Record<SearchKind, Engine> = {
     admin: '/',
     async install(dir, report, signal) {
       report({ step: S.find, detail: 'github.com/zincsearch/zincsearch releases' });
-      const a = await githubAsset('zincsearch/zincsearch', ARM ? /^zincsearch_.+_darwin_arm64\.tar\.gz$/ : /^zincsearch_.+_darwin_x86_64\.tar\.gz$/);
+      const a = await githubAsset('zincsearch/zincsearch', ZINC_ASSET);
       const v = a.tag.replace(/^v/, '');
       report({ title: `Installing ZincSearch ${v}` });
       const d = await fetchTmp(a.url, 'zincsearch.tar.gz', a.sha256, 'sha256', report, signal);
       try {
         report({ step: S.unpack, detail: 'tar.gz' });
         await untar(d.file, join(d.tmp, 'x'));
-        const bin = join(d.tmp, 'x', 'zincsearch');
-        if (!existsSync(bin)) throw new Error('zincsearch not found in the download');
-        report({ step: S.place, detail: join(dir, 'zincsearch') });
-        chmodSync(bin, 0o755);
-        place(bin, join(dir, 'zincsearch'));
+        const bin = join(d.tmp, 'x', ZINC);
+        if (!existsSync(bin)) throw new Error(`${ZINC} not found in the download`);
+        report({ step: S.place, detail: join(dir, ZINC) });
+        await unquarantine(bin);
+        place(bin, join(dir, ZINC));
         // `zincsearch version` needs credentials, so the release tag is kept next to it.
         writeFileSync(join(dir, 'VERSION'), v);
       } finally {
         rmSync(d.tmp, { recursive: true, force: true });
       }
     },
-    latest: async () => (await githubAsset('zincsearch/zincsearch', ARM ? /^zincsearch_.+_darwin_arm64\.tar\.gz$/ : /^zincsearch_.+_darwin_x86_64\.tar\.gz$/)).tag.replace(/^v/, ''),
+    latest: async () => (await githubAsset('zincsearch/zincsearch', ZINC_ASSET)).tag.replace(/^v/, ''),
     async version(dir) {
-      if (!existsSync(join(dir, 'zincsearch'))) return null;
+      if (!existsSync(join(dir, ZINC))) return null;
       try {
         return readFileSync(join(dir, 'VERSION'), 'utf8').trim() || null;
       } catch {
@@ -382,7 +417,7 @@ const ENGINES: Record<SearchKind, Engine> = {
     },
     spec(c, dir) {
       return {
-        command: q(join(dir, 'zincsearch')),
+        command: q(join(dir, ZINC)),
         env: {
           // Only read when the data folder is new; DevCatz changes the password through the API afterwards.
           ZINC_FIRST_ADMIN_USER: 'admin',
@@ -400,6 +435,7 @@ const ENGINES: Record<SearchKind, Engine> = {
     name: 'Sonic',
     description: 'Tiny schema-less search backend (Rust, a few MB of RAM): returns ids for words, typo-tolerant, suggestions; TCP protocol, no HTTP.',
     exe: 'sonic',
+    unavailable: isWin ? 'Sonic publishes no Windows build (its releases are Linux only; DevCatz takes the macOS one from Homebrew).' : undefined,
     fields: { key: 'Channel password', extraPort: null, memory: false },
     features: { keys: false, facets: false, editSettings: false, schemaOnCreate: false, tasks: false, backups: false, filters: false, http: false },
     defaults: { port: 1491, extraPort: 0, domain: 'sonic' },
@@ -570,7 +606,8 @@ const isoMs = (d: string | null | undefined): number | null => {
 };
 
 /** OpenSearch's Java: the Temurin JRE DevCatz installed next to it. */
-const javaHome = (dir: string) => join(dir, 'jre', 'Contents', 'Home');
+/** Java for OpenSearch: Temurin next to it on macOS, the bundle's own JDK on Windows. */
+const javaHome = (dir: string) => (isWin ? join(dir, 'opensearch', 'jdk') : join(dir, 'jre', 'Contents', 'Home'));
 
 export const searchId = (kind: SearchKind) => `search:${kind}`;
 const managedDir = (kind: SearchKind) => dataDir('search', kind);
@@ -719,6 +756,7 @@ export class SearchManager {
 
   async install(kind: SearchKind, input: SearchConfig): Promise<void> {
     if (this.config(kind)) throw new Error(`${ENGINES[kind].name} is already installed`);
+    if (ENGINES[kind].unavailable) throw new Error(ENGINES[kind].unavailable);
     if (this.aborts.has(kind)) throw new Error(`${ENGINES[kind].name} is already being installed`);
     const c = { ...input, kind };
     this.validate(c);
@@ -919,6 +957,7 @@ export class SearchManager {
         error: this.errors.get(kind) ?? null,
         task: this.tasks.get(kind) ?? null,
         update: c ? (this.updates.get(kind) ?? null) : null,
+        unavailable: e.unavailable ?? null,
         urls: !c
           ? null
           : e.features.http

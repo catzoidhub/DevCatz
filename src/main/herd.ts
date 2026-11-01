@@ -470,10 +470,10 @@ export class Herd extends EventEmitter {
     this.dbs.autoStart();
     this.timers.push(setTimeout(() => void this.dbs.prefetchVersions(), 20_000));
     this.ws.autoStart();
-    // Windows (Catzoid #57): storage and search servers and the monitor are macOS-only so far.
+    this.search.autoStart();
+    // Windows (Catzoid #57): object storage and the monitor are macOS-only so far.
     if (isMac) {
       this.storage.autoStart();
-      this.search.autoStart();
       this.monitor.start();
     }
     // Runtime updates: shortly after launch, then every 6 hours.
