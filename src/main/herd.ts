@@ -1177,7 +1177,9 @@ export class Herd extends EventEmitter {
     if (stack.depsMissing) {
       const msg =
         stack.runtime === 'python'
-          ? 'No virtualenv yet (.venv): use "Install dependencies" first (uv creates it and installs the packages).'
+          ? stack.python?.venvBroken
+            ? `${stack.python.venv} was made with Python ${stack.python.venvVersion ?? '?'}, which is no longer installed: use "Install dependencies" to make it again (the old one goes to the ${words.trash}).`
+            : 'No virtualenv yet (.venv): use "Install dependencies" first (uv creates it and installs the packages).'
           : stack.layout === 'folders'
             ? `${stack.warnings.find((w) => w.startsWith('Dependencies missing')) ?? 'Dependencies are missing in some folders.'} It installs every folder's (npm / composer / uv / go).`
             : `Dependencies are not installed (node_modules is empty). Use "Install dependencies" (${stack.packageManager} install) first.`;
@@ -3042,7 +3044,8 @@ export class Herd extends EventEmitter {
   /** The venv's Python when there is one; else what a new venv would be created with. */
   pythonChoice(p: ProjectConfig, stack: StackInfo | undefined = this.stacks.get(p.id)): PythonChoice {
     const py = stack?.python;
-    if (py?.venv && py.venvVersion && !p.pythonVersion) return { version: py.venvVersion, reason: 'venv', spec: py.spec, missing: false };
+    // A broken venv's Python is gone: choose as for a new venv.
+    if (py?.venv && py.venvVersion && !py.venvBroken && !p.pythonVersion) return { version: py.venvVersion, reason: 'venv', spec: py.spec, missing: false };
     return pythons.choosePython(py?.spec ?? null, p.pythonVersion, this.installedPythons, store.settings.pythonDefault);
   }
 
@@ -3107,6 +3110,11 @@ export class Herd extends EventEmitter {
    */
   private async installPythonDeps(p: ProjectConfig, stack: StackInfo): Promise<void> {
     const py = stack.python!;
+    // Its Python is gone: the old venv goes to the Trash / Recycle Bin and a new one is made.
+    if (py.venv && py.venvBroken) {
+      this.processes.log(p.id, 'sys', `${py.venv} was made with Python ${py.venvVersion ?? '?'}, which is no longer installed: moving it to the ${words.trash} and making it again.`);
+      await shell.trashItem(join(p.path, py.venv));
+    }
     if (!pythons.uvPath()) await this.uvInstall();
     const choice = this.pythonChoice(p, stack);
     let version = choice.version;

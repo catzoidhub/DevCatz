@@ -506,9 +506,13 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
     <RuntimeNeeds :key="`rt-${p.id}`" :site="p" />
     <div v-if="p.stack.depsMissing" role="alert" class="alert alert-warning"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />
       <div class="flex-1">
-        <div class="font-medium">Dependencies are not installed</div>
+        <div class="font-medium">{{ p.stack.python?.venvBroken ? 'The virtualenv is broken' : 'Dependencies are not installed' }}</div>
         <div class="text-xs opacity-80">
           <template v-if="p.stack.runtime === 'php'"><code>vendor/</code> is missing, so PHP cannot boot the app yet.</template>
+          <template v-else-if="p.stack.runtime === 'python' && p.stack.python?.venvBroken">
+            <code>{{ p.stack.python.venv }}</code> was made with Python {{ p.stack.python.venvVersion ?? '?' }}, which is no longer installed, so nothing in it runs.
+            DevCatz moves it to the {{ words.trash }}, makes it again with Python {{ p.python.version ?? p.python.spec ?? '3.13' }} and installs the packages.
+          </template>
           <template v-else-if="p.stack.runtime === 'python'">There is no virtualenv (<code>.venv</code>) yet; DevCatz creates it with Python {{ p.python.version ?? p.python.spec ?? '3.13' }} and installs the packages.</template>
           <template v-else><code>node_modules</code> is empty, so the dev command cannot run yet.</template>
         </div>

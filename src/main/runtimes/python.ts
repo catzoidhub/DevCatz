@@ -95,14 +95,20 @@ function findApp(root: string, ctor: RegExp): string | null {
   return null;
 }
 
-function detectVenv(root: string): { dir: string | null; version: string | null } {
+/**
+ * The project's venv. `broken`: the Python it was made with (pyvenv.cfg `home`) is gone — removed or updated
+ * away — so every program in it fails ("did not find executable at …"); it has to be made again.
+ */
+function detectVenv(root: string): { dir: string | null; version: string | null; broken: boolean } {
   for (const d of ['.venv', 'venv', 'env', '.env-py']) {
     // A venv keeps its programs in Scripts\ on Windows (python.exe), bin/ elsewhere.
     if (!has(root, isWin ? `${d}/Scripts/python.exe` : `${d}/bin/python`)) continue;
     const cfg = readText(join(root, d, 'pyvenv.cfg')) ?? '';
-    return { dir: d, version: cfg.match(/^version(?:_info)?\s*=\s*([\d.]+)/m)?.[1] ?? null };
+    const home = cfg.match(/^home\s*=\s*(.+?)\s*$/m)?.[1];
+    const broken = !!home && !(isWin ? ['python.exe'] : ['python3', 'python']).some((exe) => existsSync(join(home, exe)));
+    return { dir: d, version: cfg.match(/^version(?:_info)?\s*=\s*([\d.]+)/m)?.[1] ?? null, broken };
   }
-  return { dir: null, version: null };
+  return { dir: null, version: null, broken: false };
 }
 
 function pythonSpec(root: string): string | null {
@@ -235,11 +241,11 @@ function detectPythonStack(root: string, domain: string): StackInfo {
     prismaDir: null,
     node: null,
     runtime: 'python',
-    depsMissing: !venv.dir,
+    depsMissing: !venv.dir || venv.broken,
     warnings,
     libs: [],
     tasks,
-    python: { tool, venv: venv.dir, venvVersion: venv.version, spec: pythonSpec(root), celery },
+    python: { tool, venv: venv.dir, venvVersion: venv.version, venvBroken: venv.broken, spec: pythonSpec(root), celery },
   };
 }
 

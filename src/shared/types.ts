@@ -2502,6 +2502,8 @@ export interface PythonStack {
   venv: string | null;
   /** Python of the venv (pyvenv.cfg). */
   venvVersion: string | null;
+  /** The venv's own Python is gone (pyvenv.cfg `home`): it must be made again (Install dependencies does). */
+  venvBroken?: boolean;
   /** What the project asks for: .python-version or requires-python. */
   spec: string | null;
   /** Celery found: worker / beat can run next to the site (the site's queue / scheduler switches). */
