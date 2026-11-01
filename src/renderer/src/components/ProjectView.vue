@@ -76,6 +76,19 @@ const s3Status = computed(() => {
   const s = state.value?.storage.find((x) => x.kind === (p.value.s3.service ?? p.value.storageService));
   return s?.installed && p.value.s3.service ? s.status : 'stopped';
 });
+/**
+ * Docker files of a desktop app (Electron / Tauri). It ships as an installer, not a container, so its Docker tab only
+ * shows when the project already has compose files (its own, a database for development say, or generated earlier).
+ */
+const desktopDocker = ref(false);
+watch(
+  () => [p.value.id, isDesktopSite(p.value)] as const,
+  async ([id, desktop]) => {
+    desktopDocker.value = false;
+    if (desktop) desktopDocker.value = (await herd.dockerFiles(id).catch(() => [])).length > 0 && p.value.id === id;
+  },
+  { immediate: true },
+);
 const allTabs = computed<Tab[]>(() => [
   'overview',
   'env',
@@ -87,7 +100,7 @@ const allTabs = computed<Tab[]>(() => [
   'git',
   ...(p.value.mailInfo ? (['mail'] as Tab[]) : []),
   ...(p.value.waInfo || p.value.gwInfo ? (['whatsapp'] as Tab[]) : []),
-  'docker',
+  ...(!isDesktopSite(p.value) || desktopDocker.value ? (['docker'] as Tab[]) : []),
   'logs',
   'settings',
 ]);
@@ -95,6 +108,7 @@ const allTabs = computed<Tab[]>(() => [
 const tabs = computed<Tab[]>(() => (isWin ? allTabs.value.filter((t) => WIN_SITE_TABS.has(t)) : allTabs.value));
 watch(hasWs, (on) => !on && tab.value === 'websocket' && (tab.value = 'overview'));
 watch(hasSearch, (on) => !on && tab.value === 'search' && (tab.value = 'overview'));
+watch(tabs, (list) => !list.includes(tab.value) && (tab.value = 'overview'));
 /** Dot on the Search Engine tab: the engine the site uses. */
 const searchStatus = computed(() => {
   const e = state.value?.searchEngines.find((s) => s.kind === (p.value.searchEngine ?? p.value.search.suggested));
