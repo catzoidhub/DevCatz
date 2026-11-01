@@ -228,8 +228,8 @@ export class HerdTray {
         : [{ label: 'Set up a database…', click: act('database', () => a.show('database')) }]),
       { type: 'separator' },
       // Object storage: status and controls per installed service.
-      ...(isWin ? [] : [{ label: 'Object Storage', enabled: false }]),
-      ...(isWin ? [] : storage.length
+      { label: 'Object Storage', enabled: false },
+      ...(storage.length
         ? storage.map((s) => {
             const on = s.status === 'running' || s.status === 'starting';
             return {
@@ -247,7 +247,7 @@ export class HerdTray {
             };
           })
         : [{ label: 'Set up storage…', click: act('storage', () => a.show('storage')) }]),
-      ...(isWin ? [] : [{ type: 'separator' as const }]),
+      { type: 'separator' as const },
       // WebSocket servers: only the installed ones (nothing when none is).
       ...(ws.length
         ? [

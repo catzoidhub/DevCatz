@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isWin } from '../platform';
 import { computed, ref } from 'vue';
 import type { StorageConfig, StorageState } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
@@ -152,7 +153,7 @@ async function submit() {
             </span>
           </div>
           <div v-if="binarySource === 'existing'" class="join mt-2 w-full">
-            <input v-model="form.binaryPath" class="input input-sm join-item w-full font-mono text-xs" placeholder="/opt/homebrew/bin/minio" spellcheck="false" />
+            <input v-model="form.binaryPath" class="input input-sm join-item w-full font-mono text-xs" :placeholder="isWin ? 'C:\\Tools\\rustfs.exe' : '/opt/homebrew/bin/minio'" spellcheck="false" />
             <button type="button" class="btn btn-sm join-item" @click="chooseBinary">Choose…</button>
           </div>
         </div>

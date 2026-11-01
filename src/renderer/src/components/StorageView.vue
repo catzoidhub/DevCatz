@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { STORAGE_LOGO } from '../logos';
 import { computed, ref, watch } from 'vue';
 import type { StorageAction, StorageKind, StorageState } from '@shared/types';
@@ -202,6 +203,7 @@ async function copyEnv() {
                 <svg v-else class="size-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M6.3 4.2A1 1 0 0 0 5 5.1v9.8a1 1 0 0 0 1.5.9l8-4.9a1 1 0 0 0 0-1.8l-8-4.9Z" /></svg>
               </button>
             </template>
+            <span v-else-if="s.unavailable" class="badge badge-ghost badge-xs opacity-60" :title="s.unavailable">not on {{ words.os }}</span>
             <span v-else class="badge badge-ghost badge-xs">install</span>
           </a>
         </li>
@@ -224,10 +226,16 @@ async function copyEnv() {
           <div class="mx-auto max-w-xl space-y-4 pt-6">
             <p class="text-sm opacity-70">{{ selected.description }}</p>
             <TaskStepper v-if="selected.task && !form" :task="selected.task" :cancellable="selected.task.kind === 'install'" dismissable @dismiss="herd.taskDismiss('storage', selected.kind)" @cancel="herd.storageCancelInstall(selected.kind)" />
-            <button class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
-              <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" />Install {{ selected.name }}…
-            </button>
-            <p class="text-xs opacity-60">Ports, domains, data folder and keys are chosen before the download; the official build is checksum-verified.</p>
+            <div v-if="selected.unavailable" role="alert" class="alert text-sm">
+              <div class="min-w-48 flex-1">{{ selected.unavailable }}</div>
+              <button class="btn btn-sm" @click="selectedKind = 'rustfs'">RustFS</button>
+            </div>
+            <template v-else>
+              <button class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
+                <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" />Install {{ selected.name }}…
+              </button>
+              <p class="text-xs opacity-60">Ports, domains, data folder and keys are chosen before the download; the official build is checksum-verified.</p>
+            </template>
           </div>
         </div>
       </template>

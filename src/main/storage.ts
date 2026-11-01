@@ -9,7 +9,7 @@ import { isPortOpen, portOwner, run } from './env';
 import { ProcessManager } from './processes';
 import type { Route } from './proxy';
 import { dataDir, store, tld } from './store';
-import { removeTemp, isWin, TAR } from './platform';
+import { exe, removeTemp, isWin, TAR } from './platform';
 
 /**
  * Local S3-compatible object storage, one instance per kind: RustFS, MinIO and
@@ -31,6 +31,8 @@ interface Engine {
   install(dir: string, progress: Report, signal: AbortSignal): Promise<void>;
   /** Newest release, from the installer's source (update check). */
   latest(): Promise<string>;
+  /** No build for this platform: why, shown instead of Install (MinIO on Windows). */
+  unavailable?: string;
   /** Process specs to run (SeaweedFS needs two). */
   specs(c: StorageConfig, bin: string): { label: string; command: string; env: Record<string, string> }[];
 }
@@ -180,6 +182,10 @@ function bottleTag(files: Record<string, unknown>): string {
   return any;
 }
 
+/** Each server's GitHub release asset for this computer (SHA-256 in the release): Windows x64 zips, macOS builds. */
+const RUSTFS_ASSET = isWin ? /^rustfs-windows-x86_64-v[\d.]+\.zip$/ : process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\d.]+\.zip$/ : /^rustfs-macos-x86_64-v[\d.]+\.zip$/;
+const WEED_ASSET = isWin ? /^windows_amd64\.zip$/ : process.arch === 'arm64' ? /^darwin_arm64\.tar\.gz$/ : /^darwin_amd64\.tar\.gz$/;
+
 export const ENGINES: Record<StorageKind, Engine> = {
   rustfs: {
     name: 'RustFS',
@@ -187,10 +193,10 @@ export const ENGINES: Record<StorageKind, Engine> = {
     consolePath: '/rustfs/console/',
     description: 'Fast S3-compatible storage written in Rust; Apache 2.0, built-in web console.',
     defaults: { apiPort: 9000, consolePort: 9001, apiDomain: 'rustfs', consoleDomain: 'console.rustfs', accessKey: 'rustfsadmin', secretKey: 'rustfsadmin' },
-    latest: async () => (await githubAsset('rustfs/rustfs', process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\d.]+\.zip$/ : /^rustfs-macos-x86_64-v[\d.]+\.zip$/)).tag.replace(/^v/, ''),
+    latest: async () => (await githubAsset('rustfs/rustfs', RUSTFS_ASSET)).tag.replace(/^v/, ''),
     async install(dir, progress, signal) {
       progress({ step: S.find, detail: 'github.com/rustfs/rustfs releases' });
-      const a = await githubAsset('rustfs/rustfs', process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\d.]+\.zip$/ : /^rustfs-macos-x86_64-v[\d.]+\.zip$/);
+      const a = await githubAsset('rustfs/rustfs', RUSTFS_ASSET);
       check(signal);
       await installFrom(a.url, a.sha256, dir, 'rustfs', `RustFS ${a.tag}`, progress, signal);
     },
@@ -206,6 +212,11 @@ export const ENGINES: Record<StorageKind, Engine> = {
     name: 'MinIO',
     exe: 'minio',
     description: 'The classic S3 server. Last community release (2025-10, upstream archived), from Homebrew’s build.',
+    // dl.min.io answers 410 for the community server; what Windows package managers point to now is MinIO's commercial
+    // AIStor, under another licence — not this.
+    unavailable: isWin
+      ? 'MinIO stopped publishing its community server: there is no Windows build left (its downloads now lead to the commercial AIStor). RustFS and SeaweedFS speak the same S3 API.'
+      : undefined,
     defaults: { apiPort: 9010, consolePort: 9011, apiDomain: 'minio', consoleDomain: 'console.minio', accessKey: 'minioadmin', secretKey: 'minioadmin' },
     latest: () => brewLatest('minio'),
     async install(dir, progress, signal) {
@@ -241,10 +252,10 @@ export const ENGINES: Record<StorageKind, Engine> = {
     exe: 'weed',
     description: 'Distributed file system with an S3 gateway and an admin UI; master, volume and filer in one process.',
     defaults: { apiPort: 8333, consolePort: 23646, apiDomain: 'seaweedfs', consoleDomain: 'console.seaweedfs', accessKey: 'devcatz', secretKey: 'devcatz-secret' },
-    latest: async () => (await githubAsset('seaweedfs/seaweedfs', process.arch === 'arm64' ? /^darwin_arm64\.tar\.gz$/ : /^darwin_amd64\.tar\.gz$/)).tag.replace(/^v/, ''),
+    latest: async () => (await githubAsset('seaweedfs/seaweedfs', WEED_ASSET)).tag.replace(/^v/, ''),
     async install(dir, progress, signal) {
       progress({ step: S.find, detail: 'github.com/seaweedfs/seaweedfs releases' });
-      const a = await githubAsset('seaweedfs/seaweedfs', process.arch === 'arm64' ? /^darwin_arm64\.tar\.gz$/ : /^darwin_amd64\.tar\.gz$/);
+      const a = await githubAsset('seaweedfs/seaweedfs', WEED_ASSET);
       check(signal);
       await installFrom(a.url, a.sha256, dir, 'weed', `SeaweedFS ${a.tag}`, progress, signal);
     },
@@ -311,7 +322,8 @@ export const storageId = (kind: StorageKind) => `storage:${kind}`;
 const managedDir = (kind: StorageKind) => dataDir('storage', kind);
 /** Folder the managed binary is downloaded into. */
 export const binaryDirOf = (c: Pick<StorageConfig, 'kind' | 'binaryDir'>) => c.binaryDir || join(managedDir(c.kind), 'bin');
-export const binaryOf = (c: StorageConfig) => c.binaryPath || join(binaryDirOf(c), ENGINES[c.kind].exe);
+// Programs end in .exe on Windows.
+export const binaryOf = (c: StorageConfig) => c.binaryPath || join(binaryDirOf(c), exe(ENGINES[c.kind].exe));
 
 export function defaultsFor(kind: StorageKind): StorageConfig {
   const root = store.settings.storageRoot;
@@ -513,6 +525,7 @@ export class StorageManager {
 
   async install(kind: StorageKind, input: StorageConfig): Promise<void> {
     if (this.config(kind)) throw new Error(`${ENGINES[kind].name} is already installed`);
+    if (ENGINES[kind].unavailable) throw new Error(ENGINES[kind].unavailable);
     if (this.aborts.has(kind)) throw new Error(`${ENGINES[kind].name} is already being installed`);
     const c = { ...input, kind };
     this.validate(c);
@@ -716,6 +729,7 @@ export class StorageManager {
         task: this.tasks.get(kind) ?? null,
         // A binary the user chose is theirs to update.
         update: c && !c.binaryPath ? (this.updates.get(kind) ?? null) : null,
+        unavailable: ENGINES[kind].unavailable ?? null,
         urls: c
           ? {
               api: `https://${host(c.apiDomain)}`,

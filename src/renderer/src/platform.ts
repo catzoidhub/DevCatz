@@ -7,10 +7,10 @@ export const isWin = window.herd.platform === 'win32';
 if (isWin) document.documentElement.classList.add('is-win');
 
 /** Rail sections and Settings tabs Windows has so far. */
-export const WIN_SECTIONS = new Set(['projects', 'runtimes', 'database', 'websocket', 'search', 'git', 'mail', 'expose', 'settings']);
-export const WIN_SETTINGS_TABS = new Set(['general', 'ai', 'project', 'database', 'mail', 'expose', 'updates', 'about']);
+export const WIN_SECTIONS = new Set(['projects', 'runtimes', 'database', 'storage', 'websocket', 'search', 'git', 'mail', 'expose', 'settings']);
+export const WIN_SETTINGS_TABS = new Set(['general', 'ai', 'project', 'database', 'storage', 'websocket', 'search', 'mail', 'expose', 'updates', 'about']);
 /** Site tabs that work on Windows so far. */
-export const WIN_SITE_TABS = new Set(['overview', 'env', 'database', 'api', 'git', 'mail', 'websocket', 'search', 'docker', 'logs', 'settings']);
+export const WIN_SITE_TABS = new Set(['overview', 'env', 'database', 'storage', 'api', 'git', 'mail', 'websocket', 'search', 'docker', 'logs', 'settings']);
 /** Runtimes pages on Windows. */
 export const WIN_RUNTIMES = new Set(['node', 'bun', 'go', 'python', 'php', 'rust']);
 
