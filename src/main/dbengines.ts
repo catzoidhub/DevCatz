@@ -591,18 +591,43 @@ async function redisWindowsBuilds(minMajor: number): Promise<RemoteBuild[]> {
 }
 
 /**
+ * Windows: Valkey has no official build either (upstream turned native Windows support down);
+ * github.com/SamuelMarks/valkey-windows compiles each official release with MSVC (Valkey-<v>-win64.zip with bin/,
+ * SHA-256 from GitHub's asset digest). A community build — the install says so.
+ */
+async function valkeyWindowsBuilds(minMajor: number): Promise<RemoteBuild[]> {
+  const rels = await json<{ tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string; digest?: string | null }[] }[]>(
+    'https://api.github.com/repos/SamuelMarks/valkey-windows/releases?per_page=100',
+    { Accept: 'application/vnd.github+json' },
+  );
+  const all: RemoteBuild[] = [];
+  for (const r of rels) {
+    if (r.prerelease || r.draft || !/^\d+\.\d+\.\d+$/.test(r.tag_name) || Number(major(r.tag_name)) < minMajor) continue;
+    const a = r.assets.find((x) => x.name === `Valkey-${r.tag_name}-win64.zip`);
+    const hash = a?.digest?.match(/^sha256:([a-f0-9]{64})$/)?.[1];
+    // Only with a checksum: nothing unverified is unpacked.
+    if (a && hash) all.push({ version: r.tag_name, label: minor(r.tag_name), source: 'download', url: a.browser_download_url, hash, algo: 'sha256' });
+  }
+  return latestPer(all, minor);
+}
+
+/**
  * Redis and its BSD fork Valkey: same build (plain `make`, no dependencies),
  * same flags; each publishes SHA-256s of its source tarballs in a *-hashes repo.
  */
 function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: string; sourceNote: string; hashes: string; minMajor: number }): EngineDef {
   const server = `bin/${exe(`${o.exe}-server`)}`;
-  // Windows: only Redis has builds (the community MSYS2 ones); Valkey publishes none.
-  const winBuilds = o.exe === 'redis';
+  // Windows: neither publishes builds; both come from community projects (Redis: MSYS2, Valkey: MSVC).
+  const winBuilds = true;
+  const winSource =
+    o.exe === 'redis'
+      ? 'Community Windows build from github.com/redis-windows/redis-windows (MSYS2, SHA-256 from GitHub)'
+      : 'Community Windows build from github.com/SamuelMarks/valkey-windows (the official source compiled with MSVC, SHA-256 from GitHub) — not published by the Valkey project';
   const def: EngineDef = {
     name: o.name,
     description: o.description,
     defaultPort: 6379,
-    sourceNote: isWin ? (winBuilds ? 'Community Windows build from github.com/redis-windows/redis-windows (MSYS2, SHA-256 from GitHub)' : 'No Windows builds yet') : o.sourceNote,
+    sourceNote: isWin ? winSource : o.sourceNote,
     async requirement() {
       if (isWin) return winBuilds ? null : `${notOnWindows(o.name)} Use Redis instead: Valkey speaks the same protocol.`;
       if (cltOk === null) cltOk = (await run('xcode-select', ['-p'])).code === 0;
@@ -611,7 +636,7 @@ function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: strin
     async builds() {
       if (isWin) {
         if (!winBuilds) throw new Error(notOnWindows(o.name));
-        return cached(`${o.exe}-win`, () => redisWindowsBuilds(o.minMajor));
+        return cached(`${o.exe}-win`, () => (o.exe === 'redis' ? redisWindowsBuilds(o.minMajor) : valkeyWindowsBuilds(o.minMajor)));
       }
       return cached(o.exe, async () => {
         const readme = await text(o.hashes);
@@ -626,10 +651,10 @@ function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: strin
     installSteps: () => (isWin ? DOWNLOAD_STEPS : ['Downloading', 'Verifying the checksum', 'Unpacking', 'Compiling', 'Installing', 'Checking the version']),
     async install(b, dest, step, signal) {
       if (isWin) {
-        // The zip holds the .exe files and DLLs in one folder: unpacked as bin/.
+        // Redis' zip holds the .exe files and DLLs in one folder (unpacked as bin/); Valkey's has its own bin/ inside.
         if (!winBuilds) throw new Error(notOnWindows(o.name));
         mkdirSync(dest, { recursive: true });
-        await fetchTarball(b, join(dest, 'bin'), step, signal);
+        await fetchTarball(b, o.exe === 'redis' ? join(dest, 'bin') : dest, step, signal);
         if (!existsSync(join(dest, server))) throw new Error(`The download holds no ${exe(`${o.exe}-server`)}`);
         return dest;
       }
