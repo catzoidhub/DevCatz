@@ -1282,9 +1282,10 @@ app.whenReady().then(async () => {
     n.on('click', () => showWindow('mail'));
     n.show();
   };
-  // Mail, WhatsApp and the gateways run macOS builds: Windows stage 1 leaves them off (Catzoid #57).
+  // Mail is plain Node (SMTP catcher + web inbox): every platform. WhatsApp and the gateways run macOS builds, so
+  // Windows leaves them off for now (Catzoid #57).
+  void herd.mail.autoStart();
   if (isMac) {
-    void herd.mail.autoStart();
     herd.whatsapp.autoStart();
     herd.gateways.autoStart();
   }

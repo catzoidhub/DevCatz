@@ -284,7 +284,7 @@ const broken = reactive(new Set<string>());
       <template v-else-if="view.kind === 'add'">
         <header class="drag win-top border-b border-base-300/60 px-6 pt-5 pb-4">
           <h2 class="text-lg font-semibold tracking-tight">Connect an account</h2>
-          <div class="text-xs opacity-60">For repositories to clone, pull requests and SSH keys. Shared with Catzoid apps; the token is kept in your {{ currentOS === 'mac' ? 'macOS Keychain' : words.secretStore }}.</div>
+          <div class="text-xs opacity-60">For repositories to clone, pull requests and SSH keys. Shared with Catzoid apps; the token is kept in {{ currentOS === 'mac' ? 'your macOS Keychain' : words.secretStore }}.</div>
         </header>
         <form class="mx-auto w-full max-w-xl flex-1 space-y-4 overflow-y-auto p-6" @submit.prevent="add">
           <div class="grid grid-cols-4 gap-2">

@@ -137,7 +137,7 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
             <button v-if="replacing" type="button" class="btn btn-ghost btn-sm" @click="replacing = false; keyInput = ''">Cancel</button>
           </form>
           <p class="text-xs opacity-60">
-            Kept only on this {{ words.computer }} ({{ words.secretStore }} item “Catzoid AI”), never shown again or sent anywhere but {{ info.name }}.
+            Kept only on this {{ words.computer }} ({{ currentOS === 'mac' ? 'Keychain item “Catzoid AI”' : `${words.secretStore}, for your account only` }}), never shown again or sent anywhere but {{ info.name }}.
             <a v-if="info.keyUrl" class="link" @click="herd.openUrl(info.keyUrl)">Get a key</a>
           </p>
         </div>

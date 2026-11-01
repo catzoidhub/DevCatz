@@ -143,8 +143,8 @@ export class HerdTray {
       { label: running ? `Sites (${running}/${total} running)` : 'Sites', click: act('sites', () => a.show('sites')) },
       { label: 'Create New Site…', click: act('new-site', () => a.show('new-site')) },
       ...(this.monitorLine ? [{ label: this.monitorLine, click: act('monitoring', () => a.show('monitoring')) }] : []),
-      // Windows: no mail catcher, object storage or DNS yet (those sections are hidden there).
-      ...(isWin ? [] : [{
+      // The mail catcher runs on every platform.
+      ...([{
         label: state.mail.running ? `Mail · ${state.mail.unread ? `${state.mail.unread} new` : `${state.mail.count} caught`}` : 'Mail · catcher off',
         icon: dot(...DOT[state.mail.running ? 'running' : 'stopped']),
         submenu: [

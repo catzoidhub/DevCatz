@@ -16,7 +16,8 @@ export const currentOS: OS = (() => {
 export function wordsFor(os: OS) {
   return {
     os: os === 'mac' ? 'macOS' : os === 'windows' ? 'Windows' : 'Linux',
-    secretStore: os === 'mac' ? 'Keychain' : os === 'windows' ? 'Windows Credential Manager' : 'the system keyring',
+    // Windows: what Electron's safeStorage and the Catzoid .dpapi files use — DPAPI, tied to the user's account.
+    secretStore: os === 'mac' ? 'Keychain' : os === 'windows' ? "Windows' protected storage (DPAPI)" : 'the system keyring',
     fileManager: os === 'mac' ? 'Finder' : os === 'windows' ? 'File Explorer' : 'the file manager',
     tray: os === 'mac' ? 'menu bar' : 'system tray',
     revealIn: os === 'mac' ? 'Reveal in Finder' : os === 'windows' ? 'Show in File Explorer' : 'Show in folder',
