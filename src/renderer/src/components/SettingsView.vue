@@ -39,9 +39,12 @@ async function park() {
   if (dir) parking.value = dir;
 }
 
+const trusting = ref(false);
 async function trust() {
   if (!(await confirmTrustCa())) return;
+  trusting.value = true;
   const ok = await attempt(() => herd.trustCa());
+  trusting.value = false;
   if (ok) await attempt(async () => undefined, 'Certificate authority trusted. Reload your browser tabs.');
 }
 
@@ -384,7 +387,14 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <code>security.enterprise_roots.enabled</code>).
         </p>
         <div class="flex gap-2">
-          <button v-if="!s.cert.caTrusted" class="btn btn-primary btn-sm" @click="trust">Trust certificate authority…</button>
+          <button v-if="!s.cert.caTrusted" class="btn btn-primary btn-sm" :disabled="trusting" @click="trust">
+            <span v-if="trusting" class="loading loading-spinner loading-xs" />Trust certificate authority…
+          </button>
+          <!-- certutil's own question cannot take the focus from DevCatz: it often only flashes in the taskbar. -->
+          <p v-if="trusting && isWin" class="text-xs text-warning">
+            Windows now asks “Do you want to install this certificate?” in a window of its own. If it is not in front, click the
+            flashing key icon in the taskbar, then <b>Yes</b>.
+          </p>
           <button v-else class="btn btn-sm btn-outline" @click="untrust">{{ isWin ? 'Remove from Windows' : 'Remove from keychain' }}</button>
           <button class="btn btn-ghost btn-sm" @click="herd.revealCa()">Show ca.crt</button>
         </div>

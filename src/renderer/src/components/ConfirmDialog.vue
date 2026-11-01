@@ -7,7 +7,9 @@ const emit = defineEmits<{ ok: []; cancel: [] }>();
 </script>
 
 <template>
-  <dialog open class="modal modal-open" @keydown.esc="emit('cancel')">
+  <!-- Above every other dialog: a question is always about something already on screen (the Welcome dialog, teleported
+       to the end of <body> at the same z-index, used to cover it, so Trust… / Enable… looked dead). -->
+  <dialog open class="modal modal-open z-[1000]" @keydown.esc="emit('cancel')">
     <div class="modal-box w-[28rem] max-w-[95vw] space-y-3">
       <div class="flex items-start gap-3">
         <span class="grid size-10 shrink-0 place-items-center rounded-xl" :class="tone === 'error' || tone === 'warning' ? 'bg-error/12' : 'bg-primary/10'"><CatMood :mood="tone === 'error' || tone === 'warning' ? 'warning' : 'question'" class="size-8" /></span>

@@ -74,6 +74,11 @@ async function done() {
                 <span v-if="busy === 'ca'" class="loading loading-spinner loading-xs" />Trust…
               </button>
             </div>
+            <!-- certutil's own question cannot take the focus from DevCatz: it often only flashes in the taskbar. -->
+            <p v-if="busy === 'ca' && isWin" class="mt-2 text-xs text-warning">
+              Windows now asks “Do you want to install this certificate?” in a window of its own. If it is not in front, click the
+                  flashing key icon in the taskbar, then <b>Yes</b>.
+            </p>
           </div>
 
           <div class="rounded-xl border border-base-300/70 bg-base-200/40 p-4">
