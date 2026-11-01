@@ -4,6 +4,7 @@ import type { AppInfo, Framework, PythonStack, StackInfo, StackTask } from '@sha
 import { DEFAULT_PORTS, detectDatabase, readText } from '../detect';
 import { detectRedis } from '../redis';
 import type { RuntimeDriver } from './types';
+import { isWin } from '../platform';
 
 /**
  * Python projects: a dev server on a managed port (PORT), run from the
@@ -250,7 +251,12 @@ export function pythonFolderApp(root: string, dir: string): { app: AppInfo; deps
   const app = s.apps[0];
   if (!app?.command) return null;
   const venv = s.python?.venv ? join(dir, s.python.venv) : null;
-  const command = venv ? `env VIRTUAL_ENV="${venv}" PATH="${venv}/bin:$PATH" PYTHONUNBUFFERED=1 ${app.command}` : `env PYTHONUNBUFFERED=1 ${app.command}`;
+  // The folder's own venv first; cmd.exe sets variables with `set` (its venv keeps programs in Scripts).
+  const command = isWin
+    ? `${venv ? `set "VIRTUAL_ENV=${venv}"&& set "PATH=${join(venv, 'Scripts')};%PATH%"&& ` : ''}set "PYTHONUNBUFFERED=1"&& ${app.command}`
+    : venv
+      ? `env VIRTUAL_ENV="${venv}" PATH="${venv}/bin:$PATH" PYTHONUNBUFFERED=1 ${app.command}`
+      : `env PYTHONUNBUFFERED=1 ${app.command}`;
   return { depsMissing: s.depsMissing, warnings: s.warnings, app: { ...app, dir: relative(root, dir), kind: 'api', devScript: app.command, command, domain: '' } };
 }
 

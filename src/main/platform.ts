@@ -27,13 +27,42 @@ export function pathKey(env: NodeJS.ProcessEnv): string {
 }
 
 /** A shell command line → [file, args]: the login shell on macOS, cmd.exe on Windows. */
-export function shellCommand(command: string, opts: { exec?: boolean } = {}): [string, string[]] {
-  if (isWin) return [process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${command}"`]];
+export function shellCommand(command: string, opts: { exec?: boolean; env?: Record<string, string | undefined> } = {}): [string, string[]] {
+  if (isWin) return [process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${winCommand(command, opts.env)}"`]];
   const shell = process.env.SHELL || '/bin/zsh';
   // `exec` makes a single command the process itself; a chain (`anchor build && solana-test-validator …`, `cd x && …`)
   // keeps its shell, or only its first command would run. Either way the process group is what Stop ends.
   const chain = /&&|\|\||;|\|/.test(command);
   return [shell, ['-c', opts.exec && !chain ? `exec ${command}` : command]];
+}
+
+/**
+ * Windows: a command line written for sh, as cmd.exe reads it — DevCatz builds its commands once, the POSIX way:
+ * - `${PORT:-8000}` gets its value from `env` now (the default when unset); `$NAME` / `${NAME}` become `%NAME%`;
+ * - `'quoted'` becomes `"quoted"` (cmd knows only double quotes);
+ * - `VAR=value cmd` / `env VAR=value cmd` become `set "VAR=value"&& cmd`;
+ * - `.venv/bin/python` is `.venv\Scripts\python.exe`, `/dev/null` is `NUL`, `a; b` is `a & b`.
+ * Text inside double quotes is left alone (e.g. `php -r "…"`).
+ */
+export function winCommand(command: string, env: Record<string, string | undefined> = process.env): string {
+  // Split into double-quoted parts (kept) and the rest (converted).
+  return command
+    .split(/("(?:[^"\\]|\\.)*")/)
+    .map((part, i) => {
+      if (i % 2) return part;
+      return part
+        .replace(/'\\''/g, "'")
+        .replace(/'([^']*)'/g, (_, t: string) => `"${t}"`)
+        .replace(/\$\{(\w+):-([^}]*)\}/g, (_, k: string, d: string) => env[k] || d)
+        .replace(/\$\{(\w+)\}|\$([A-Za-z_]\w*)/g, (_, a?: string, b?: string) => `%${a ?? b}%`)
+        .replace(/\.venv\/bin\/python\b/g, '.venv\\Scripts\\python.exe')
+        .replace(/\/dev\/null/g, 'NUL')
+        .replace(/\s*;\s*/g, ' & ');
+    })
+    .join('')
+    .replace(/(^|&&\s*|\|\|\s*|&\s*)(?:env\s+)?((?:[A-Za-z_]\w*=(?:"[^"]*"|[^\s"]+)\s+)+)/g, (_, lead: string, vars: string) =>
+      lead + [...vars.matchAll(/([A-Za-z_]\w*)=("[^"]*"|[^\s"]+)/g)].map(([, k, v]) => `set "${k}=${v.replace(/^"|"$/g, '')}"&& `).join(''),
+    );
 }
 
 /** Stops a process and everything it started: the process group on macOS, `taskkill /T` on Windows. */
@@ -70,4 +99,16 @@ export async function moveDir(from: string, to: string): Promise<void> {
   }
   cpSync(from, to, { recursive: true });
   rmSync(from, { recursive: true, force: true });
+}
+
+/**
+ * Removes a temporary download / unpack folder without failing the install that used it: on Windows a just-finished
+ * installer or a virus scan can hold a file for a moment (EPERM / EBUSY). Retried, then left for the next cleanup.
+ */
+export function removeTemp(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  } catch {
+    /* still locked: harmless leftover */
+  }
 }

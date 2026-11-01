@@ -8,7 +8,7 @@ import { downloadVerified } from './download';
 import { spawn } from 'node:child_process';
 import { getShellEnv, run } from './env';
 import { compare, shimDir } from './node';
-import { isWin, TAR, moveDir } from './platform';
+import { isWin, moveDir, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -245,7 +245,7 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
     progress({ version, phase: 'done', received: done, total: done });
     return version;
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 
@@ -304,7 +304,7 @@ async function installWin(version: string, progress: (p: RuntimeInstallProgress)
     progress({ version, phase: 'done', received: size, total: size });
     return version;
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 

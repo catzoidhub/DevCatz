@@ -127,14 +127,15 @@ export class ProcessManager extends EventEmitter {
     const prefix = spec.label ? `[${spec.label}] ` : '';
     const tag = (text: string) => (prefix ? text.replace(/^(?=.)/gm, prefix) : text);
     this.log(id, 'sys', `${prefix}$ ${spec.command}${spec.label ? `  (in ${spec.cwd})` : ''}`);
-    const [file, args] = shellCommand(spec.command, { exec: true });
+    const env = { ...getShellEnv(), FORCE_COLOR: '1', BROWSER: 'none', ...spec.env };
+    const [file, args] = shellCommand(spec.command, { exec: true, env });
     const child = spawn(file, args, {
       cwd: spec.cwd,
       // macOS: its own process group, stopped as a whole; Windows: taskkill /T follows the tree instead.
       detached: !isWin,
       windowsHide: true,
       windowsVerbatimArguments: isWin,
-      env: { ...getShellEnv(), FORCE_COLOR: '1', BROWSER: 'none', ...spec.env },
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const entry: Child = { label: spec.label, spec, child, exited: false, code: null };
@@ -260,6 +261,16 @@ export class ProcessManager extends EventEmitter {
     for (const pgid of pids) {
       if (live.has(pgid)) {
         killGroup(pgid, 'SIGTERM');
+        killed++;
+      }
+    }
+    // Windows has no process groups: when DevCatz ends without stopping its sites, the cmd.exe it started goes with it
+    // but the dev servers under it (node, vite, electron …) live on. They still name that cmd.exe as their parent.
+    const gone = isWin ? pids.filter((pid) => !live.has(pid)) : [];
+    if (gone.length) {
+      const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process | Where-Object { @(${gone.join(',')}) -contains $_.ParentProcessId } | ForEach-Object { $_.ProcessId }`], { timeout: 30_000 });
+      for (const pid of r.stdout.split(/\s+/).map(Number).filter(Boolean)) {
+        killGroup(pid, 'SIGTERM');
         killed++;
       }
     }

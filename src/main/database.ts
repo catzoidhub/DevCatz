@@ -40,12 +40,13 @@ export async function dbStatus(project: ProjectState): Promise<DbStatus> {
 export function stream(cwd: string, command: string, log: Log, env: Record<string, string> = {}): Promise<number> {
   log(`$ ${command}`);
   return new Promise((resolve) => {
-    const [file, args] = shellCommand(command);
+    const full = { ...getShellEnv(), FORCE_COLOR: '1', CI: '1', ...env };
+    const [file, args] = shellCommand(command, { env: full });
     const child = spawn(file, args, {
       cwd,
       windowsHide: true,
       windowsVerbatimArguments: isWin,
-      env: { ...getShellEnv(), FORCE_COLOR: '1', CI: '1', ...env },
+      env: full,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     killOnCancel(child);

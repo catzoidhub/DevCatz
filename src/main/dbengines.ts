@@ -7,7 +7,7 @@ import type { DbBinary, DbEngine, DbServiceConfig, TaskProgress } from '@shared/
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { brewBin } from './php';
-import { exe, isWin, TAR, moveDir } from './platform';
+import { exe, isWin, moveDir, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -158,7 +158,7 @@ const major = (v: string) => v.split('.')[0];
 /** Downloads, verifies and unpacks a tarball into `dest` (its single top folder stripped; `exclude`: tar patterns left out). */
 async function fetchTarball(b: RemoteBuild, dest: string, step: Step, signal: AbortSignal, exclude: string[] = []): Promise<void> {
   const tmp = `${dest}.partial`;
-  rmSync(tmp, { recursive: true, force: true });
+  removeTemp(tmp);
   mkdirSync(tmp, { recursive: true });
   const archive = join(dirname(dest), `.download-${Date.now()}${b.url!.endsWith('.zip') ? '.zip' : '.tar.gz'}`);
   try {
@@ -181,7 +181,7 @@ async function fetchTarball(b: RemoteBuild, dest: string, step: Step, signal: Ab
     await moveDir(tmp, dest);
   } finally {
     rmSync(archive, { force: true });
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { TaskProgress } from '@shared/types';
 import { downloadVerified } from './download';
 import { run } from './env';
-import { isWin } from './platform';
+import { isWin, removeTemp } from './platform';
 import { githubAsset } from './storage';
 
 /**
@@ -86,7 +86,7 @@ export async function installCatzoidApp(
     });
     if (signal.aborted) throw new Error('cancelled');
     set({ step: 1, title: `Installing ${name} ${asset.tag.replace(/^v/, '')}`, detail: asset.url });
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
     mkdirSync(tmp, { recursive: true });
     if (isWin) {
       // The NSIS installer, silently (/S, per user: no administrator prompt), then the app at the link.
@@ -124,7 +124,7 @@ export async function installCatzoidApp(
     if (op.code !== 0) throw new Error(`${name} did not open: ${op.stderr.trim()}`);
   } finally {
     if (mounted) await run('hdiutil', ['detach', mounted, '-quiet'], { timeout: 60_000 }).catch(() => undefined);
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 

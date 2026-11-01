@@ -5,7 +5,7 @@ import type { BunChoice, InstalledBun, RemoteBun, RuntimeInstallProgress } from 
 import { checksumFor, downloadVerified } from './download';
 import { run } from './env';
 import { compare, shimDir, writeCmdShim } from './node';
-import { exe, isWin, TAR } from './platform';
+import { exe, isWin, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -110,7 +110,7 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
     }
     progress({ version, phase: 'done', received, total });
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 

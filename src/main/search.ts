@@ -26,6 +26,7 @@ import type { Route } from './proxy';
 import { Cancelled, check, githubAsset } from './storage';
 import { brewLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
+import { removeTemp } from './platform';
 
 /**
  * Search engines, one instance per kind (like Object Storage), installed into
@@ -94,7 +95,7 @@ async function fetchTmp(
     if (expected && digest !== expected.toLowerCase()) throw new Error(`Checksum mismatch (expected ${expected.slice(0, 12)}…, got ${digest.slice(0, 12)}…); download discarded`);
     return { tmp, file, digest };
   } catch (err) {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
     throw signal.aborted ? new Cancelled() : err;
   }
 }

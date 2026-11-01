@@ -9,7 +9,7 @@ import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { compare } from './node';
 import { newer } from './tools';
-import { exe, isWin, joinPath, pathKey, TAR } from './platform';
+import { exe, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -119,7 +119,7 @@ export async function installBuildTools(progress: (p: RuntimeInstallProgress) =>
     if (r.code !== 0 && r.code !== 3010) throw new Error(`The Build Tools installer stopped (exit ${r.code})${r.stderr.trim() ? `: ${r.stderr.trim()}` : ''}`);
     progress({ version: 'Build Tools', phase: 'done', received: 0, total: 0 });
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 
@@ -146,7 +146,7 @@ export async function installRustup(progress: (p: RuntimeInstallProgress) => voi
     if (code !== 0) throw new Error(`rustup-init failed (exit ${code})`);
     progress({ version: 'stable', phase: 'done', received: 0, total: 0 });
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 
@@ -336,7 +336,7 @@ async function ensureBinstall(detail: (line: string) => void): Promise<string> {
     }
     return dest;
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 
@@ -362,7 +362,7 @@ async function installSolana(detail: (line: string) => void): Promise<void> {
     const code = await streamLines(init, [rel.tag], detail);
     if (code !== 0) throw new Error(`The Solana installer failed (exit ${code})`);
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 

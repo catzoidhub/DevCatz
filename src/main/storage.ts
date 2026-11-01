@@ -9,6 +9,7 @@ import { isPortOpen, portOwner, run } from './env';
 import { ProcessManager } from './processes';
 import type { Route } from './proxy';
 import { dataDir, store, tld } from './store';
+import { removeTemp } from './platform';
 
 /**
  * Local S3-compatible object storage, one instance per kind: RustFS, MinIO and
@@ -142,7 +143,7 @@ export async function installFrom(
       chmodSync(dest, 0o755);
     }
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 

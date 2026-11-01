@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { checksumFor, downloadVerified } from './download';
 import type { InstalledNode, NodeInstallProgress, RemoteNode } from '@shared/types';
 import { getShellEnv, run, userPathHas } from './env';
-import { exe, isWin, pathKey, splitPath, TAR, moveDir } from './platform';
+import { exe, isWin, moveDir, pathKey, removeTemp, splitPath, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -126,7 +126,7 @@ export async function install(version: string, progress: (p: NodeInstallProgress
     await moveDir(join(tmp, name), target);
     progress({ version, phase: 'done', received, total });
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 

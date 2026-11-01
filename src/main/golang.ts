@@ -4,7 +4,7 @@ import type { GoChoice, InstalledGo, RemoteGo, RuntimeInstallProgress } from '@s
 import { downloadVerified } from './download';
 import { run } from './env';
 import { compare, shimDir, writeCmdShim } from './node';
-import { exe, isWin, TAR, moveDir } from './platform';
+import { exe, isWin, moveDir, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -118,7 +118,7 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
     await moveDir(join(tmp, 'go'), join(target, 'go'));
     progress({ version, phase: 'done', received, total });
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 

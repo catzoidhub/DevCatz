@@ -1860,8 +1860,8 @@ export class Herd extends EventEmitter {
   private async runInstallSteps(p: ProjectConfig, steps: { dir: string; command: string }[]): Promise<void> {
     for (const st of steps) {
       const tag = `[${basename(st.dir)}] `;
-      this.processes.log(p.id, 'sys', `${tag}$ ${st.command}`);
-      const code = await stream(join(p.path, st.dir), st.command, (t) => this.processes.log(p.id, 'sys', t.replace(/^(?=.)/gm, tag)), { ...this.runtimeEnv(p), ...pythons.uvEnv() });
+      // stream() logs the command itself (with the tag).
+      const code = await stream(join(p.path, st.dir), st.command, (t) => this.processes.log(p.id, 'sys', t.replace(/^(?=.)/gm, tag)), this.uvSiteEnv(p));
       if (code !== 0) throw new Error(`${st.command} in ${st.dir} failed (exit ${code}); see the log`);
     }
   }
@@ -2478,6 +2478,12 @@ export class Herd extends EventEmitter {
   }
 
   /** PATH with the site's chosen Node and Bun first (nothing added for the shell's own). */
+  /** The site's environment plus uv's settings; uv's folder joins the site's PATH instead of replacing it. */
+  private uvSiteEnv(p: ProjectConfig): Record<string, string> {
+    const env = this.runtimeEnv(p);
+    return { ...env, ...pythons.uvEnv(env) };
+  }
+
   private runtimeEnv(p: ProjectConfig): Record<string, string> {
     const dirs: string[] = [];
     const node = this.nodeChoice(p);
@@ -3055,7 +3061,7 @@ export class Herd extends EventEmitter {
     this.dbTasks.set(p.id, 'installing Python dependencies');
     this.changed();
     try {
-      const code = await stream(p.path, command, (t) => this.processes.log(p.id, 'sys', t), { ...this.runtimeEnv(p), ...pythons.uvEnv() });
+      const code = await stream(p.path, command, (t) => this.processes.log(p.id, 'sys', t), this.uvSiteEnv(p));
       if (code !== 0) throw new Error(`Installing dependencies failed (exit ${code}); see the log`);
     } finally {
       this.dbTasks.delete(p.id);

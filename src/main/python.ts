@@ -4,7 +4,7 @@ import type { InstalledPython, PythonChoice, RemotePython, RuntimeInstallProgres
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { compare } from './node';
-import { exe, isWin, joinPath, pathKey, TAR } from './platform';
+import { exe, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -30,8 +30,9 @@ export function uvPath(): string | null {
 }
 
 /** Environment for uv: Pythons go to DevCatz's folder, never a global one. */
-export function uvEnv(): Record<string, string> {
-  const env = getShellEnv();
+/** uv's settings, with uv's folder put before the search path of `base` (a site's environment keeps its own PATH). */
+export function uvEnv(base: Record<string, string | undefined> = {}): Record<string, string> {
+  const env = { ...getShellEnv(), ...base };
   return {
     UV_PYTHON_INSTALL_DIR: versionsDir(),
     UV_PYTHON_PREFERENCE: 'managed',
@@ -87,7 +88,7 @@ export async function installUv(progress: (p: RuntimeInstallProgress) => void): 
     progress({ version: `uv ${rel.tag_name}`, phase: 'done', received: 0, total: 0 });
     return rel.tag_name;
   } finally {
-    rmSync(tmp, { recursive: true, force: true });
+    removeTemp(tmp);
   }
 }
 
