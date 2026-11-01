@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { keyLabel, words } from '@shared/platform';
+import { isWin } from '../platform';
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorUpdate } from '@shared/types';
 import Sparkline from './Sparkline.vue';
@@ -184,25 +185,25 @@ const minutesShown = 10;
     <div class="drag title-strip h-11 shrink-0"><span class="nav-hole" aria-hidden="true" /></div>
     <div class="flex-1 space-y-5 overflow-y-auto px-6 pb-6">
       <div class="flex flex-wrap items-center gap-2">
-        <span class="label-caps">This Mac</span>
+        <span class="label-caps">This {{ words.computer }}</span>
         <span class="badge badge-soft badge-sm badge-success gap-1">
           <span class="status status-success status-xs animate-pulse" />Live · every {{ latest?.interval ?? '…' }} s
         </span>
         <span class="flex-1" />
         <span v-if="total" class="text-xs opacity-60">
-          Everything DevCatz runs: <b class="font-mono" :title="`${pct(total.cpu)} of one core = ${pct(total.cpu / cores)} of this Mac's ${cores} cores`">{{ pct(total.cpu / cores) }}</b> of this Mac's CPU
+          Everything DevCatz runs: <b class="font-mono" :title="`${pct(total.cpu)} of one core = ${pct(total.cpu / cores)} of this ${words.computer}'s ${cores} cores`">{{ pct(total.cpu / cores) }}</b> of this {{ words.computer }}'s CPU
           <span class="opacity-70">({{ pct(total.cpu) }} of one core)</span> · <b class="font-mono">{{ bytes(total.mem) }}</b> memory
         </span>
       </div>
 
-      <!-- Mac overview -->
+      <!-- Computer overview -->
       <div v-if="sys" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div class="card">
           <div class="card-body gap-1 p-4">
             <span class="label-caps">CPU</span>
             <div class="flex items-baseline gap-2">
               <span class="font-mono text-2xl font-semibold tabular-nums">{{ pct(sys.cpu) }}</span>
-              <span class="text-xs opacity-60">{{ sys.cores }} cores · load {{ sys.load[0].toFixed(2) }}</span>
+              <span class="text-xs opacity-60">{{ sys.cores }} cores<template v-if="sys.load"> · load {{ sys.load[0].toFixed(2) }}</template></span>
             </div>
             <Sparkline :values="series('system', 'cpu')" :values2="series('total', 'cpu').map((v) => v / cores)" :max="100" color="var(--c-projects)" color2="var(--c-monitoring)" :height="40" />
             <span class="text-xs opacity-60"><span style="color: var(--c-monitoring)">- -</span> DevCatz {{ pct(ownCpu) }} of it</span>
@@ -227,7 +228,7 @@ const minutesShown = 10;
             </div>
             <Sparkline :values="series('system', 'mem')" :values2="series('total', 'mem')" :max="sys.memTotal" color="var(--c-database)" color2="var(--c-monitoring)" :height="40" />
             <span class="text-xs opacity-60">
-              <span style="color: var(--c-monitoring)">- -</span> DevCatz {{ bytes(total?.mem ?? 0) }}<template v-if="sys.swapUsed"> · swap {{ bytes(sys.swapUsed) }}</template>
+              <span style="color: var(--c-monitoring)">- -</span> DevCatz {{ bytes(total?.mem ?? 0) }}<template v-if="sys.swapUsed"> · {{ isWin ? 'page file' : 'swap' }} {{ bytes(sys.swapUsed) }}</template>
             </span>
           </div>
         </div>
@@ -250,7 +251,7 @@ const minutesShown = 10;
               <span class="text-sm opacity-70" title="Out">↑ {{ rate(sys.netOut) }}</span>
             </div>
             <Sparkline :values="series('system', 'netIn')" :values2="series('system', 'netOut')" :floor="10240" color="var(--c-storage)" color2="var(--c-websocket)" :height="40" />
-            <span class="text-xs opacity-60">All apps on this Mac · <span style="color: var(--c-websocket)">- -</span> out</span>
+            <span class="text-xs opacity-60">All apps on this {{ words.computer }} · <span style="color: var(--c-websocket)">- -</span> out</span>
           </div>
         </div>
       </div>
@@ -296,7 +297,7 @@ const minutesShown = 10;
           <thead>
             <tr class="select-none">
               <th class="cursor-pointer" @click="sortKey = 'name'">Name {{ sortKey === 'name' ? '↑' : '' }}</th>
-              <th class="w-44 cursor-pointer" title="Per core, like Activity Monitor: 100% = one core busy (this Mac has more), so a row can go above 100%" @click="sortKey = 'cpu'">CPU <span class="normal-case opacity-60">(of one core)</span> {{ sortKey === 'cpu' ? '↓' : '' }}</th>
+              <th class="w-44 cursor-pointer" :title="`Per core, like ${isWin ? 'Resource Monitor' : 'Activity Monitor'}: 100% = one core busy (this ${words.computer} has more), so a row can go above 100%`" @click="sortKey = 'cpu'">CPU <span class="normal-case opacity-60">(of one core)</span> {{ sortKey === 'cpu' ? '↓' : '' }}</th>
               <th class="w-44 cursor-pointer" @click="sortKey = 'mem'">Memory {{ sortKey === 'mem' ? '↓' : '' }}</th>
               <th class="cursor-pointer whitespace-nowrap" @click="sortKey = 'net'">Network ↓ / ↑ {{ sortKey === 'net' ? '↓' : '' }}</th>
               <th class="cursor-pointer whitespace-nowrap" @click="sortKey = 'io'">Disk I/O R / W {{ sortKey === 'io' ? '↓' : '' }}</th>
@@ -327,7 +328,10 @@ const minutesShown = 10;
                   <div class="font-mono text-xs tabular-nums">{{ bytes(e.mem) }}</div>
                   <Sparkline :values="series(e.id, 'mem')" color="var(--c-database)" :height="18" />
                 </td>
-                <td class="font-mono text-xs whitespace-nowrap tabular-nums">{{ rate(e.netIn) }} <span class="opacity-50">/</span> {{ rate(e.netOut) }}</td>
+                <td class="font-mono text-xs whitespace-nowrap tabular-nums">
+                  <template v-if="latest?.capabilities.net || e.kind === 'container'">{{ rate(e.netIn) }} <span class="opacity-50">/</span> {{ rate(e.netOut) }}</template>
+                  <span v-else class="opacity-40" :title="`Per-process network traffic is not measured on ${words.os}`">—</span>
+                </td>
                 <td class="font-mono text-xs whitespace-nowrap tabular-nums">
                   <template v-if="latest?.capabilities.blockIo || e.kind === 'container'">{{ rate(e.diskRead) }} <span class="opacity-50">/</span> {{ rate(e.diskWrite) }}</template>
                   <span v-else class="opacity-40" :title="latest?.capabilities.blockIoHint ?? ''">—</span>
@@ -380,7 +384,7 @@ const minutesShown = 10;
       </div>
 
       <p class="text-xs opacity-60">
-        CPU is per core (100% = one core busy); memory is each process tree’s footprint, like Activity Monitor. {{ words.phpServer }} pools are shared by the PHP sites listed
+        CPU is per core (100% = one core busy); <template v-if="isWin">memory is each process tree’s private working set, like Task Manager; per-site network traffic is not measured on Windows (the Network card counts the whole PC).</template><template v-else>memory is each process tree’s footprint, like Activity Monitor.</template> {{ words.phpServer }} pools are shared by the PHP sites listed
         under them.
         <template v-if="latest?.capabilities.blockIoHint"><br /><span class="text-warning">{{ latest.capabilities.blockIoHint }}</span></template>
         <br />Alerts and the sampling rate: Settings → Monitoring.

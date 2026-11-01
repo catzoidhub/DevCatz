@@ -2413,7 +2413,8 @@ export interface MonitorSystem {
   /** Whole Mac. */
   cpu: number;
   cores: number;
-  load: [number, number, number];
+  /** null on Windows (no load average there). */
+  load: [number, number, number] | null;
   memTotal: number;
   /** App memory + wired + compressed, like Activity Monitor's "Memory Used". */
   memUsed: number;

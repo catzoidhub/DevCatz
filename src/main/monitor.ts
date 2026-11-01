@@ -1,9 +1,13 @@
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, statfsSync, writeFileSync } from 'node:fs';
 import { cpus, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorSnapshot, MonitorSystem, MonitorUpdate } from '@shared/types';
+import { words } from '@shared/platform';
+import { sizeOf as walkSizeOf } from './depclean';
 import { run } from './env';
+import { isWin } from './platform';
 import { dataDir, store } from './store';
 
 /**
@@ -17,6 +21,10 @@ import { dataDir, store } from './store';
  *  - network: `nettop -P -L 1` bytes in/out per process,
  *  - containers: `docker stats` when Docker runs.
  * An hour of points stays in memory; the page pushes updates while it is open.
+ *
+ * Windows: one PowerShell kept running (WinSampler) answers each sample — Win32_Process for the trees, CPU time,
+ * working set and I/O bytes, the OS's free memory and page file, the network adapters' byte counters (Windows has
+ * no per-process network counters without ETW, so the rows show none), Get-NetTCPConnection for ports.
  */
 
 /** A site or service: its main pids and the folders whose size is shown. */
@@ -56,6 +64,193 @@ int main(void) {
   return 0;
 }
 `;
+
+/**
+ * Each line: P pid ppid memory cpu100ns ioRead ioWrite · M availKB pageFileMB · N rx tx · T pid Listen|Established port · END.
+ * The C# part reads what Task Manager reads, in one call each — NtQuerySystemInformation (processes: private working
+ * set, CPU times, I/O bytes), GetExtendedTcpTable (ports per pid), the adapters' byte counters — compiled once when
+ * the sampler starts; WMI (Get-CimInstance) took ~15 % of a core and 200 MB at a 2 s interval. WMI stays the fallback.
+ */
+const WIN_SAMPLER = `$ErrorActionPreference = 'SilentlyContinue'
+$fast = $true
+try {
+Add-Type -ErrorAction Stop -TypeDefinition @'
+using System; using System.Text; using System.Runtime.InteropServices; using System.Net.NetworkInformation;
+public static class CatzStat {
+  [DllImport("ntdll.dll")] static extern int NtQuerySystemInformation(int c, IntPtr b, int n, out int r);
+  [DllImport("iphlpapi.dll")] static extern uint GetExtendedTcpTable(IntPtr t, ref int n, bool sort, int af, int cls, int res);
+  [StructLayout(LayoutKind.Sequential)] public class MEM { public uint len = 64, load; public ulong total, avail, tpf, apf, tv, av, ave; }
+  [DllImport("kernel32.dll")] static extern bool GlobalMemoryStatusEx([In, Out] MEM m);
+  static int size = 1 << 20;
+  public static string Sample(bool live, long pageFileMb) {
+    var sb = new StringBuilder(64 * 1024);
+    IntPtr buf = IntPtr.Zero; int ret;
+    for (;;) {
+      buf = Marshal.AllocHGlobal(size);
+      int st = NtQuerySystemInformation(5, buf, size, out ret);
+      if (st == 0) break;
+      Marshal.FreeHGlobal(buf); buf = IntPtr.Zero;
+      if (st != unchecked((int)0xC0000004)) return "END\\n";
+      size = Math.Max(size * 2, ret + 65536);
+    }
+    try {
+      long off = 0;
+      for (;;) {
+        IntPtr p = new IntPtr(buf.ToInt64() + off);
+        long pid = Marshal.ReadIntPtr(p, 80).ToInt64(), ppid = Marshal.ReadIntPtr(p, 88).ToInt64();
+        long priv = Marshal.ReadInt64(p, 8), cpu = Marshal.ReadInt64(p, 40) + Marshal.ReadInt64(p, 48);
+        sb.Append("P ").Append(pid).Append(' ').Append(ppid).Append(' ').Append(priv).Append(' ').Append(cpu).Append(' ')
+          .Append(Marshal.ReadInt64(p, 232)).Append(' ').Append(Marshal.ReadInt64(p, 240)).Append('\\n');
+        int next = Marshal.ReadInt32(p, 0);
+        if (next == 0) break;
+        off += next;
+      }
+    } finally { Marshal.FreeHGlobal(buf); }
+    var m = new MEM(); GlobalMemoryStatusEx(m);
+    sb.Append("M ").Append(m.avail / 1024).Append(' ').Append(pageFileMb).Append('\\n');
+    long rx = 0, tx = 0;
+    foreach (var ni in NetworkInterface.GetAllNetworkInterfaces()) {
+      if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback || ni.OperationalStatus != OperationalStatus.Up) continue;
+      try { var s = ni.GetIPStatistics(); rx += s.BytesReceived; tx += s.BytesSent; } catch {}
+    }
+    sb.Append("N ").Append(rx).Append(' ').Append(tx).Append('\\n');
+    if (live) { Tcp(sb, 2, 24, 0, 8, 20); Tcp(sb, 23, 56, 48, 20, 52); }
+    sb.Append("END\\n");
+    return sb.ToString();
+  }
+  // TCP_TABLE_OWNER_PID_ALL rows: IPv4 (state 0, port 8, pid 20) and IPv6 (port 20, state 48, pid 52).
+  static void Tcp(StringBuilder sb, int af, int row, int so, int po, int pido) {
+    int n = 0; GetExtendedTcpTable(IntPtr.Zero, ref n, false, af, 5, 0);
+    IntPtr t = Marshal.AllocHGlobal(n + 4096); n += 4096;
+    try {
+      if (GetExtendedTcpTable(t, ref n, false, af, 5, 0) != 0) return;
+      int count = Marshal.ReadInt32(t);
+      for (int i = 0; i < count; i++) {
+        IntPtr r = new IntPtr(t.ToInt64() + 4 + (long)i * row);
+        int state = Marshal.ReadInt32(r, so);
+        if (state != 2 && state != 5) continue;
+        int raw = Marshal.ReadInt32(r, po), port = ((raw & 0xff) << 8) | ((raw >> 8) & 0xff);
+        sb.Append("T ").Append((uint)Marshal.ReadInt32(r, pido)).Append(state == 2 ? " Listen " : " Established ").Append(port).Append('\\n');
+      }
+    } finally { Marshal.FreeHGlobal(t); }
+  }
+}
+'@
+} catch { $fast = $false }
+# The compiler's memory is not needed after Add-Type.
+[GC]::Collect()
+$pfAt = [datetime]::MinValue; $pf = 0
+function PageFile { if (((Get-Date) - $script:pfAt).TotalSeconds -gt 60) { $script:pf = [int](Get-CimInstance Win32_PageFileUsage -Property CurrentUsage | Measure-Object CurrentUsage -Sum).Sum; $script:pfAt = Get-Date }; $script:pf }
+function S([int]$live) {
+  $sb = [Text.StringBuilder]::new()
+  foreach ($p in Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,WorkingSetSize,KernelModeTime,UserModeTime,ReadTransferCount,WriteTransferCount) {
+    [void]$sb.Append("P $($p.ProcessId) $($p.ParentProcessId) $($p.WorkingSetSize) $([uint64]$p.KernelModeTime + [uint64]$p.UserModeTime) $($p.ReadTransferCount) $($p.WriteTransferCount)\`n")
+  }
+  $os = Get-CimInstance Win32_OperatingSystem -Property FreePhysicalMemory
+  [void]$sb.Append("M $($os.FreePhysicalMemory) $(PageFile)\`n")
+  $rx = 0; $tx = 0
+  foreach ($a in Get-NetAdapterStatistics) { $rx += $a.ReceivedBytes; $tx += $a.SentBytes }
+  [void]$sb.Append("N $rx $tx\`n")
+  if ($live) {
+    foreach ($c in Get-NetTCPConnection -State Listen,Established) { [void]$sb.Append("T $($c.OwningProcess) $($c.State) $($c.LocalPort)\`n") }
+  }
+  [void]$sb.Append("END\`n")
+  [Console]::Out.Write($sb.ToString())
+}
+while ($null -ne ($line = [Console]::In.ReadLine())) {
+  if ($fast) { [Console]::Out.Write([CatzStat]::Sample($line -eq '1', (PageFile))) } else { S ([int]$line) }
+  [Console]::Out.Flush()
+}
+`;
+
+interface WinSample {
+  procs: Map<number, Proc>;
+  io: Map<number, [number, number, number]>;
+  freeKb: number;
+  pageFileMb: number;
+  rx: number;
+  tx: number;
+  sockets: Map<number, { ports: Set<number>; conns: number }>;
+}
+
+/** One long-lived PowerShell: starting one per sample costs ~1 s of CPU, more than DevCatz itself. */
+class WinSampler {
+  private child: ChildProcess | null = null;
+  private buf = '';
+  private pending: { resolve: (s: string) => void; reject: (e: Error) => void; timer: NodeJS.Timeout } | null = null;
+
+  private ensure(): ChildProcess {
+    if (this.child && this.child.exitCode === null && !this.child.killed) return this.child;
+    const encoded = Buffer.from(WIN_SAMPLER, 'utf16le').toString('base64');
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-NoLogo', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], { windowsHide: true });
+    child.stdout!.setEncoding('utf8');
+    child.stdout!.on('data', (d: string) => {
+      this.buf += d;
+      const end = this.buf.indexOf('END\n') >= 0 ? this.buf.indexOf('END\n') : this.buf.indexOf('END\r\n');
+      if (end < 0 || !this.pending) return;
+      const out = this.buf.slice(0, end);
+      this.buf = this.buf.slice(end).replace(/^END\r?\n/, '');
+      const p = this.pending;
+      this.pending = null;
+      clearTimeout(p.timer);
+      p.resolve(out);
+    });
+    child.on('exit', () => {
+      this.child = null;
+      this.buf = '';
+      this.pending?.reject(new Error('sampler exited'));
+      this.pending = null;
+    });
+    child.on('error', () => undefined);
+    this.child = child;
+    return child;
+  }
+
+  query(live: boolean): Promise<WinSample> {
+    if (this.pending) return Promise.reject(new Error('sample already running'));
+    const child = this.ensure();
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending = null;
+        this.stop();
+        reject(new Error('sampler timed out'));
+      }, 30_000);
+      this.pending = { resolve, reject, timer };
+      child.stdin!.write(`${live ? 1 : 0}\n`);
+    }).then(parseWinSample);
+  }
+
+  stop(): void {
+    this.child?.kill();
+    this.child = null;
+  }
+}
+
+function parseWinSample(out: string): WinSample {
+  const r: WinSample = { procs: new Map(), io: new Map(), freeKb: 0, pageFileMb: 0, rx: 0, tx: 0, sockets: new Map() };
+  for (const line of out.split(/\r?\n/)) {
+    const f = line.split(' ');
+    if (f[0] === 'P') {
+      const [pid, ppid, ws, cpu, rd, wr] = f.slice(1).map(Number);
+      if (!pid) continue;
+      r.procs.set(pid, { ppid, rss: ws, cpuSec: cpu / 1e7 });
+      r.io.set(pid, [rd || 0, wr || 0, ws]);
+    } else if (f[0] === 'M') {
+      r.freeKb = Number(f[1]) || 0;
+      r.pageFileMb = Number(f[2]) || 0;
+    } else if (f[0] === 'N') {
+      r.rx = Number(f[1]) || 0;
+      r.tx = Number(f[2]) || 0;
+    } else if (f[0] === 'T') {
+      const pid = Number(f[1]);
+      const s = r.sockets.get(pid) ?? { ports: new Set<number>(), conns: 0 };
+      if (f[2] === 'Listen') s.ports.add(Number(f[3]));
+      else if (f[2] === 'Established') s.conns++;
+      r.sockets.set(pid, s);
+    }
+  }
+  return r;
+}
 
 interface Proc {
   ppid: number;
@@ -114,6 +309,10 @@ export class Monitor {
   private names = new Map<string, { name: string; kind: MonitorKind }>();
   private savedAt = 0;
   private sockets = new Map<number, { ports: Set<number>; conns: number }>();
+  private win = isWin ? new WinSampler() : null;
+  private winLast: WinSample | null = null;
+  private prevAdapters: { at: number; rx: number; tx: number } | null = null;
+  private adapterRate = { netIn: 0, netOut: 0 };
 
   /** Updates go to the window while the page is open, and to the menu bar line. */
   onSample: (u: MonitorUpdate, live: boolean) => void = () => undefined;
@@ -130,6 +329,7 @@ export class Monitor {
   stop(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.win?.stop();
     this.saveLong();
   }
 
@@ -202,7 +402,7 @@ export class Monitor {
   /** CSV of a range: one row per point and item. */
   csv(range: MonitorRange): string {
     const h = this.rangeHistory(range);
-    const label = (id: string) => (id === 'system' ? { name: 'This Mac', kind: 'system' } : id === 'total' ? { name: 'All of DevCatz', kind: 'total' } : (this.names.get(id) ?? { name: id, kind: '' }));
+    const label = (id: string) => (id === 'system' ? { name: `This ${words.computer}`, kind: 'system' } : id === 'total' ? { name: 'All of DevCatz', kind: 'total' } : (this.names.get(id) ?? { name: id, kind: '' }));
     const q = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
     const rows = ['time,id,name,kind,cpu_percent,memory_bytes,net_in_bytes_per_s,net_out_bytes_per_s,disk_read_bytes_per_s,disk_write_bytes_per_s'];
     for (const [id, pts] of Object.entries(h)) {
@@ -340,11 +540,10 @@ export class Monitor {
       }
       if ((!hit || Date.now() - hit.at > 300_000) && !this.sizing.has(d) && existsSync(d)) {
         this.sizing.add(d);
-        void run('du', ['-sk', d], { timeout: 120_000 })
-          .then((r) => {
-            const kb = Number(r.stdout.trim().split(/\s+/)[0]);
-            if (Number.isFinite(kb)) this.diskSizes.set(d, { at: Date.now(), bytes: kb * 1024 });
-          })
+        // depclean's sizeOf: du on macOS, a walk that skips junctions on Windows.
+        void walkSizeOf(d)
+          .then((bytes) => this.diskSizes.set(d, { at: Date.now(), bytes }))
+          .catch(() => undefined)
           .finally(() => this.sizing.delete(d));
       }
     }
@@ -358,6 +557,32 @@ export class Monitor {
     let cpu = 0;
     if (this.prevSysCpu && total > this.prevSysCpu.total) cpu = (1 - (idle - this.prevSysCpu.idle) / (total - this.prevSysCpu.total)) * 100;
     this.prevSysCpu = { idle, total };
+    if (isWin) {
+      const w = this.winLast;
+      let diskTotal = 0;
+      let diskFree = 0;
+      try {
+        const fs = statfsSync(`${process.env.SystemDrive ?? 'C:'}\\`);
+        diskTotal = fs.blocks * fs.bsize;
+        diskFree = fs.bavail * fs.bsize;
+      } catch {
+        /* no system drive? */
+      }
+      return {
+        cpu: Math.max(0, Math.min(100, cpu)),
+        cores: c.length,
+        // Windows has no load average (os.loadavg() is always 0 there).
+        load: null,
+        memTotal: totalmem(),
+        memUsed: w ? Math.max(0, totalmem() - w.freeKb * 1024) : 0,
+        memPressure: null,
+        swapUsed: (w?.pageFileMb ?? 0) * 1048576,
+        diskTotal,
+        diskFree,
+        netIn: this.adapterRate.netIn,
+        netOut: this.adapterRate.netOut,
+      };
+    }
     // Memory Used = app (anonymous) + wired + compressed, from vm_stat.
     const vm = (await run('vm_stat', [])).stdout;
     const page = Number(vm.match(/page size of (\d+)/)?.[1] ?? 16384);
@@ -418,7 +643,10 @@ export class Monitor {
         this.prevContainers.set(s.Name, [ni, no, br, bw]);
         const rate = (i: number, v: number) => (prev ? Math.max(0, (v - prev[i]) / since) : 0);
         const info = project.get(s.Name);
-        const site = info?.dir ? sites.find((t) => t.path && (info.dir === t.path || info.dir.startsWith(`${t.path}/`))) : undefined;
+        // Windows: compose reports C:\\… with any case.
+        const norm = (x: string) => (isWin ? x.replace(/\//g, '\\').toLowerCase() : x);
+        const sep = isWin ? '\\' : '/';
+        const site = info?.dir ? sites.find((t) => t.path && (norm(info.dir) === norm(t.path) || norm(info.dir).startsWith(`${norm(t.path)}${sep}`))) : undefined;
         out.push({
           id: `container:${s.Name}`,
           kind: 'container',
@@ -452,22 +680,42 @@ export class Monitor {
     const now = Date.now();
     const dt = this.lastAt ? Math.max(0.2, (now - this.lastAt) / 1000) : 0;
     this.lastAt = now;
-    const [ps, ru, net] = await Promise.all([
-      run('ps', ['-A', '-o', 'pid=,ppid=,rss=,time='], { timeout: 10_000 }),
-      this.rusage(),
-      this.net().catch(() => new Map<number, [number, number]>()),
-      // Listening ports and open connections per pid: only while the page shows them.
-      this.live ? this.readSockets().catch(() => undefined) : Promise.resolve(),
-    ]);
-    const procs = new Map<number, Proc>();
+    let procs = new Map<number, Proc>();
+    let ru: Map<number, [number, number, number]>;
+    let net: Map<number, [number, number]>;
+    if (this.win) {
+      const w = await this.win.query(this.live);
+      this.winLast = w;
+      procs = w.procs;
+      ru = w.io;
+      net = new Map();
+      if (this.live) this.sockets = w.sockets;
+      const prev = this.prevAdapters;
+      const span = prev ? (now - prev.at) / 1000 : 0;
+      this.adapterRate = span > 0 ? { netIn: Math.max(0, (w.rx - prev!.rx) / span), netOut: Math.max(0, (w.tx - prev!.tx) / span) } : { netIn: 0, netOut: 0 };
+      this.prevAdapters = { at: now, rx: w.rx, tx: w.tx };
+    } else {
+      const [ps, r, n] = await Promise.all([
+        run('ps', ['-A', '-o', 'pid=,ppid=,rss=,time='], { timeout: 10_000 }),
+        this.rusage(),
+        this.net().catch(() => new Map<number, [number, number]>()),
+        // Listening ports and open connections per pid: only while the page shows them.
+        this.live ? this.readSockets().catch(() => undefined) : Promise.resolve(),
+      ]);
+      ru = r;
+      net = n;
+      for (const line of ps.stdout.split('\n')) {
+        const [pid, ppid, rss, time] = line.trim().split(/\s+/);
+        if (!pid || !time) continue;
+        procs.set(Number(pid), { ppid: Number(ppid), rss: Number(rss) * 1024, cpuSec: cpuSeconds(time) });
+      }
+    }
     const children = new Map<number, number[]>();
-    for (const line of ps.stdout.split('\n')) {
-      const [pid, ppid, rss, time] = line.trim().split(/\s+/);
-      if (!pid || !time) continue;
-      const p = Number(pid);
-      procs.set(p, { ppid: Number(ppid), rss: Number(rss) * 1024, cpuSec: cpuSeconds(time) });
-      if (!children.has(Number(ppid))) children.set(Number(ppid), []);
-      children.get(Number(ppid))!.push(p);
+    for (const [pid, p] of procs) {
+      // Windows: the Idle process (0) is its own parent.
+      if (pid === p.ppid) continue;
+      if (!children.has(p.ppid)) children.set(p.ppid, []);
+      children.get(p.ppid)!.push(pid);
     }
 
     // Per-pid rates.
@@ -609,7 +857,7 @@ export class Monitor {
       system,
       total,
       entities,
-      capabilities: { blockIo: Boolean(this.helper), net: net.size > 0, docker: this.dockerOk, blockIoHint: this.helperHint },
+      capabilities: { blockIo: isWin || Boolean(this.helper), net: net.size > 0, docker: this.dockerOk, blockIoHint: this.helperHint },
     };
   }
 
@@ -637,6 +885,6 @@ export class Monitor {
         once(`mem:${e.id}`, HOUR, `${e.name} uses a lot of memory`, `Above ${s.monitorMemAlertMb} MB for ${s.monitorAlertMinutes} min (now ${Math.round(e.mem / 1048576)} MB).`);
     }
     if (u.system.diskTotal && u.system.diskFree < s.monitorDiskAlertGb * 1073741824)
-      once('disk', 6 * HOUR, 'Disk almost full', `${(u.system.diskFree / 1073741824).toFixed(1)} GB free on this Mac.`);
+      once('disk', 6 * HOUR, 'Disk almost full', `${(u.system.diskFree / 1073741824).toFixed(1)} GB free on this ${words.computer}.`);
   }
 }

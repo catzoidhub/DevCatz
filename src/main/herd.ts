@@ -24,7 +24,7 @@ import { detectPackageManager, readEnvFiles, readJson, readText, runScriptComman
 import { readCargo } from './runtimes/rust';
 import { detectStack, isLinkableDir, isProjectDir } from './runtimes';
 import { getShellEnv, hasCommand, isListening, isPortOpen, portOwner, run, setUserPath } from './env';
-import { isMac, isWin, joinPath, pathKey, shellCommand, splitPath } from './platform';
+import { isWin, joinPath, pathKey, shellCommand, splitPath } from './platform';
 import { lookup } from 'node:dns/promises';
 import { ProcessManager } from './processes';
 import { captureScreenshot, screenshotTime } from './screenshots';
@@ -473,8 +473,7 @@ export class Herd extends EventEmitter {
     this.ws.autoStart();
     this.search.autoStart();
     this.storage.autoStart();
-    // Windows (Catzoid #57): the monitor is macOS-only so far.
-    if (isMac) this.monitor.start();
+    this.monitor.start();
     // Runtime updates: shortly after launch, then every 6 hours.
     this.timers.push(setTimeout(() => void this.autoCheckUpdates(), 30_000));
     this.timers.push(setInterval(() => void this.autoCheckUpdates(), 6 * 3600_000));
