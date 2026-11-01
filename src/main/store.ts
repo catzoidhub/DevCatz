@@ -1,5 +1,5 @@
 import { app } from 'electron';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DbBinary, DbServiceConfig, ProjectConfig, SearchConfig, SearchKind, Settings, StorageConfig, StorageKind, WsConfig, WsKind } from '@shared/types';
 
@@ -105,9 +105,19 @@ class Store {
   constructor() {
     let loaded: Partial<StoreData> = {};
     try {
-      loaded = JSON.parse(readFileSync(this.file, 'utf8'));
-    } catch {
-      /* first run */
+      // A byte-order mark (an editor on Windows) is not JSON: dropped first.
+      loaded = JSON.parse(readFileSync(this.file, 'utf8').replace(/^\uFEFF/, ''));
+    } catch (e) {
+      // First run (no file). A file that is there but cannot be read is kept aside before the defaults replace it,
+      // so the sites and settings in it are not lost.
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT' && existsSync(this.file)) {
+        try {
+          copyFileSync(this.file, `${this.file}.unreadable-${Date.now()}`);
+        } catch {
+          /* best effort */
+        }
+        console.error(`config.json could not be read (${(e as Error).message}); a copy was kept next to it`);
+      }
     }
     // Keep every saved field (storage, notified updates …), not only the ones listed here.
     this.data = {
