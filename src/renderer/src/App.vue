@@ -30,7 +30,7 @@ import StatusDot from './components/StatusDot.vue';
 import PopMenu from './components/PopMenu.vue';
 import { groupByType, sortList, useListView } from './listview';
 import { ICONS, STAR } from './icons';
-import { siteStatus, stackTag } from './runtimes';
+import { siteStatus, stackTag, isDesktopSite } from './runtimes';
 import { backIndex, backList, canBack, canForward, forwardList, goBack, goForward, goTo, navApply, navPrune, navVisit, type NavEntry } from './nav';
 import type { AppState, ProjectState } from '@shared/types';
 import { isWin, WIN_SECTIONS } from './platform';
@@ -677,7 +677,7 @@ async function park() {
                     <svg v-if="favs.has(p.id) && sec.key !== 'fav'" class="size-3 shrink-0 text-warning" viewBox="0 0 20 20" fill="currentColor"><path :d="STAR" /></svg>
                   </div>
                   <div class="flex items-center gap-1.5 text-xs">
-                    <span class="truncate opacity-60">{{ p.domain }}</span>
+                    <span class="truncate opacity-60">{{ isDesktopSite(p) ? 'desktop app' : p.domain }}</span>
                     <span v-if="gitBadge(p)" class="git-chip shrink-0" :class="{ 'is-warn': p.git?.conflicts || p.git?.operation }" :title="gitTitle(p)">{{ gitBadge(p) }}</span>
                   </div>
                 </div>

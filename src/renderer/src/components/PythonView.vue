@@ -140,6 +140,9 @@ watch(runtimeTabRequest, (t) => {
           A site’s venv is created with the version it asks for (<code>.python-version</code> / <code>requires-python</code>), else the default; a missing version is fetched
           by uv when dependencies are installed.
         </p>
+        <p class="text-xs opacity-60">
+          <code>python</code>, <code>pip</code> and <code>uv</code> for your terminal: shims for the default version next to the Node.js ones (Node.js → Terminal).
+        </p>
       </div>
     </div>
 

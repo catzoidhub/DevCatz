@@ -6,7 +6,7 @@ import { attempt, herd, navRequest, notify, siteTabRequest, state } from '../sto
 import { navVisit } from '../nav';
 import AiExplain from './AiExplain.vue';
 import { aiOn } from '../ai';
-import { appCommand, frameworkTag, hasExtras, pythonInstallLabel, siteFrameworks, siteStatus, runsPerApp, runtimesOf, usesGo, usesJs, usesPhp, usesPython, portWhy } from '../runtimes';
+import { appCommand, frameworkTag, hasExtras, pythonInstallLabel, siteFrameworks, siteStatus, runsPerApp, runtimesOf, usesGo, usesJs, usesPhp, usesPython, portWhy, isDesktopSite } from '../runtimes';
 import StackMark from './StackMark.vue';
 import DataLibsCard from './DataLibsCard.vue';
 import { mark } from '../datamarks';
@@ -252,8 +252,10 @@ const startItems = computed<MenuItem[]>(() => [
   { label: `Start all`, hint: `${p.value.name} + ${worktrees.value.length} worktree${worktrees.value.length === 1 ? '' : 's'}`, action: () => void startAll() },
 ]);
 
+/** An Electron app: its own window, no web address — no URL, Share, preview or domain settings on its page. */
+const desktopApp = computed(() => isDesktopSite(p.value));
 const openItems = computed<MenuItem[]>(() => [
-  ...p.value.stack.apps.map((app) => ({ label: app.domain, hint: 'Open in browser', icon: ICONS.globe, action: () => void herd.openUrl(url(app.domain)) })),
+  ...p.value.stack.apps.filter((app) => app.library !== 'electron').map((app) => ({ label: app.domain, hint: 'Open in browser', icon: ICONS.globe, action: () => void herd.openUrl(url(app.domain)) })),
   { label: 'Editor', icon: ICONS.code, action: () => void herd.openEditor(p.value.id) },
   { label: words.fileManager, icon: ICONS.folder, action: () => void herd.openFolder(p.value.id) },
   { label: 'Terminal', icon: ICONS.terminal, action: () => void herd.openTerminal(p.value.id) },
@@ -409,7 +411,11 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
             @click="tab = 'git'"
           >worktree · {{ p.git?.branch ?? 'detached' }}</button>
         </div>
-        <a class="url-chip no-drag mt-1.5" :title="`Open ${url(p.domain)}`" @click="herd.openUrl(url(p.domain))">
+        <span v-if="desktopApp" class="url-chip no-drag mt-1.5 cursor-default" title="An Electron app: Start opens its own window">
+          <StackMark :icon="frameworkTag('node', 'electron').icon" class="size-3.5 shrink-0" />
+          <span class="truncate font-sans">Desktop app · opens in its own window</span>
+        </span>
+        <a v-else class="url-chip no-drag mt-1.5" :title="`Open ${url(p.domain)}`" @click="herd.openUrl(url(p.domain))">
           <svg class="size-3.5 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS.globe" /></svg>
           <span class="truncate">{{ url(p.domain) }}</span>
           <svg class="size-3 opacity-60" viewBox="0 0 20 20" fill="currentColor"><path d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z" /><path d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z" /></svg>
@@ -451,8 +457,8 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
         <PopMenu :items="openItems" align="end" :width="260">
           <button class="btn btn-sm">Open ▾</button>
         </PopMenu>
-        <button v-if="!share" class="btn btn-sm" title="Share this site on a public URL (Cloudflare quick tunnel)" @click="sharing = true">Share</button>
-        <button v-else class="btn btn-sm btn-success btn-soft" :title="share.url ?? share.status" @click="navRequest = { section: 'expose', id: p.id }">
+        <button v-if="!share && !desktopApp" class="btn btn-sm" title="Share this site on a public URL (Cloudflare quick tunnel)" @click="sharing = true">Share</button>
+        <button v-else-if="share" class="btn btn-sm btn-success btn-soft" :title="share.url ?? share.status" @click="navRequest = { section: 'expose', id: p.id }">
           <span class="status status-success status-xs" />Shared
         </button>
       </div>
@@ -584,7 +590,17 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
     </div>
     <!-- The shot keeps its 16:10; beside it (lg) the Framework card takes the shot's height and scrolls inside when it has more. -->
     <div class="grid gap-6 lg:grid-cols-[minmax(0,24rem)_1fr]">
-      <SitePreview :project="p" :url="url(p.domain)" />
+      <div v-if="desktopApp" class="card">
+        <div class="card-body items-center justify-center gap-2 text-center">
+          <StackMark :icon="frameworkTag('node', 'electron').icon" class="size-10" />
+          <div class="font-medium">A desktop app</div>
+          <p class="text-xs opacity-70">
+            Start opens its window, the way <code>{{ command ?? 'npm start' }}</code> does in a terminal. It has no web address, so there is nothing to
+            preview or share here; its output is in Logs.
+          </p>
+        </div>
+      </div>
+      <SitePreview v-else :project="p" :url="url(p.domain)" />
       <div class="card min-w-0 lg:relative">
         <div class="card-body gap-5 lg:absolute lg:inset-0 lg:overflow-y-auto">
           <!-- Framework: the same mark and name as the site list, then any other framework its apps use -->
@@ -722,6 +738,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
               <td><code class="text-xs whitespace-nowrap">{{ appCommand(p, app) }}</code></td>
               <td v-if="app.docroot !== undefined" class="text-xs opacity-60">— <span class="opacity-70">(FastCGI)</span></td>
               <td v-else-if="app.framework === 'mix'" class="text-xs opacity-60">— <span class="opacity-70">(builds into public/)</span></td>
+              <td v-else-if="app.library === 'electron'" class="text-xs opacity-60">— <span class="opacity-70">(its own window)</span></td>
               <td v-else class="whitespace-nowrap">
                 <code>{{ app.port ?? '?' }}</code>
                 <span
@@ -734,7 +751,8 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
                 <span v-else-if="portWhy(p, app)" class="badge badge-ghost badge-xs ml-1 opacity-70" :title="portWhy(p, app)!.detail">{{ portWhy(p, app)!.title }}</span>
               </td>
               <td>
-                <a v-if="app.domain" class="link link-primary" @click="herd.openUrl(url(app.domain))">{{ app.domain }}</a>
+                <span v-if="app.library === 'electron'" class="text-xs opacity-60">—</span>
+                <a v-else-if="app.domain" class="link link-primary" @click="herd.openUrl(url(app.domain))">{{ app.domain }}</a>
                 <span v-else class="text-xs opacity-60">via {{ p.domain }}</span>
               </td>
             </tr>
@@ -869,7 +887,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
               <span class="label-caps mb-1.5 block">Name</span>
               <input v-model="form.name" class="input input-sm w-full" />
             </label>
-            <label class="block">
+            <label v-if="!desktopApp" class="block">
               <span class="label-caps mb-1.5 block">{{ parentDomain ? 'Subdomain' : 'Domain' }}</span>
               <div class="join flex w-full">
                 <input v-model="form.domain" class="input input-sm join-item min-w-0 flex-1 font-mono" :class="{ 'input-warning': domainTaken }" :placeholder="parentDomain ? 'feature' : 'my-project'" spellcheck="false" autocapitalize="off" />
@@ -879,7 +897,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
               <span v-else-if="parentDomain" class="mt-1.5 block text-xs opacity-60">This worktree runs next to its parent site on its own subdomain and ports.</span>
             </label>
           </div>
-          <div>
+          <div v-if="!desktopApp">
             <span class="label-caps mb-1.5 block">Protocol</span>
             <div class="flex flex-wrap items-center gap-3">
               <div class="join">

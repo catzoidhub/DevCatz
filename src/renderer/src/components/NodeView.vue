@@ -194,7 +194,7 @@ watch(runtimeTabRequest, (t) => {
         <template v-if="isWin">
           <p class="text-xs opacity-70">
             DevCatz keeps <code>node</code>, <code>npm</code>, <code>npx</code> and <code>corepack</code> shims for the default version — and
-            <code>bun</code>, <code>go</code>, <code>php</code>, <code>composer</code> for theirs — in one folder. Add it to your own Path (no
+            <code>bun</code>, <code>go</code>, <code>php</code>, <code>composer</code>, <code>python</code>, <code>pip</code>, <code>uv</code> for theirs — in one folder. Add it to your own Path (no
             administrator rights) and new terminals (Windows Terminal, PowerShell, cmd, VS Code) use them.
           </p>
           <p class="text-xs opacity-70">
@@ -209,7 +209,8 @@ watch(runtimeTabRequest, (t) => {
           </div>
         </template>
         <p v-if="!isWin" class="text-xs opacity-70">
-          DevCatz keeps <code>node</code>, <code>npm</code>, <code>npx</code> and <code>corepack</code> shims for the default version. To use them in
+          DevCatz keeps <code>node</code>, <code>npm</code>, <code>npx</code> and <code>corepack</code> shims for the default version (and <code>bun</code>,
+          <code>go</code>, <code>php</code>, <code>composer</code>, <code>python</code>, <code>pip</code>, <code>uv</code> for theirs). To use them in
           your terminal, add this line to the <b>end</b> of <code>~/.zshrc</code>. It then takes precedence over a node from another tool (nvm, Homebrew …).
         </p>
         <div v-if="!isWin" class="join">

@@ -968,7 +968,8 @@ function api(): HerdApi {
           ],
         },
         { type: 'separator' },
-        { label: 'Open in Browser', enabled: Boolean(p), click: () => p && void openWeb(p.url) },
+        // An Electron app has no web address: its window is what Start opens.
+        ...(p?.desktop ? [] : [{ label: 'Open in Browser', enabled: Boolean(p), click: () => p && void openWeb(p.url) }]),
         { label: 'Open Folder', enabled: Boolean(p), click: () => p && void shell.openPath(p.path) },
       ]).popup({ window: win ?? undefined });
     },

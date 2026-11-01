@@ -2975,6 +2975,7 @@ export class Herd extends EventEmitter {
     this.installedPythons = await pythons.listInstalled().catch(() => []);
     const def = store.settings.pythonDefault;
     if (def && !this.installedPythons.some((i) => i.version === def)) store.updateSettings({ pythonDefault: null });
+    pythons.writeShims(this.installedPythons, store.settings.pythonDefault);
   }
 
   /** The venv's Python when there is one; else what a new venv would be created with. */
@@ -4158,9 +4159,11 @@ export class Herd extends EventEmitter {
   // ------------------------------------------------------- sidebar organisation
 
   /** Site URL and folder for the sidebar's context menu. */
-  siteInfo(id: string): { url: string; path: string } | null {
+  /** `desktop`: an Electron app only — its own window, no web address. */
+  siteInfo(id: string): { url: string; path: string; desktop: boolean } | null {
     const p = this.projects.find((x) => x.id === id);
-    return p ? { url: this.urlFor(p), path: p.path } : null;
+    const apps = this.stacks.get(id)?.apps ?? [];
+    return p ? { url: this.urlFor(p), path: p.path, desktop: apps.length > 0 && apps.every((a) => a.library === 'electron') } : null;
   }
 
   setFavorite(id: string, on: boolean): void {

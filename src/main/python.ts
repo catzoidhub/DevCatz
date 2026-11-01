@@ -1,9 +1,9 @@
-import { chmodSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { InstalledPython, PythonChoice, RemotePython, RuntimeInstallProgress } from '@shared/types';
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
-import { compare } from './node';
+import { compare, shimDir, writeCmdShim } from './node';
 import { exe, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 
@@ -197,4 +197,41 @@ export function satisfies(version: string, spec: string): boolean {
         return true;
     }
   });
+}
+
+/**
+ * `python`, `python3`, `pip`, `uv` and `uvx` in the shim folder ("Add to my Path"), like node / go / php: the default
+ * Python DevCatz installed (else the newest one it installed) and DevCatz's uv. Pythons of the user's own are left to
+ * their own PATH entries.
+ */
+export function writeShims(installed: InstalledPython[], defaultVersion: string | null): void {
+  const own = installed.filter((i) => i.source === 'mrcatz').sort((a, b) => compare(b.version, a.version));
+  const py = own.find((i) => i.version === defaultVersion) ?? own[0] ?? null;
+  const uv = uvPath();
+  const uvx = uv ? join(dirname(uv), exe('uvx')) : null;
+  const dir = shimDir();
+  mkdirSync(dir, { recursive: true });
+  if (isWin) {
+    for (const name of ['python', 'python3']) writeCmdShim(dir, name, py?.path ?? null);
+    writeCmdShim(dir, 'pip', py?.path ?? null, '-m pip');
+    writeCmdShim(dir, 'uv', uv);
+    writeCmdShim(dir, 'uvx', uvx);
+    return;
+  }
+  const links: [string, string | null][] = [
+    ['python', py?.path ?? null],
+    ['python3', py?.path ?? null],
+    ['pip', py ? join(py.binDir, 'pip3') : null],
+    ['uv', uv],
+    ['uvx', uvx],
+  ];
+  for (const [name, target] of links) {
+    const link = join(dir, name);
+    try {
+      unlinkSync(link);
+    } catch {
+      /* not there */
+    }
+    if (target && existsSync(target)) symlinkSync(target, link);
+  }
 }

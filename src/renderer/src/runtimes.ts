@@ -90,6 +90,11 @@ export function runtimesOf(p: ProjectState): RuntimeRow[] {
 }
 
 /** What the status dot shows: PHP sites count as running while PHP-FPM serves them; a start in progress as starting. */
+/** A desktop app only (Electron): it opens its own window, with no port and no web address to open or share. */
+export function isDesktopSite(p: ProjectState): boolean {
+  return p.stack.apps.length > 0 && p.stack.apps.every((a) => a.library === 'electron');
+}
+
 export function siteStatus(p: ProjectState): ProjectState['status'] {
   // Building shared packages before the apps launch counts as starting too.
   if (p.launch && p.status === 'stopped') return 'starting';
