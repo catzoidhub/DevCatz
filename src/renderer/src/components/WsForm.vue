@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, ref } from 'vue';
 import type { WsConfig, WsState } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
@@ -111,7 +112,7 @@ async function submit() {
           <label class="col-span-2 block">
             <span class="label-caps mb-1 block">Allowed origins</span>
             <input v-model="form.allowedOrigins" class="input input-sm w-full font-mono" placeholder="*" spellcheck="false" />
-            <span class="mt-1 block text-xs opacity-60">Space or comma separated, e.g. <code>https://shop.{{ tld }}</code>; <code>*</code> = any (fine on this Mac).</span>
+            <span class="mt-1 block text-xs opacity-60">Space or comma separated, e.g. <code>https://shop.{{ tld }}</code>; <code>*</code> = any (fine on this {{ words.computer }}).</span>
           </label>
         </fieldset>
 

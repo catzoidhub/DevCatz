@@ -469,10 +469,10 @@ export class Herd extends EventEmitter {
     void this.pollDatabases();
     this.dbs.autoStart();
     this.timers.push(setTimeout(() => void this.dbs.prefetchVersions(), 20_000));
-    // Windows (Catzoid #57): storage, WebSocket and search servers and the monitor are macOS-only so far.
+    this.ws.autoStart();
+    // Windows (Catzoid #57): storage and search servers and the monitor are macOS-only so far.
     if (isMac) {
       this.storage.autoStart();
-      this.ws.autoStart();
       this.search.autoStart();
       this.monitor.start();
     }

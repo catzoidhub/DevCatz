@@ -1072,6 +1072,8 @@ export interface WsState {
   urls: { ws: string; wsLocal: string; http: string; httpLocal: string; admin: string | null } | null;
   /** Newer release available (from the same source as the installer), or null. */
   update: string | null;
+  /** No build for this platform (Sockudo on Windows): why, instead of Install. */
+  unavailable: string | null;
 }
 
 /** What a site uses for real-time messaging (detected from its manifests). */

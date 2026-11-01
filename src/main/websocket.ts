@@ -12,6 +12,7 @@ import type { Route } from './proxy';
 import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './storage';
 import { isNewer, packagistLatest, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
+import { exe, isWin, killTree, shellCommand } from './platform';
 
 /**
  * Real-time servers, one instance per kind, managed like Object Storage:
@@ -67,6 +68,8 @@ interface Engine {
   versionOf?(dir: string): Promise<string | null>;
   /** Writes the config file and returns the command + env (`hook`: DevCatz's webhook receiver, Sockudo). */
   spec(c: WsConfig, bin: string, hook: string | null): { command: string; env: Record<string, string>; cwd?: string };
+  /** No build for this platform: why, shown instead of Install (Sockudo ships Linux builds only for Windows users). */
+  unavailable?: string;
   /** Path of the admin UI below the main port, if any. */
   admin?: string;
 }
@@ -75,6 +78,11 @@ const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const host = (label: string) => `${label}.${tld()}`;
 const secret = (n = 24) => randomBytes(n).toString('base64url');
 const origins = (c: WsConfig) => c.allowedOrigins.split(/[\s,]+/).filter(Boolean);
+
+/** Each server's release asset for this computer (GitHub, SHA-256 in the release): Windows x64 zips, macOS tarballs. */
+const CENTRIFUGO_ASSET = isWin ? /^centrifugo_[\d.]+_windows_amd64\.zip$/ : process.arch === 'arm64' ? /^centrifugo_[\d.]+_darwin_arm64\.tar\.gz$/ : /^centrifugo_[\d.]+_darwin_amd64\.tar\.gz$/;
+const MERCURE_ASSET = isWin ? /^mercure_Windows_x86_64\.zip$/ : process.arch === 'arm64' ? /^mercure_Darwin_arm64\.tar\.gz$/ : /^mercure_Darwin_x86_64\.tar\.gz$/;
+const NATS_ASSET = isWin ? /^nats-server-v[\d.]+-windows-amd64\.zip$/ : process.arch === 'arm64' ? /^nats-server-v[\d.]+-darwin-arm64\.tar\.gz$/ : /^nats-server-v[\d.]+-darwin-amd64\.tar\.gz$/;
 
 const ENGINES: Record<WsKind, Engine> = {
   reverb: {
@@ -92,7 +100,10 @@ const ENGINES: Record<WsKind, Engine> = {
       // Composer runs in its own process group so Cancel can kill it (and whatever it spawned); its last line is the progress detail.
       const sh = (cmd: string, cwd: string) =>
         new Promise<{ code: number; out: string }>((resolve) => {
-          const child = spawn('/bin/sh', ['-c', cmd], { cwd, env: { ...getShellEnv(), ...r.env, COMPOSER_NO_INTERACTION: '1', COMPOSER_NO_AUDIT: '1' } as NodeJS.ProcessEnv, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+          const env = { ...getShellEnv(), ...r.env, COMPOSER_NO_INTERACTION: '1', COMPOSER_NO_AUDIT: '1' };
+          // sh on macOS (its own process group), cmd.exe on Windows (taskkill /T ends the tree).
+          const [file, args] = shellCommand(cmd, { env });
+          const child = spawn(file, args, { cwd, env: env as NodeJS.ProcessEnv, detached: !isWin, windowsHide: true, windowsVerbatimArguments: isWin, stdio: ['ignore', 'pipe', 'pipe'] });
           let out = '';
           const feed = (d: Buffer) => {
             out = (out + d.toString()).slice(-8000);
@@ -102,11 +113,8 @@ const ENGINES: Record<WsKind, Engine> = {
           child.stdout?.on('data', feed);
           child.stderr?.on('data', feed);
           const kill = () => {
-            try {
-              process.kill(-child.pid!, 'SIGTERM');
-            } catch {
-              child.kill('SIGTERM');
-            }
+            if (child.pid) killTree(child.pid, 'SIGTERM');
+            else child.kill('SIGTERM');
           };
           signal.addEventListener('abort', kill, { once: true });
           const timer = setTimeout(kill, 900_000);
@@ -176,6 +184,7 @@ const ENGINES: Record<WsKind, Engine> = {
   sockudo: {
     name: 'Sockudo',
     exe: 'sockudo',
+    unavailable: isWin ? 'Sockudo publishes no Windows build (Linux only). Laravel Reverb speaks the same Pusher protocol and runs on Windows.' : undefined,
     protocol: 'pusher',
     description: 'Pusher-compatible server in Rust (successor of Soketi): laravel-echo, pusher-js and Laravel’s pusher broadcaster.',
     fields: { appId: 'App ID', key: 'App key', secret: 'App secret', extraPort: 'Metrics port' },
@@ -230,11 +239,11 @@ const ENGINES: Record<WsKind, Engine> = {
     defaults: { port: 8100, extraPort: 0, domain: 'centrifugo', appId: 'devcatz', key: '', secret: '' },
     async install(dir, progress, signal) {
       progress({ step: 0, detail: 'github.com/centrifugal/centrifugo releases' });
-      const a = await githubAsset('centrifugal/centrifugo', process.arch === 'arm64' ? /^centrifugo_[\d.]+_darwin_arm64\.tar\.gz$/ : /^centrifugo_[\d.]+_darwin_amd64\.tar\.gz$/);
+      const a = await githubAsset('centrifugal/centrifugo', CENTRIFUGO_ASSET);
       check(signal);
       await installFrom(a.url, a.sha256, dir, 'centrifugo', `Centrifugo ${a.tag}`, progress, signal);
     },
-    latest: async () => (await githubAsset('centrifugal/centrifugo', process.arch === 'arm64' ? /^centrifugo_[\d.]+_darwin_arm64\.tar\.gz$/ : /^centrifugo_[\d.]+_darwin_amd64\.tar\.gz$/)).tag.replace(/^v/, ''),
+    latest: async () => (await githubAsset('centrifugal/centrifugo', CENTRIFUGO_ASSET)).tag.replace(/^v/, ''),
     versionArgs: ['version'],
     versionRe: /Centrifugo v([\w.-]+)/,
     admin: '/',
@@ -276,11 +285,11 @@ const ENGINES: Record<WsKind, Engine> = {
     defaults: { port: 8200, extraPort: 0, domain: 'mercure', appId: '', key: '', secret: '' },
     async install(dir, progress, signal) {
       progress({ step: 0, detail: 'github.com/dunglas/mercure releases' });
-      const a = await githubAsset('dunglas/mercure', process.arch === 'arm64' ? /^mercure_Darwin_arm64\.tar\.gz$/ : /^mercure_Darwin_x86_64\.tar\.gz$/);
+      const a = await githubAsset('dunglas/mercure', MERCURE_ASSET);
       check(signal);
       await installFrom(a.url, a.sha256, dir, 'mercure', `Mercure ${a.tag}`, progress, signal);
     },
-    latest: async () => (await githubAsset('dunglas/mercure', process.arch === 'arm64' ? /^mercure_Darwin_arm64\.tar\.gz$/ : /^mercure_Darwin_x86_64\.tar\.gz$/)).tag.replace(/^v/, ''),
+    latest: async () => (await githubAsset('dunglas/mercure', MERCURE_ASSET)).tag.replace(/^v/, ''),
     versionArgs: ['version'],
     versionRe: /Mercure\.rocks\s+([\w.-]+)/,
     spec(c, bin) {
@@ -327,11 +336,11 @@ const ENGINES: Record<WsKind, Engine> = {
     defaults: { port: 9222, extraPort: 4222, domain: 'nats', appId: '', key: '', secret: '' },
     async install(dir, progress, signal) {
       progress({ step: 0, detail: 'github.com/nats-io/nats-server releases' });
-      const a = await githubAsset('nats-io/nats-server', process.arch === 'arm64' ? /^nats-server-v[\d.]+-darwin-arm64\.tar\.gz$/ : /^nats-server-v[\d.]+-darwin-amd64\.tar\.gz$/);
+      const a = await githubAsset('nats-io/nats-server', NATS_ASSET);
       check(signal);
       await installFrom(a.url, a.sha256, dir, 'nats-server', `NATS ${a.tag}`, progress, signal);
     },
-    latest: async () => (await githubAsset('nats-io/nats-server', process.arch === 'arm64' ? /^nats-server-v[\d.]+-darwin-arm64\.tar\.gz$/ : /^nats-server-v[\d.]+-darwin-amd64\.tar\.gz$/)).tag.replace(/^v/, ''),
+    latest: async () => (await githubAsset('nats-io/nats-server', NATS_ASSET)).tag.replace(/^v/, ''),
     versionArgs: ['--version'],
     versionRe: /nats-server:\s*v?([\w.-]+)/,
     spec(c, bin) {
@@ -357,7 +366,8 @@ const portsOf = (c: WsConfig) => [c.port, ...(c.extraPort ? [c.extraPort] : []),
 export const wsId = (kind: WsKind) => `ws:${kind}`;
 const managedDir = (kind: WsKind) => dataDir('websocket', kind);
 export const binaryDirOf = (c: Pick<WsConfig, 'kind' | 'binaryDir'>) => c.binaryDir || join(managedDir(c.kind), 'bin');
-const binaryOf = (c: WsConfig) => join(binaryDirOf(c), ENGINES[c.kind].exe);
+// Programs end in .exe on Windows (Reverb is its artisan file, run with PHP).
+const binaryOf = (c: WsConfig) => join(binaryDirOf(c), c.kind === 'reverb' ? ENGINES[c.kind].exe : exe(ENGINES[c.kind].exe));
 
 export function defaultsFor(kind: WsKind): WsConfig {
   const d = ENGINES[kind].defaults;
@@ -570,6 +580,7 @@ export class WsManager {
 
   async install(kind: WsKind, input: WsConfig): Promise<void> {
     if (this.config(kind)) throw new Error(`${ENGINES[kind].name} is already installed`);
+    if (ENGINES[kind].unavailable) throw new Error(ENGINES[kind].unavailable);
     if (this.aborts.has(kind)) throw new Error(`${ENGINES[kind].name} is already being installed`);
     const c = { ...input, kind };
     this.validate(c);
@@ -790,6 +801,7 @@ export class WsManager {
         task: this.tasks.get(kind) ?? null,
         update: c ? (this.updates.get(kind) ?? null) : null,
         urls: c ? this.urls(c) : null,
+        unavailable: e.unavailable ?? null,
       };
     });
   }
