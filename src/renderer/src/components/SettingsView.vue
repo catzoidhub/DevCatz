@@ -67,8 +67,9 @@ async function applyTld() {
   if (r) notify('success', `Default domain is now .${r.to}${r.renamed.length ? `; renamed ${r.renamed.length} site(s)` : ''}`);
   tldPreview.value = null;
 }
+// Steps and result show in the card (state.setup).
 const installResolver = async () => (await confirmResolver()) && attempt(() => herd.installResolver());
-const uninstallResolver = () => attempt(() => herd.uninstallResolver(), isWin ? 'DNS rules removed' : 'Resolver removed');
+const uninstallResolver = () => attempt(() => herd.uninstallResolver());
 
 const setStartAll = (startAllOnLaunch: boolean) => attempt(() => herd.updateSettings({ startAllOnLaunch }));
 const setTheme = (theme: ThemeMode) => attempt(() => herd.updateSettings({ theme }));
@@ -79,7 +80,7 @@ const appDataPath = (...parts: string[]) => [words.appData, 'DevCatz', ...parts]
 // Steps and result show in the card (state.setup).
 const untrust = () => attempt(() => herd.untrustCa());
 /** A trust / clean-URL job is running: its buttons wait. */
-const setupBusy = (what: 'ca' | 'urls') => !!state.value?.setup && state.value.setup.what === what && !state.value.setup.task.done && !state.value.setup.task.error;
+const setupBusy = (what: 'ca' | 'urls' | 'dns') => !!state.value?.setup && state.value.setup.what === what && !state.value.setup.task.done && !state.value.setup.task.error;
 const unpark = (dir: string) => attempt(() => herd.unparkFolder(dir));
 /** Projects of a parked folder that were unlinked (their folder is left out until brought back). */
 const unlinkedIn = (dir: string) => (s.value.settings.parkIgnore ?? []).filter((p) => p.startsWith(`${dir}/`) || p.startsWith(`${dir}\\`));
@@ -371,10 +372,11 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
             <template v-else><code>/etc/resolver/{{ s.domain.tld }}</code> belongs to another tool. Remove it there first.</template>
           </p>
           <div v-else class="mt-2 flex gap-2">
-            <button v-if="s.domain.resolver !== 'ours'" class="btn btn-sm btn-primary" @click="installResolver">{{ isWin ? 'Add DNS rule' : 'Install resolver' }} for .{{ s.domain.tld }}…</button>
-            <button v-else class="btn btn-sm btn-outline" @click="uninstallResolver">{{ isWin ? 'Remove DNS rules' : 'Remove resolver' }}</button>
+            <button v-if="s.domain.resolver !== 'ours'" class="btn btn-sm btn-primary" :disabled="setupBusy('dns')" @click="installResolver">{{ isWin ? 'Add DNS rule' : 'Install resolver' }} for .{{ s.domain.tld }}…</button>
+            <button v-else class="btn btn-sm btn-outline" :disabled="setupBusy('dns')" @click="uninstallResolver">{{ isWin ? 'Remove DNS rules' : 'Remove resolver' }}</button>
           </div>
         </div>
+        <TaskStepper v-if="s.setup?.what === 'dns'" :task="s.setup.task" compact />
       </div>
     </div>
 

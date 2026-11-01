@@ -1481,7 +1481,7 @@ export interface AppState {
   /** Uninstall DevCatz in progress (Catzoid #55). */
   uninstall: TaskProgress | null;
   /** Trust the local CA / clean URLs (Welcome, Settings): its steps while it runs, then the result for a few seconds. */
-  setup: { what: 'ca' | 'urls'; task: TaskProgress } | null;
+  setup: { what: 'ca' | 'urls' | 'dns'; task: TaskProgress } | null;
   git: GitState;
   mail: MailState;
   expose: ExposeState;

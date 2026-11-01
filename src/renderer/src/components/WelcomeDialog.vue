@@ -1,20 +1,22 @@
 <script setup lang="ts">
 import TaskStepper from './TaskStepper.vue';
-import { confirmCleanUrls, confirmTrustCa } from '../confirms';
+import { confirmCleanUrls, confirmResolver, confirmTrustCa } from '../confirms';
 import { computed, ref } from 'vue';
 import CatMood from './CatMood.vue';
 import { attempt, herd, state } from '../store';
 import { isWin } from '../platform';
 
 /**
- * First-run welcome (Catzoid #29): what DevCatz does, and the two things that ask for your password — each only
+ * First-run welcome (Catzoid #29): what DevCatz does, and the things that ask for your password — each only
  * when you choose it, with why it is needed and how to undo it. Shown once, on the very first launch (no sites
- * yet and never dismissed); Settings → Project keeps both buttons for later.
+ * yet and never dismissed); Settings keeps the buttons for later. The DNS rule shows only where the domain needs
+ * one (always on Windows, where only browsers resolve .localhost).
  */
 const s = computed(() => state.value);
 const open = computed(() => !!s.value && !s.value.settings.welcomeSeen && s.value.projects.length === 0 && !dismissed.value);
 const dismissed = ref(false);
-const busy = ref<'' | 'ca' | 'urls'>('');
+const busy = ref<'' | 'ca' | 'urls' | 'dns'>('');
+const count = computed(() => (s.value?.domain.needsResolver ? 'Three' : 'Two'));
 
 async function trust() {
   if (!(await confirmTrustCa())) return;
@@ -26,6 +28,12 @@ async function cleanUrls() {
   if (!(await confirmCleanUrls())) return;
   busy.value = 'urls';
   await attempt(() => herd.installCleanUrls());
+  busy.value = '';
+}
+async function dnsRule() {
+  if (!(await confirmResolver())) return;
+  busy.value = 'dns';
+  await attempt(() => herd.installResolver());
   busy.value = '';
 }
 async function securityDoc() {
@@ -54,8 +62,11 @@ async function done() {
         </div>
 
         <div class="space-y-1">
-          <p class="label-caps">{{ isWin ? 'Two things ask you to confirm — only if you choose them' : 'Two things ask for your password — only if you choose them' }}</p>
-          <p class="text-xs opacity-60">Nothing is installed now. Each button says what it does first; both can be undone in Settings → Project.</p>
+          <p class="label-caps">{{ count }} things {{ isWin ? 'ask you to confirm' : 'ask for your password' }} — only if you choose them</p>
+          <p class="text-xs opacity-60">
+            Nothing is installed now. Each button says what it does first; {{ s.domain.needsResolver ? 'all' : 'both' }} can be undone in Settings
+            (Project{{ s.domain.needsResolver ? ', General' : '' }}).
+          </p>
         </div>
 
         <div class="space-y-3">
@@ -95,6 +106,30 @@ async function done() {
               </button>
             </div>
             <TaskStepper v-if="s.setup?.what === 'urls'" :task="s.setup.task" compact class="mt-3" />
+          </div>
+
+          <div v-if="s.domain.needsResolver" class="rounded-xl border border-base-300/70 bg-base-200/40 p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div class="min-w-0">
+                <p class="font-medium">3 · Site names for your code <span class="badge badge-ghost badge-sm ml-1">recommended</span></p>
+                <p class="mt-1 text-sm opacity-70">
+                  <template v-if="isWin">
+                    Browsers find <span class="font-mono">*.{{ s.domain.tld }}</span> by themselves; Node, PHP, Python and curl on Windows do not, so a
+                    site calling another by name fails. DevCatz adds Windows DNS rules that send these names to its own DNS on this PC — administrator
+                    approval once.
+                  </template>
+                  <template v-else>
+                    <span class="font-mono">*.{{ s.domain.tld }}</span> names go to DevCatz's own DNS through
+                    <span class="font-mono">/etc/resolver/{{ s.domain.tld }}</span> — your administrator password once.
+                  </template>
+                </p>
+              </div>
+              <span v-if="s.domain.resolver === 'ours' && s.domain.resolves" class="badge badge-success badge-sm shrink-0">on</span>
+              <button v-else class="btn btn-outline btn-sm shrink-0" :disabled="!!busy" @click="dnsRule">
+                <span v-if="busy === 'dns'" class="loading loading-spinner loading-xs" />Add…
+              </button>
+            </div>
+            <TaskStepper v-if="s.setup?.what === 'dns'" :task="s.setup.task" compact class="mt-3" />
           </div>
         </div>
 

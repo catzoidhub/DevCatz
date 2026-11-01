@@ -331,11 +331,11 @@ export class Herd extends EventEmitter {
   /** Uninstall DevCatz in progress (Catzoid #55). */
   uninstallTask: TaskProgress | null = null;
   /** Trust the local CA / clean URLs, shown as steps in Welcome and Settings (they can wait on an OS prompt a while). */
-  setupTask: { what: 'ca' | 'urls'; task: TaskProgress } | null = null;
+  setupTask: { what: 'ca' | 'urls' | 'dns'; task: TaskProgress } | null = null;
   private setupClear: ReturnType<typeof setTimeout> | undefined;
 
   /** Runs one setup job step by step; the window shows it, and the finished state stays for a few seconds. */
-  private async setupSteps<T>(what: 'ca' | 'urls', title: string, steps: string[], work: (step: (i: number, detail?: string) => void) => Promise<T>, doneTitle: string): Promise<T> {
+  private async setupSteps<T>(what: 'ca' | 'urls' | 'dns', title: string, steps: string[], work: (step: (i: number, detail?: string) => void) => Promise<T>, doneTitle: string): Promise<T> {
     clearTimeout(this.setupClear);
     const set = (p: Partial<TaskProgress>) => {
       this.setupTask = { what, task: { ...(this.setupTask?.what === what ? this.setupTask.task : { kind: 'setup', title, steps, step: 0 }), ...p } };
@@ -2170,21 +2170,49 @@ export class Herd extends EventEmitter {
     return { from, to, renamed };
   }
 
-  async installResolver(): Promise<boolean> {
-    const r = await installResolver(tld(), DNS_PORT);
-    if (!r.ok) throw new Error(r.message.includes('-128') ? 'Cancelled' : r.message);
-    await new Promise((res) => setTimeout(res, 500));
-    await this.checkResolution();
-    this.changed();
-    return this.resolves;
+  /** Windows: NRPT rules for the suffix and .localhost; macOS: /etc/resolver/<tld>. Steps show in state.setup. */
+  installResolver(): Promise<boolean> {
+    const t = tld();
+    const names = isWin && t !== 'localhost' ? `*.${t} and *.localhost` : `*.${t}`;
+    const steps = [
+      `Start DevCatz's DNS on 127.0.0.1:${DNS_PORT}`,
+      isWin ? `Add Windows DNS rules (NRPT) for ${names} — administrator approval` : `Create /etc/resolver/${t} — your administrator password`,
+      `Check that ${names} resolve to this ${isWin ? 'PC' : 'Mac'}`,
+    ];
+    return this.setupSteps('dns', isWin ? 'Adding DNS rules' : 'Installing the resolver', steps, async (step) => {
+      if (!this.dns.running) await this.dns.start(t);
+      if (!this.dns.running) throw new Error(this.dns.error ?? `DevCatz's DNS could not start on port ${DNS_PORT}`);
+      step(1, isWin ? 'Add-DnsClientNrptRule, through one administrator prompt' : 'One password prompt');
+      const r = await installResolver(t, DNS_PORT);
+      if (!r.ok) throw new Error(/-128|cancel|1223/i.test(r.message) ? 'Cancelled' : r.message);
+      step(2);
+      // Windows / macOS pick a new rule up within a moment.
+      for (let i = 0; i < 6 && !this.resolves; i++) {
+        await new Promise((res) => setTimeout(res, 500));
+        await this.checkResolution();
+      }
+      this.changed();
+      if (!this.resolves) throw new Error(`The ${isWin ? 'rules are' : 'resolver is'} in place, but *.${t} does not resolve yet: try again in a moment`);
+      return true;
+    }, `*.${t} resolves to this ${isWin ? 'PC' : 'Mac'}`);
   }
 
-  async uninstallResolver(): Promise<boolean> {
-    const r = await uninstallResolver(tld());
-    if (!r.ok) throw new Error(r.message.includes('-128') ? 'Cancelled' : r.message);
-    await this.checkResolution();
-    this.changed();
-    return true;
+  uninstallResolver(): Promise<boolean> {
+    const t = tld();
+    const steps = [
+      isWin ? 'Remove the DevCatz DNS rules (NRPT) — administrator approval' : `Remove /etc/resolver/${t} — your administrator password`,
+      'Check that they are gone',
+    ];
+    return this.setupSteps('dns', isWin ? 'Removing DNS rules' : 'Removing the resolver', steps, async (step) => {
+      step(0, isWin ? 'Remove-DnsClientNrptRule, through one administrator prompt' : 'One password prompt');
+      const r = await uninstallResolver(t);
+      if (!r.ok) throw new Error(/-128|cancel|1223/i.test(r.message) ? 'Cancelled' : r.message);
+      step(1);
+      await this.checkResolution();
+      this.changed();
+      if (resolverStatus(t) === 'ours') throw new Error(isWin ? 'The DNS rules are still there (administrator approval refused?)' : `/etc/resolver/${t} is still there`);
+      return true;
+    }, isWin ? 'DNS rules removed' : 'Resolver removed');
   }
 
   // ------------------------------------------------------------ dev ports
