@@ -1,9 +1,10 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import type { GitBranch, GitCommit, GitFile, GitStash, GitStatus, GitSummary, GitTag } from '@shared/types';
 import { getShellEnv } from './env';
+import { exePath, isWin, killTree } from './platform';
 import { dataDir } from './store';
 import { words } from '@shared/platform';
 
@@ -36,13 +37,41 @@ function askpass(): string {
   return file;
 }
 
+/** The user's git, by its full path on Windows (never a git.exe inside the repository). */
+const gitExe = (): string => exePath('git', getShellEnv());
+
+/** The user set up their own SSH for git (GIT_SSH, GIT_SSH_COMMAND or core.sshCommand: an SSH agent, Pageant): left alone. */
+let ownSsh: boolean | null = null;
+function userSsh(): boolean {
+  if (ownSsh === null) {
+    const env = getShellEnv();
+    if (env.GIT_SSH || env.GIT_SSH_COMMAND) ownSsh = true;
+    else {
+      const r = spawnSync(gitExe(), ['config', '--global', '--get', 'core.sshCommand'], { env, encoding: 'utf8', timeout: 5000, windowsHide: true });
+      ownSsh = r.status === 0 && !!r.stdout.trim();
+    }
+  }
+  return ownSsh;
+}
+
 export function gitEnv(creds?: GitCreds | null): Record<string, string> {
   return {
     GIT_TERMINAL_PROMPT: '0',
     // Accept a new host's key once (like a first `ssh` would after "yes"), never prompt.
-    GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new',
+    ...(userSsh() ? {} : { GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' }),
     LC_ALL: 'C',
-    ...(creds ? { GIT_ASKPASS: askpass(), SSH_ASKPASS: askpass(), DEVCATZ_GIT_USERNAME: creds.username, DEVCATZ_GIT_TOKEN: creds.token } : {}),
+    ...(creds
+      ? {
+          GIT_ASKPASS: askpass(),
+          SSH_ASKPASS: askpass(),
+          DEVCATZ_GIT_USERNAME: creds.username,
+          DEVCATZ_GIT_TOKEN: creds.token,
+          // The account's token answers, not a credential helper (Git Credential Manager would answer first or open a window).
+          GIT_CONFIG_COUNT: '1',
+          GIT_CONFIG_KEY_0: 'credential.helper',
+          GIT_CONFIG_VALUE_0: '',
+        }
+      : {}),
   };
 }
 
@@ -55,7 +84,7 @@ export interface GitResult {
 /** Runs git with arguments (no shell) and collects its output. */
 export function git(cwd: string, args: string[], opts: { env?: Record<string, string>; input?: string; timeout?: number; maxBytes?: number } = {}): Promise<GitResult> {
   return new Promise((done) => {
-    const child = spawn('git', args, { cwd, env: { ...getShellEnv(), ...gitEnv(), ...opts.env } as NodeJS.ProcessEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(gitExe(), args, { cwd, env: { ...getShellEnv(), ...gitEnv(), ...opts.env } as NodeJS.ProcessEnv, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     let size = 0;
@@ -111,8 +140,9 @@ export function gitStream(
   opts: { env?: Record<string, string>; signal?: AbortSignal } = {},
 ): Promise<number> {
   return new Promise((done) => {
-    const child = spawn('git', args, { cwd, env: { ...getShellEnv(), ...gitEnv(), ...opts.env } as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'] });
-    const onAbort = () => child.kill('SIGTERM');
+    const child = spawn(gitExe(), args, { cwd, env: { ...getShellEnv(), ...gitEnv(), ...opts.env } as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    // On Windows git.exe's helpers (git-remote-https) outlive a plain kill and keep the folder busy.
+    const onAbort = () => (isWin && child.pid ? killTree(child.pid) : child.kill('SIGTERM'));
     opts.signal?.addEventListener('abort', onAbort);
     const feed = (d: Buffer) => {
       const text = d.toString('utf8');
@@ -245,8 +275,11 @@ export async function status(dir: string): Promise<Omit<GitStatus, 'remotes'> & 
 export function inside(root: string, file: string): string {
   const base = resolve(root);
   const abs = resolve(base, file);
-  if (abs !== base && !abs.startsWith(base + sep)) throw new Error(`${file} is outside the repository`);
-  return relative(base, abs) || '.';
+  // Windows paths compare without case (C:\Users vs c:\users).
+  const [b, a] = isWin ? [base.toLowerCase(), abs.toLowerCase()] : [base, abs];
+  if (a !== b && !a.startsWith(b + sep)) throw new Error(`${file} is outside the repository`);
+  // git's own form (a/b), also in diff headers on Windows.
+  return relative(base, abs).split(sep).join('/') || '.';
 }
 
 export async function diff(root: string, file: string, staged: boolean): Promise<string> {
@@ -448,7 +481,11 @@ export async function clone(o: CloneOptions): Promise<void> {
     if (o.signal.aborted) throw new Error('Clone cancelled');
     if (code !== 0) throw new Error(`git clone failed (exit ${code}); see the output above`);
   } catch (err) {
-    rmSync(o.dest, { recursive: true, force: true });
+    try {
+      rmSync(o.dest, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+    } catch {
+      /* still busy: a leftover folder, not a second error */
+    }
     throw err;
   }
 }

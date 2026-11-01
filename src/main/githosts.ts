@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { GitAccount, GitHostKind, GitPull, GitRepo, GitSshKey } from '@shared/types';
-import { run } from './env';
+import { getShellEnv, run } from './env';
+import { exePath } from './platform';
 import type { GitCreds } from './git';
 import { onSharedChange, setSharedGitAccounts, setSharedGitToken, sharedGitAccounts, sharedGitToken } from './shared';
 import { store } from './store';
@@ -432,7 +433,7 @@ export async function sshKeys(): Promise<GitSshKey[]> {
     const text = readFileSync(path, 'utf8').trim();
     const [type, , ...comment] = text.split(/\s+/);
     if (!/^(ssh-|ecdsa-|sk-)/.test(type ?? '')) continue;
-    const fp = await run('ssh-keygen', ['-lf', path], { timeout: 10_000 });
+    const fp = await run(exePath('ssh-keygen', getShellEnv()), ['-lf', path], { timeout: 10_000 });
     out.push({ path, type, comment: comment.join(' '), fingerprint: fp.stdout.split(/\s+/)[1] ?? '', publicKey: text });
   }
   return out;
@@ -446,7 +447,7 @@ export async function sshGenerate(email: string): Promise<GitSshKey> {
   if (existsSync(path)) throw new Error(`${path} already exists`);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   // Windows: the OpenSSH client that ships with Windows 10/11 (System32\OpenSSH, on the Path).
-  const r = await run('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', email.trim() || 'devcatz', '-f', path]);
+  const r = await run(exePath('ssh-keygen', getShellEnv()), ['-q', '-t', 'ed25519', '-N', '', '-C', email.trim() || 'devcatz', '-f', path]);
   if (r.code !== 0) throw new Error(`ssh-keygen: ${r.stderr.trim()}`);
   const key = (await sshKeys()).find((k) => k.path === `${path}.pub`);
   if (!key) throw new Error('Key not found after ssh-keygen');

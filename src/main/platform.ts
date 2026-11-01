@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, renameSync, rmSync } from 'node:fs';
-import { delimiter } from 'node:path';
+import { cpSync, existsSync, renameSync, rmSync } from 'node:fs';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
 /**
  * Platform switches (Catzoid #57). macOS is the home platform; Windows x64 started 2026-10-27 with stage 1: the app
@@ -63,6 +63,31 @@ export function winCommand(command: string, env: Record<string, string | undefin
     .replace(/(^|&&\s*|\|\|\s*|&\s*)(?:env\s+)?((?:[A-Za-z_]\w*=(?:"[^"]*"|[^\s"]+)\s+)+)/g, (_, lead: string, vars: string) =>
       lead + [...vars.matchAll(/([A-Za-z_]\w*)=("[^"]*"|[^\s"]+)/g)].map(([, k, v]) => `set "${k}=${v.replace(/^"|"$/g, '')}"&& `).join(''),
     );
+}
+
+/** Two folder paths name the same folder (Windows: without case, either slash). */
+export const samePath = (a: string, b: string): boolean => (isWin ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : a === b);
+
+const found = new Map<string, string>();
+/**
+ * A program's full path from the Path (Windows: `<name>.exe`, absolute Path entries only). Windows looks in the
+ * current folder before the Path, so spawning a bare "git" in a cloned repository would run a git.exe planted in it.
+ * Elsewhere (and when not found) the name as given.
+ */
+export function exePath(name: string, env: NodeJS.ProcessEnv = process.env): string {
+  if (!isWin) return name;
+  const hit = found.get(name);
+  if (hit) return hit;
+  for (const dir of splitPath(env[pathKey(env)])) {
+    const d = dir.replace(/^"|"$/g, '');
+    if (!isAbsolute(d)) continue;
+    const file = join(d, `${name}.exe`);
+    if (existsSync(file)) {
+      found.set(name, file);
+      return file;
+    }
+  }
+  return name;
 }
 
 /** Stops a process and everything it started: the process group on macOS, `taskkill /T` on Windows. */

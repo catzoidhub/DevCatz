@@ -24,7 +24,7 @@ import { detectPackageManager, readEnvFiles, readJson, readText, runScriptComman
 import { readCargo } from './runtimes/rust';
 import { detectStack, isLinkableDir, isProjectDir } from './runtimes';
 import { getShellEnv, hasCommand, isListening, isPortOpen, portOwner, run, setUserPath } from './env';
-import { isWin, joinPath, pathKey, shellCommand, splitPath } from './platform';
+import { isWin, joinPath, pathKey, samePath, shellCommand, splitPath } from './platform';
 import { lookup } from 'node:dns/promises';
 import { ProcessManager } from './processes';
 import { captureScreenshot, screenshotTime } from './screenshots';
@@ -693,10 +693,10 @@ export class Herd extends EventEmitter {
 
   private freeDomain(label: string, exceptPath?: string): string {
     const base = slugify(label);
-    const taken = new Set(this.projects.filter((p) => p.path !== exceptPath).map((p) => p.domain));
+    const taken = new Set(this.projects.filter((p) => !exceptPath || !samePath(p.path, exceptPath)).map((p) => p.domain));
     let domain = `${base}.${tld()}`;
     // Services count too: a folder named gowa must not take gowa.localhost from the WhatsApp gateway.
-    const site = this.projects.find((p) => p.path === exceptPath)?.id;
+    const site = this.projects.find((p) => !!exceptPath && samePath(p.path, exceptPath))?.id;
     for (let i = 2; taken.has(domain) || this.domainOwner(domain, site); i++) domain = `${base}-${i}.${tld()}`;
     return domain;
   }
@@ -716,14 +716,14 @@ export class Herd extends EventEmitter {
       autoNode: this.nodeChoice(draft),
       autoGo: this.goChoice(draft, stack),
       autoPhp: this.phpChoice(draft),
-      alreadyLinked: store.projects.some((p) => p.path === path),
+      alreadyLinked: store.projects.some((p) => samePath(p.path, path)),
     };
   }
 
   link(path: string, opts: LinkOptions = {}): ProjectState | null {
     path = resolve(path);
     if (!isLinkableDir(path)) throw new Error('No project in that folder (package.json, composer.json, go.mod, pyproject.toml …), nor project folders inside it');
-    const existing = store.projects.find((p) => p.path === path);
+    const existing = store.projects.find((p) => samePath(p.path, path));
     if (existing) return this.state(existing);
     const name = opts.name?.trim() || basename(path);
     let domain = this.freeDomain(name, path);
@@ -1096,7 +1096,7 @@ export class Herd extends EventEmitter {
     const p = store.projects.find((x) => x.id === id);
     if (!p) throw new Error('That site is gone');
     if (!isLinkableDir(path)) throw new Error('No project in that folder (package.json, composer.json, go.mod, Cargo.toml, pyproject.toml …)');
-    const other = store.projects.find((x) => x.id !== id && x.path === path);
+    const other = store.projects.find((x) => x.id !== id && samePath(x.path, path));
     if (other) throw new Error(`That folder is already the site ${other.name}`);
     store.setProjects(store.projects.map((x) => (x.id === id ? { ...x, path } : x)));
     this.rescan();
