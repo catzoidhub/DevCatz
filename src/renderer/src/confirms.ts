@@ -48,6 +48,15 @@ export function confirmCleanUrls(): Promise<boolean> {
 
 export function confirmResolver(): Promise<boolean> {
   const t = state.value?.settings.tld ?? 'test';
+  if (isWin) {
+    const zones = t === 'localhost' ? '*.localhost' : `*.${t} and *.localhost`;
+    return askConfirm({
+      title: `Resolve ${zones} to this PC?`,
+      text: `Browsers already know *.localhost, but Node, PHP, Python and curl on Windows do not. DevCatz adds Windows DNS rules (NRPT, marked "DevCatz") so ${zones} names are answered by DevCatz's own DNS on 127.0.0.1. Nothing else on the network changes. Windows asks for administrator rights next.`,
+      confirm: 'Install',
+      tone: 'primary',
+    });
+  }
   return askConfirm({
     title: `Resolve *.${t} to this Mac?`,
     text: `DevCatz will create /etc/resolver/${t} so macOS asks DevCatz's own DNS (127.0.0.1:53531) for *.${t} names. Nothing else on the network changes. macOS asks for an administrator password next.`,

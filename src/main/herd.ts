@@ -14,6 +14,7 @@ import {
   cleanHttpWorking,
   installCleanUrls,
   installResolver,
+  refreshNrpt,
   resolverStatus,
   uninstallCleanUrls,
   uninstallResolver,
@@ -450,15 +451,15 @@ export class Herd extends EventEmitter {
     await this.refreshGos();
     await this.refreshRust();
     await this.refreshPythons();
-    // Windows (Catzoid #57): PHP runs as php-cgi workers (fpm.ts); the DNS responder / resolver stay macOS-only.
+    // Windows (Catzoid #57): PHP runs as php-cgi workers (fpm.ts).
     await this.refreshPhps();
     await phps.writeCaBundle(this.certs.caPath).catch(() => undefined);
     this.syncFpm();
     this.systemNode = await nodes.systemNode();
-    if (isMac) {
-      await this.dns.start(tld());
-      await this.checkResolution();
-    }
+    // Windows: DevCatz's DNS (port 53) also answers .localhost, which only browsers resolve there; NRPT rules point at it.
+    await refreshNrpt();
+    await this.dns.start(tld());
+    await this.checkResolution();
     this.caTrusted = await this.certs.isTrusted();
     this.cleanUrls = await cleanUrlsWorking();
     this.cleanHttp = await cleanHttpWorking();
@@ -2123,10 +2124,10 @@ export class Herd extends EventEmitter {
     'local com net org edu gov mil int io dev app ai co me id info biz xyz site online tech store blog cloud page web site top shop live news'.split(' '),
   );
 
-  /** A name under the TLD resolves to this Mac (always true for .localhost). */
+  /** A name under the TLD resolves to this computer (always true for .localhost on macOS; Windows checks it too). */
   private async checkResolution(): Promise<void> {
     const t = tld();
-    if (t === 'localhost') {
+    if (t === 'localhost' && !isWin) {
       this.resolves = true;
       return;
     }
@@ -2152,8 +2153,12 @@ export class Herd extends EventEmitter {
       .filter((p) => p.domain.endsWith(`.${from}`))
       .map((p) => ({ name: p.name, from: p.domain, to: p.domain.slice(0, -from.length) + to }));
     if (dryRun || to === from) return { from, to, renamed };
-    if (to !== 'localhost' && resolverStatus(to) === 'foreign') {
-      throw new Error(`/etc/resolver/${to} belongs to another tool. Remove it there or pick another TLD.`);
+    if ((to !== 'localhost' || isWin) && resolverStatus(to) === 'foreign') {
+      throw new Error(
+        isWin
+          ? `Another tool has a DNS rule (NRPT) for .${to}. Remove it there or pick another TLD.`
+          : `/etc/resolver/${to} belongs to another tool. Remove it there or pick another TLD.`,
+      );
     }
     // Linked sites carry their domain in the config; parked ones are re-derived on rescan.
     store.setProjects(store.projects.map((p) => (p.domain.endsWith(`.${from}`) ? { ...p, domain: p.domain.slice(0, -from.length) + to } : p)));
@@ -4592,10 +4597,11 @@ export class Herd extends EventEmitter {
       },
       domain: {
         tld: tld(),
-        needsResolver: tld() !== 'localhost',
+        // Windows: even .localhost needs the rule (Node, PHP, Python, curl do not resolve x.localhost there).
+        needsResolver: tld() !== 'localhost' || isWin,
         dnsRunning: this.dns.running,
         dnsError: this.dns.error,
-        resolver: tld() === 'localhost' ? 'none' : resolverStatus(tld()),
+        resolver: tld() === 'localhost' && !isWin ? 'none' : resolverStatus(tld()),
         resolves: this.resolves,
       },
       proxy: { https: this.proxy.httpsUp, http: this.proxy.httpUp, error: this.proxy.error },
@@ -4665,7 +4671,7 @@ export class Herd extends EventEmitter {
       gateways: this.gateways.state(),
       services: {
         proxy: this.proxy.httpsUp,
-        dns: tld() === 'localhost' ? 'not-needed' : this.dns.running ? 'running' : 'down',
+        dns: tld() === 'localhost' && !isWin ? 'not-needed' : this.dns.running ? 'running' : 'down',
       },
     };
   }

@@ -10,7 +10,8 @@ import { createSocket, type Socket } from 'node:dgram';
  * proxy. `.localhost` needs none of this: the OS and browsers resolve it
  * themselves.
  */
-export const DNS_PORT = 53531;
+// Windows: NRPT rules name a DNS server but no port, so DevCatz answers on 53 there (no rights needed to bind it).
+export const DNS_PORT = process.platform === 'win32' ? 53 : 53531;
 
 const TYPE_A = 1;
 const TYPE_AAAA = 28;
@@ -27,7 +28,9 @@ function readName(msg: Buffer, offset: number): { name: string; end: number } {
   return { name: labels.join('.').toLowerCase(), end: i + 1 };
 }
 
-export function answer(query: Buffer, tld: string): Buffer | null {
+/** `zones`: the TLD, plus `localhost` on Windows (programs there do not resolve `x.localhost` by themselves). */
+export function answer(query: Buffer, zones: string | string[]): Buffer | null {
+  const list = Array.isArray(zones) ? zones : [zones];
   if (query.length < 12) return null;
   const qdcount = query.readUInt16BE(4);
   if (qdcount !== 1) return null;
@@ -35,7 +38,7 @@ export function answer(query: Buffer, tld: string): Buffer | null {
   if (end + 4 > query.length) return null;
   const qtype = query.readUInt16BE(end);
   const question = query.subarray(12, end + 4);
-  const ours = name === tld || name.endsWith(`.${tld}`);
+  const ours = list.some((z) => name === z || name.endsWith(`.${z}`));
 
   const records: Buffer[] = [];
   if (ours && (qtype === TYPE_A || qtype === 255)) records.push(rr(TYPE_A, Buffer.from([127, 0, 0, 1])));
@@ -72,10 +75,13 @@ export class DnsServer {
     await this.stop();
     this.tld = tld;
     this.error = null;
-    if (tld === 'localhost') return; // resolved by the OS and browsers
+    // macOS resolves .localhost itself; on Windows only browsers do, so DevCatz answers it there as well.
+    const win = process.platform === 'win32';
+    if (tld === 'localhost' && !win) return;
+    const zones = win ? [...new Set([tld, 'localhost'])] : [tld];
     const socket = createSocket('udp4');
     socket.on('message', (msg, rinfo) => {
-      const reply = answer(msg, this.tld);
+      const reply = answer(msg, zones);
       if (reply) socket.send(reply, rinfo.port, rinfo.address);
     });
     await new Promise<void>((resolve) => {

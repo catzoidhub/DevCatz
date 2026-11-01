@@ -910,7 +910,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
             </div>
             <span class="mt-1.5 block text-xs opacity-60">
               The other scheme redirects to this one; HTTPS is recommended (secure cookies, service workers, OAuth callbacks).
-              {{ isWin ? 'Names end in .localhost' : 'The suffix follows Settings → General → Default domain' }}<template v-if="p.stack.apps.filter((a) => a.kind !== 'assets').length > 1">; other apps get <code>&lt;app&gt;.{{ domainPreview }}</code></template>.
+              The suffix follows Settings → General → Default domain<template v-if="p.stack.apps.filter((a) => a.kind !== 'assets').length > 1">; other apps get <code>&lt;app&gt;.{{ domainPreview }}</code></template>.
             </span>
           </div>
         </div>

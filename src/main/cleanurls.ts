@@ -96,6 +96,43 @@ async function refreshWinRules(): Promise<void> {
   winRules = rules;
 }
 
+/**
+ * Windows' counterpart of /etc/resolver: Name Resolution Policy Table rules (`Add-DnsClientNrptRule`) send every name
+ * under `.<tld>` — and `.localhost`, which only browsers resolve on their own — to DevCatz's DNS on 127.0.0.1:53
+ * (NRPT has no port setting). Marked with the comment "DevCatz"; adding / removing them needs administrator rights.
+ */
+type NrptRule = { namespace: string; ours: boolean };
+let winNrpt: NrptRule[] = [];
+const NRPT_MARK = 'DevCatz';
+
+export async function refreshNrpt(): Promise<void> {
+  if (!isWin) return;
+  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "Get-DnsClientNrptRule | ForEach-Object { ($_.Namespace -join ',') + '|' + $_.Comment }"], { timeout: 20_000 });
+  winNrpt = r.stdout
+    .split(/\r?\n/)
+    .filter((l) => l.includes('|'))
+    .flatMap((l) => {
+      const [ns, comment] = l.trim().split('|');
+      return ns.split(',').map((n) => ({ namespace: n.trim().toLowerCase(), ours: comment.trim() === NRPT_MARK }));
+    });
+}
+
+/** `.localhost` too: programs (Node, PHP, Python, curl) on Windows do not resolve `x.localhost` without it. */
+function installNrpt(tld: string) {
+  const want = [...new Set([`.${tld}`, '.localhost'])].filter((ns) => !winNrpt.some((r) => r.namespace === ns && r.ours));
+  if (!want.length) return Promise.resolve({ ok: true, message: '' });
+  if (want.some((ns) => winNrpt.some((r) => r.namespace === ns && !r.ours))) {
+    return Promise.resolve({ ok: false, message: `Another tool already has a DNS rule for ${want.join(' / ')}; remove it in that tool first.` });
+  }
+  const lines = [...want.map((ns) => `Add-DnsClientNrptRule -Namespace '${ns}' -NameServers '127.0.0.1' -Comment '${NRPT_MARK}' | Out-Null`), 'Clear-DnsClientCache'];
+  return runAsAdminWin(lines.join('\n')).finally(refreshNrpt);
+}
+
+function uninstallNrpt() {
+  if (!winNrpt.some((r) => r.ours)) return Promise.resolve({ ok: true, message: '' });
+  return runAsAdminWin(`Get-DnsClientNrptRule | Where-Object { $_.Comment -eq '${NRPT_MARK}' } | Remove-DnsClientNrptRule -Force\nClear-DnsClientCache`).finally(refreshNrpt);
+}
+
 /** Runs PowerShell as administrator (the UAC prompt); the script goes in base64 so no quoting reaches the shell. */
 async function runAsAdminWin(script: string): Promise<{ ok: boolean; message: string }> {
   const inner = Buffer.from(`$ErrorActionPreference = 'Stop'\n${script}`, 'utf16le').toString('base64');
@@ -216,6 +253,7 @@ const resolverFile = (tld: string) => `/etc/resolver/${tld}`;
 
 /** `ours` = our file, `foreign` = someone else's (e.g. Laravel Herd's dnsmasq for .test), `none` = absent. */
 export function resolverStatus(tld: string): 'ours' | 'foreign' | 'none' {
+  if (isWin) return winNrpt.find((r) => r.namespace === `.${tld}`)?.ours ? 'ours' : winNrpt.some((r) => r.namespace === `.${tld}`) ? 'foreign' : 'none';
   try {
     return RESOLVER_MARKS.some((m) => readFileSync(resolverFile(tld), 'utf8').includes(m)) ? 'ours' : 'foreign';
   } catch {
@@ -226,6 +264,7 @@ export function resolverStatus(tld: string): 'ours' | 'foreign' | 'none' {
 /** /etc/resolver/<tld> → DevCatz's DNS on 127.0.0.1:<port>; refuses to replace a file it does not own. */
 export function installResolver(tld: string, port: number) {
   if (!/^[a-z][a-z0-9-]{0,30}$/.test(tld)) throw new Error(`Invalid TLD ${tld}`);
+  if (isWin) return installNrpt(tld);
   if (resolverStatus(tld) === 'foreign') throw new Error(`/etc/resolver/${tld} belongs to another tool. Remove that tool's resolver first.`);
   const script = `set -e
 mkdir -p /etc/resolver
@@ -241,6 +280,7 @@ chmod 644 ${resolverFile(tld)}
 }
 
 export function uninstallResolver(tld: string) {
+  if (isWin) return uninstallNrpt();
   if (resolverStatus(tld) !== 'ours') return Promise.resolve({ ok: true, message: '' });
   return runAsAdmin(`rm -f ${resolverFile(tld)}\n/usr/bin/killall -HUP mDNSResponder 2>/dev/null || true\n`, `DevCatz wants to stop resolving *.${tld}.`);
 }
@@ -250,7 +290,11 @@ export function uninstallResolver(tld: string) {
  * pf leftovers) and every /etc/resolver file it manages — in one admin prompt. Null when there is nothing to remove.
  */
 export function systemLeftovers(): string[] {
-  if (isWin) return winRules.map((r) => `Port forward ${r.listen.includes(':') ? `[${r.listen}]` : r.listen}:${r.port} → ${r.target}`);
+  if (isWin)
+    return [
+      ...winRules.map((r) => `Port forward ${r.listen.includes(':') ? `[${r.listen}]` : r.listen}:${r.port} → ${r.target}`),
+      ...winNrpt.filter((r) => r.ours).map((r) => `DNS rule *${r.namespace} → DevCatz (127.0.0.1)`),
+    ];
   const out: string[] = [];
   for (const s of ['https', 'http'] as const) if (existsSync(daemonFile(s))) out.push(daemonFile(s));
   for (const f of LEGACY.files) if (existsSync(f)) out.push(f);
@@ -262,8 +306,12 @@ export function systemLeftovers(): string[] {
   return out;
 }
 
-export function removeSystemLeftovers() {
-  if (isWin) return uninstallWin();
+export async function removeSystemLeftovers() {
+  if (isWin) {
+    const a = await uninstallWin();
+    const b = await uninstallNrpt();
+    return { ok: a.ok && b.ok, message: [a.message, b.message].filter(Boolean).join('; ') };
+  }
   const resolvers = systemLeftovers().filter((f) => f.startsWith('/etc/resolver/'));
   const script = `${removeDaemons}${removeLegacy}${resolvers.map((f) => `rm -f ${f}\n`).join('')}/usr/bin/killall -HUP mDNSResponder 2>/dev/null || true\n`;
   return runAsAdmin(script, 'DevCatz wants to remove its port forwarding and DNS resolver files before it is uninstalled.');

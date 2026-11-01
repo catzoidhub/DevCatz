@@ -68,7 +68,7 @@ async function applyTld() {
   tldPreview.value = null;
 }
 const installResolver = async () => (await confirmResolver()) && attempt(() => herd.installResolver());
-const uninstallResolver = () => attempt(() => herd.uninstallResolver(), 'Resolver removed');
+const uninstallResolver = () => attempt(() => herd.uninstallResolver(), isWin ? 'DNS rules removed' : 'Resolver removed');
 
 const setStartAll = (startAllOnLaunch: boolean) => attempt(() => herd.updateSettings({ startAllOnLaunch }));
 const setTheme = (theme: ThemeMode) => attempt(() => herd.updateSettings({ theme }));
@@ -320,11 +320,15 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
       </div>
     </div>
 
-    <!-- Default domain (used by sites and storage domains); other suffixes need macOS's /etc/resolver so far -->
-    <div v-if="tab === 'general' && !isWin" class="card">
+    <!-- Default domain (used by sites and storage domains): /etc/resolver on macOS, NRPT rules on Windows -->
+    <div v-if="tab === 'general'" class="card">
       <div class="card-body">
         <h2 class="font-semibold">Default domain</h2>
-        <p class="text-xs opacity-70">
+        <p v-if="isWin" class="text-xs opacity-70">
+          Sites and object storage are served on <code>&lt;name&gt;.{{ s.domain.tld }}</code>. Browsers resolve <code>.localhost</code> by themselves;
+          Node, PHP, Python and curl on Windows need a DNS rule (NRPT) that sends the suffix — and <code>.localhost</code> — to DevCatz's own DNS.
+        </p>
+        <p v-else class="text-xs opacity-70">
           Sites and object storage are served on <code>&lt;name&gt;.{{ s.domain.tld }}</code>. <code>.localhost</code> needs no setup; any other suffix
           (e.g. <code>.test</code> or <code>.devcatz</code>) uses DevCatz's own DNS through <code>/etc/resolver</code>.
         </p>
@@ -363,11 +367,12 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
             <span v-if="s.domain.dnsError" class="text-xs text-error">{{ s.domain.dnsError }}</span>
           </div>
           <p v-if="s.domain.resolver === 'foreign'" class="mt-1 text-xs text-warning">
-            <code>/etc/resolver/{{ s.domain.tld }}</code> belongs to another tool. Remove it there first.
+            <template v-if="isWin">Another tool has a DNS rule (NRPT) for <code>.{{ s.domain.tld }}</code>. Remove it there first.</template>
+            <template v-else><code>/etc/resolver/{{ s.domain.tld }}</code> belongs to another tool. Remove it there first.</template>
           </p>
           <div v-else class="mt-2 flex gap-2">
-            <button v-if="s.domain.resolver !== 'ours'" class="btn btn-sm btn-primary" @click="installResolver">Install resolver for .{{ s.domain.tld }}…</button>
-            <button v-else class="btn btn-sm btn-outline" @click="uninstallResolver">Remove resolver</button>
+            <button v-if="s.domain.resolver !== 'ours'" class="btn btn-sm btn-primary" @click="installResolver">{{ isWin ? 'Add DNS rule' : 'Install resolver' }} for .{{ s.domain.tld }}…</button>
+            <button v-else class="btn btn-sm btn-outline" @click="uninstallResolver">{{ isWin ? 'Remove DNS rules' : 'Remove resolver' }}</button>
           </div>
         </div>
       </div>
@@ -701,7 +706,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
                 Every service answers on <code>{{ s.settings.dbDomain }}.{{ s.settings.tld }}</code>, told apart by port (e.g.
                 <code>{{ s.settings.dbDomain }}.{{ s.settings.tld }}:3306</code>); .env lines use it. Empty it to go back to 127.0.0.1.
               </template>
-              <template v-else>Empty = no domain; clients use 127.0.0.1. {{ isWin ? 'Names end in .localhost.' : 'The suffix follows Settings → General → Default domain.' }}</template>
+              <template v-else>Empty = no domain; clients use 127.0.0.1. The suffix follows Settings → General → Default domain.</template>
             </span>
           </label>
         </div>
