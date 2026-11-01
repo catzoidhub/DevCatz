@@ -135,7 +135,23 @@ const ready = ref(false);
 const projects = computed(() => state.value?.projects ?? []);
 const current = computed(() => projects.value.find((p) => p.id === selected.value) ?? null);
 /** Runtime updates waiting: a dot on the Runtimes rail item. */
-const runtimeUpdates = computed(() => state.value?.updates.list.length ?? 0);
+/**
+ * Updates waiting in each rail section (runtimes and their tools, servers, tunnel tools): a blue dot on the section,
+ * like the runtimes have, so an update is seen without opening every page.
+ */
+const sectionUpdates = computed<Partial<Record<AppSection, number>>>(() => {
+  const s = state.value;
+  if (!s) return {};
+  const count = (list: { update: string | null }[]) => list.filter((x) => x.update).length;
+  return {
+    runtimes: s.updates.list.length + s.toolUpdates.length,
+    storage: count(s.storage),
+    websocket: count(s.websockets),
+    search: count(s.searchEngines),
+    whatsapp: count(s.whatsapp) + count(s.gateways),
+    expose: Object.keys(s.expose.updates).length,
+  };
+});
 
 /** Sidebar: ★ Favorites, then the user's groups, then the rest ("Other sites" once groups exist). */
 interface Section {
@@ -582,10 +598,15 @@ async function park() {
         >
           <span class="rail-icon"><svg class="size-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS[r.icon]" /></svg></span>
           {{ r.short }}
-          <span v-if="r.id === 'runtimes' && runtimeUpdates" class="absolute top-1.5 right-4 size-2 rounded-full bg-info ring-2 ring-base-200" title="Runtime updates available" />
+          <span
+            v-if="sectionUpdates[r.id]"
+            class="absolute top-1.5 right-4 size-2 rounded-full bg-info ring-2 ring-base-200"
+            :title="`${sectionUpdates[r.id]} update${sectionUpdates[r.id] === 1 ? '' : 's'} available`"
+          />
           <span v-if="r.id === 'mail' && state?.mail.unread" class="absolute top-1 right-3 rounded-full bg-[var(--c-mail)] px-1.5 text-[10px] font-semibold leading-4 text-white ring-2 ring-base-200" :title="`${state.mail.unread} new mail`">{{ state.mail.unread > 99 ? '99+' : state.mail.unread }}</span>
-          <span v-if="r.id === 'whatsapp' && state?.whatsapp.some((w) => w.status === 'running')" class="absolute top-1.5 right-4 size-2 rounded-full bg-success ring-2 ring-base-200" title="A gateway is running" />
-          <span v-if="r.id === 'expose' && state?.expose.shares.some((s) => s.status === 'running')" class="absolute top-1.5 right-4 size-2 rounded-full bg-success ring-2 ring-base-200" title="A site is shared" />
+          <!-- Running: green, beside the update dot when both are there. -->
+          <span v-if="r.id === 'whatsapp' && state?.whatsapp.some((w) => w.status === 'running')" class="absolute top-1.5 size-2 rounded-full bg-success ring-2 ring-base-200" :class="sectionUpdates.whatsapp ? 'right-7' : 'right-4'" title="A gateway is running" />
+          <span v-if="r.id === 'expose' && state?.expose.shares.some((s) => s.status === 'running')" class="absolute top-1.5 size-2 rounded-full bg-success ring-2 ring-base-200" :class="sectionUpdates.expose ? 'right-7' : 'right-4'" title="A site is shared" />
         </button>
       </div>
       <!-- Settings stays put below the scrolling sections: a divider keeps the cut clean. -->

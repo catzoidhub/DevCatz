@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { brewLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
-import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { release } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { LogLine, StorageAction, StorageConfig, StorageKind, StorageState, TaskProgress } from '@shared/types';
@@ -9,7 +9,7 @@ import { isPortOpen, portOwner, run } from './env';
 import { ProcessManager } from './processes';
 import type { Route } from './proxy';
 import { dataDir, store, tld } from './store';
-import { removeTemp } from './platform';
+import { removeTemp, isWin, TAR } from './platform';
 
 /**
  * Local S3-compatible object storage, one instance per kind: RustFS, MinIO and
@@ -64,14 +64,17 @@ export async function githubAsset(repo: string, match: RegExp): Promise<{ url: s
     const a = r.assets.find((x) => match.test(x.name));
     if (a?.digest?.startsWith('sha256:')) return { url: a.browser_download_url, sha256: a.digest.slice(7), tag: r.tag_name };
   }
-  throw new Error(`No macOS build with a checksum found in ${repo} releases`);
+  throw new Error(`No ${isWin ? 'Windows' : 'macOS'} build with a checksum found in ${repo} releases`);
 }
 
 async function unpack(archive: string, into: string): Promise<void> {
   mkdirSync(into, { recursive: true });
-  const r = archive.endsWith('.zip')
-    ? await run('ditto', ['-x', '-k', archive, into], { timeout: 300_000 })
-    : await run('tar', ['-xf', archive, '-C', into], { timeout: 300_000 }); // bsdtar detects gzip / xz by content
+  // Windows' own bsdtar (tar.exe) reads .zip as well; macOS unpacks zips with ditto.
+  const r = isWin
+    ? await run(TAR, ['-xf', archive, '-C', into], { timeout: 300_000 })
+    : archive.endsWith('.zip')
+      ? await run('ditto', ['-x', '-k', archive, into], { timeout: 300_000 })
+      : await run('tar', ['-xf', archive, '-C', into], { timeout: 300_000 }); // bsdtar detects gzip / xz by content
   if (r.code !== 0) throw new Error(`Unpacking failed: ${r.stderr.trim()}`);
 }
 
@@ -103,18 +106,22 @@ export async function installFrom(
   url: string,
   sha256: string,
   dir: string,
-  exe: string,
+  name: string,
   label: string,
   progress: Report,
   signal: AbortSignal,
   headers?: Record<string, string>,
 ) {
   progress({ title: `Installing ${label}` });
+  // Windows programs end in .exe (callers name the tool: `cloudflared` → cloudflared.exe).
+  const exe = isWin && !/\.\w+$/.test(name) ? `${name}.exe` : name;
+  // A bare program instead of an archive (cloudflared-windows-amd64.exe): nothing to unpack.
+  const bare = /\.exe$/i.test(url.split('?')[0]);
   // Unpack next to DevCatz's data (the target folder may be on another volume).
   const tmp = join(dataDir('storage'), `.tmp-${exe}-${Date.now()}`);
   mkdirSync(tmp, { recursive: true });
   try {
-    const archive = join(tmp, url.endsWith('.zip') ? 'pkg.zip' : 'pkg.tar.gz');
+    const archive = join(tmp, bare ? exe : url.endsWith('.zip') ? 'pkg.zip' : 'pkg.tar.gz');
     const file = decodeURIComponent(url.split('/').pop() ?? '').replace(/^sha256:/, 'sha256:');
     progress({ step: S.download, received: 0, total: 0, detail: url.includes('ghcr.io') ? `Homebrew bottle (${label})` : file });
     // The hash is computed while downloading; the comparison happens at the end (Verifying).
@@ -124,14 +131,28 @@ export async function installFrom(
     check(signal);
     progress({ step: S.verify, received: undefined, total: undefined, detail: `SHA-256 ${digest.slice(0, 16)}…` });
     if (digest !== sha256) throw new Error(`Checksum mismatch (expected ${sha256.slice(0, 12)}…, got ${digest.slice(0, 12)}…); download discarded`);
-    progress({ step: S.unpack, detail: url.endsWith('.zip') ? 'zip archive' : 'tar.gz archive' });
-    await unpack(archive, join(tmp, 'x'));
+    // Microsoft Defender quarantines some tools on sight (ngrok counts as "potentially unwanted"): the file is there
+    // but cannot be opened, and tar would only say "Error opening archive".
+    if (isWin) {
+      try {
+        closeSync(openSync(archive, 'r'));
+      } catch {
+        throw new Error(
+          `Windows Security (Microsoft Defender) blocked ${label} as potentially unwanted software, so it cannot be used. ` +
+            'To use it anyway: Windows Security → Virus & threat protection → Protection history → Allow, then install again.',
+        );
+      }
+    }
+    progress({ step: S.unpack, detail: bare ? 'a program, nothing to unpack' : url.endsWith('.zip') ? 'zip archive' : 'tar.gz archive' });
+    if (!bare) await unpack(archive, join(tmp, 'x'));
     check(signal);
-    const found = findExe(join(tmp, 'x'), exe);
+    const found = bare ? archive : findExe(join(tmp, 'x'), exe);
     if (!found) throw new Error(`${exe} not found in the download`);
-    chmodSync(found, 0o755);
-    // Downloaded with fetch, so no quarantine flag; clear it anyway in case.
-    await run('xattr', ['-dr', 'com.apple.quarantine', found]);
+    if (!isWin) {
+      chmodSync(found, 0o755);
+      // Downloaded with fetch, so no quarantine flag; clear it anyway in case.
+      await run('xattr', ['-dr', 'com.apple.quarantine', found]);
+    }
     const dest = join(dir, exe);
     check(signal);
     progress({ step: S.place, detail: dest });
@@ -140,7 +161,7 @@ export async function installFrom(
       renameSync(found, dest);
     } catch {
       copyFileSync(found, dest);
-      chmodSync(dest, 0o755);
+      if (!isWin) chmodSync(dest, 0o755);
     }
   } finally {
     removeTemp(tmp);

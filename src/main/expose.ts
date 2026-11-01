@@ -14,6 +14,7 @@ import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './storage';
 import { dataDir, store } from './store';
+import { exe, isWin } from './platform';
 import { githubLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { getPhpRuntime } from './websocket';
 import { currentOS, words } from '@shared/platform';
@@ -81,6 +82,8 @@ const CF_DIR = join(homedir(), '.cloudflared');
 const CF_CERT = join(CF_DIR, 'cert.pem');
 const EXPOSE_PHAR = 'https://github.com/exposedev/expose/raw/HEAD/builds/expose';
 const NGROK_CASK = 'https://formulae.brew.sh/api/cask/ngrok.json';
+/** Windows: Scoop's manifest carries ngrok's zip and its SHA-256 (ngrok publishes no checksums), like the cask on macOS. */
+const NGROK_SCOOP = 'https://raw.githubusercontent.com/ScoopInstaller/Main/master/bucket/ngrok.json';
 
 interface NgrokCask {
   version: string;
@@ -104,6 +107,19 @@ async function ngrokCask(): Promise<{ version: string; url: string; sha256: stri
   return { version: cask.version.split(',')[0], url, sha256 };
 }
 
+/** ngrok for Windows from Scoop's manifest: version, the x64 zip and its SHA-256. */
+async function ngrokScoop(): Promise<{ version: string; url: string; sha256: string }> {
+  const res = await fetch(NGROK_SCOOP);
+  if (!res.ok) throw new Error(`Scoop manifest: HTTP ${res.status}`);
+  const m = (await res.json()) as { version: string; architecture?: Record<string, { url?: string; hash?: string }> };
+  const a = m.architecture?.['64bit'];
+  if (!a?.url || !a.hash) throw new Error('No ngrok build for Windows x64 in the Scoop manifest');
+  return { version: m.version, url: a.url, sha256: a.hash.replace(/^sha256:/, '') };
+}
+
+/** ngrok's release for this platform: Homebrew's cask on macOS, Scoop's manifest on Windows. */
+const ngrokRelease = () => (isWin ? ngrokScoop() : ngrokCask());
+
 export class ExposeManager {
   private live = new Map<string, Live>();
   private installing: ExposeState['installing'] = null;
@@ -122,12 +138,13 @@ export class ExposeManager {
   private get binDir() {
     return dataDir('expose', 'bin');
   }
-  private bin(tool: ExposeTool): string {
-    return join(this.binDir, tool);
+  /** The tool's file: cloudflared / ngrok programs (.exe on Windows); Expose is a phar run with PHP. */
+  private bin(tool: ExposeTool, dir = this.binDir): string {
+    return join(dir, tool === 'expose' ? tool : exe(tool));
   }
 
   private async version(tool: ExposeTool, dir = this.binDir): Promise<string | null> {
-    const bin = join(dir, tool);
+    const bin = this.bin(tool, dir);
     if (!existsSync(bin)) return null;
     let r: { code: number; stdout: string; stderr: string };
     if (tool === 'expose') {
@@ -198,13 +215,13 @@ export class ExposeManager {
     mkdirSync(dir, { recursive: true });
     if (tool === 'cloudflared') {
       report({ step: 0, detail: 'github.com/cloudflare/cloudflared releases' });
-      const a = await githubAsset('cloudflare/cloudflared', process.arch === 'arm64' ? /^cloudflared-darwin-arm64\.tgz$/ : /^cloudflared-darwin-amd64\.tgz$/);
+      const a = await githubAsset('cloudflare/cloudflared', isWin ? /^cloudflared-windows-amd64\.exe$/ : process.arch === 'arm64' ? /^cloudflared-darwin-arm64\.tgz$/ : /^cloudflared-darwin-amd64\.tgz$/);
       check(signal);
       await installFrom(a.url, a.sha256, dir, 'cloudflared', `cloudflared ${a.tag}`, report, signal);
     } else if (tool === 'ngrok') {
-      // ngrok publishes no checksums of its own; Homebrew's cask carries URL and SHA-256 per architecture.
-      report({ step: 0, detail: 'formulae.brew.sh (ngrok cask)' });
-      const c = await ngrokCask();
+      // ngrok publishes no checksums of its own; Homebrew's cask (macOS) / Scoop's manifest (Windows) carry URL and SHA-256.
+      report({ step: 0, detail: isWin ? 'Scoop manifest (ngrok)' : 'formulae.brew.sh (ngrok cask)' });
+      const c = await ngrokRelease();
       check(signal);
       await installFrom(c.url, c.sha256, dir, 'ngrok', `ngrok ${c.version}`, report, signal);
     } else {
@@ -241,7 +258,7 @@ export class ExposeManager {
       await this.fetchTool(tool, this.binDir, report, abort.signal);
       report({ step: steps.length - 1, detail: this.bin(tool), received: undefined, total: undefined });
       await this.readVersions();
-      if (!this.versions[tool]) throw new Error(`${TOOL_NAME[tool]} does not run on this Mac`);
+      if (!this.versions[tool]) throw new Error(`${TOOL_NAME[tool]} does not run on this ${words.computer}`);
       report({ step: steps.length, done: true, title: `Installed ${TOOL_NAME[tool]} ${this.versions[tool]}` });
       this.clearTaskLater();
     } catch (err) {
@@ -303,7 +320,7 @@ export class ExposeManager {
     const failed: string[] = [];
     const latest: Record<ExposeTool, () => Promise<string>> = {
       cloudflared: () => githubLatest('cloudflare/cloudflared'),
-      ngrok: async () => (await ngrokCask()).version,
+      ngrok: async () => (await ngrokRelease()).version,
       expose: () => githubLatest('exposedev/expose'),
     };
     await Promise.all(

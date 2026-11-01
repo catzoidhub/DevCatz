@@ -31,7 +31,8 @@ export async function downloadVerified(
 ): Promise<string> {
   // Inside a cancellable install, Cancel stops the download.
   signal ??= currentSignal();
-  const res = await fetch(url, { headers, signal });
+  // Never from or into the HTTP cache: a cached copy Windows Defender quarantined fails as ERR_CACHE_READ_FAILURE.
+  const res = await fetch(url, { headers, signal, cache: 'no-store' });
   if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
   const total = Number(res.headers.get('content-length')) || 0;
   const hash = createHash(algo);

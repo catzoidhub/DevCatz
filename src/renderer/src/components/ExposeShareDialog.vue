@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, ref } from 'vue';
 import type { ExposeProvider, ExposeShare } from '@shared/types';
 import { attempt, herd, navRequest, state } from '../store';
@@ -75,7 +76,7 @@ function openExpose(where: 'expose' | 'settings') {
     <form class="modal-box w-[30rem] max-w-[95vw] space-y-4" @submit.prevent="start">
       <div>
         <h3 class="text-lg font-semibold tracking-tight">Share {{ site?.name ?? 'a site' }} on a public URL</h3>
-        <p class="text-xs opacity-60">A tunnel from the provider to this Mac, through DevCatz's proxy. Stop it when you are done.</p>
+        <p class="text-xs opacity-60">A tunnel from the provider to this {{ words.computer }}, through DevCatz's proxy. Stop it when you are done.</p>
       </div>
       <template v-if="pending">
         <TaskStepper v-if="pendingShare?.task" :task="pendingShare.task" :cancellable="busy" @cancel="cancelStart" />

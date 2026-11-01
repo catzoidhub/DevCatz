@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { keyLabel, words } from '@shared/platform';
+import { isWin } from '../platform';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import QRCode from 'qrcode';
 import type { ExposeRequest, ExposeShare, ExposeTool } from '@shared/types';
@@ -121,7 +122,9 @@ async function copy(t: string) {
 }
 const TOOLS: { tool: ExposeTool; name: string; source: string; providers: string }[] = [
   { tool: 'cloudflared', name: 'cloudflared', source: 'GitHub (cloudflare/cloudflared), SHA-256 checked', providers: 'Cloudflare quick tunnels · your Cloudflare domain' },
-  { tool: 'ngrok', name: 'ngrok', source: "ngrok's download server, URL and SHA-256 from the Homebrew cask", providers: 'ngrok (authtoken in Settings)' },
+  { tool: 'ngrok', name: 'ngrok', source: isWin
+      ? "ngrok's download server, URL and SHA-256 from Scoop's manifest. Microsoft Defender may flag ngrok as potentially unwanted and block it; Cloudflare needs no exception"
+      : "ngrok's download server, URL and SHA-256 from the Homebrew cask", providers: 'ngrok (authtoken in Settings)' },
   { tool: 'expose', name: 'Expose', source: 'GitHub (exposedev/expose), the phar build; runs on the PHP of the Runtimes page', providers: 'Expose · expose.dev (token in Settings)' },
 ];
 const task = computed(() => expose.value?.installing ?? null);
@@ -237,7 +240,7 @@ const installedTools = computed(() => TOOLS.filter((t) => expose.value?.tools[t.
                   <span class="truncate text-base">{{ share.url }}</span>
                 </a>
                 <p class="text-xs opacity-60">
-                  Scan the code on a phone to open it. The tunnel forwards to <code>{{ share.domain }}</code> on this Mac with its Host header, through DevCatz's proxy;
+                  Scan the code on a phone to open it. The tunnel forwards to <code>{{ share.domain }}</code> on this {{ words.computer }} with its Host header, through DevCatz's proxy;
                   requests show below. Webhooks (Stripe, GitHub, Midtrans …) can call this URL, and Replay sends one again after a code change.
                 </p>
               </div>
@@ -413,7 +416,7 @@ const installedTools = computed(() => TOOLS.filter((t) => expose.value?.tools[t.
             <div class="card-body">
               <h2>What a share does</h2>
               <ul class="list-inside list-disc space-y-1 text-sm opacity-70">
-                <li>Requests reach the site with its own Host header, so routing, cookies and Vite HMR work as on this Mac.</li>
+                <li>Requests reach the site with its own Host header, so routing, cookies and Vite HMR work as on this {{ words.computer }}.</li>
                 <li>Optional basic auth in front of it, and an expiry so a forgotten share stops by itself.</li>
                 <li>Every request is listed with headers and bodies; Replay sends a webhook again after you changed the code.</li>
                 <li>Several sites can be shared at once; the {{ words.tray }} lists them with their URLs.</li>
