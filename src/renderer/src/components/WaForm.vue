@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, ref } from 'vue';
 import type { WaConfig, WaState } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
@@ -104,7 +105,7 @@ async function submit() {
         </fieldset>
         <p class="text-xs opacity-60">
           <template v-if="service.engine === 'gowa'">The newest release is downloaded from GitHub (aldinokemal/go-whatsapp-web-multidevice), SHA-256 checked.</template>
-          <template v-else>The newest <code>devlikeapro/waha</code> image is pulled with Docker (OrbStack / Docker Desktop must be running); the API is published on 127.0.0.1 only.</template>
+          <template v-else>The newest <code>devlikeapro/waha</code> image is pulled with Docker ({{ words.dockerEngines }} must be running); the API is published on 127.0.0.1 only.</template>
           Unofficial gateways speak the WhatsApp Web protocol: link a test number, not one you cannot lose.
         </p>
         <div class="modal-action">

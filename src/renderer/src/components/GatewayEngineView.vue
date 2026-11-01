@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { CaughtSms, GwKind, GwSendResult, GwState } from '@shared/types';
 import { GW_CATEGORY_LABEL, GW_LOGO } from '../gateways';
@@ -173,7 +174,7 @@ const openMail = () => (navRequest.value = { section: 'mail' });
         <p class="text-xs opacity-60">
           <template v-if="g.category === 'email'">Everything it sends goes to the DevCatz mail catcher (Mail page), so real inboxes are never reached.</template>
           <template v-else-if="g.kind === 'jasmin'">Every SMS goes to the DevCatz SMS catcher, shown on this page; no operator account is needed.</template>
-          <template v-else>Phones and browsers on this Mac's network can subscribe through the domain (Expose it for devices outside).</template>
+          <template v-else>Phones and browsers on this {{ words.computer }}'s network can subscribe through the domain (Expose it for devices outside).</template>
         </p>
       </div>
     </div>
@@ -256,7 +257,7 @@ const openMail = () => (navRequest.value = { section: 'mail' });
             <h2>How sites use it</h2>
             <ul class="list-inside list-disc space-y-1 text-sm opacity-70">
               <template v-if="g.kind === 'stalwart'">
-                <li>Send through SMTP submission <code>127.0.0.1:{{ g.config.ports.submission }}</code> as <code>devcatz</code> (no TLS on this Mac); mail to other domains lands in the DevCatz mail catcher.</li>
+                <li>Send through SMTP submission <code>127.0.0.1:{{ g.config.ports.submission }}</code> as <code>devcatz</code> (no TLS on this {{ words.computer }}); mail to other domains lands in the DevCatz mail catcher.</li>
                 <li>Mail to <code>…@devcatz.test</code> stays in Stalwart: read it over IMAP <code>127.0.0.1:{{ g.config.ports.imap }}</code> (reply-by-email and inbound flows).</li>
                 <li>Accounts, domains and filters are managed in the web admin.</li>
               </template>
@@ -267,7 +268,7 @@ const openMail = () => (navRequest.value = { section: 'mail' });
               </template>
               <template v-else-if="g.kind === 'ntfy'">
                 <li><code>POST {{ g.url }}/&lt;topic&gt;</code> with <code>Authorization: Bearer &lt;token&gt;</code>; the body is the message, <code>Title</code> / <code>Priority</code> / <code>Tags</code> headers add more.</li>
-                <li>Phones: the ntfy app (Android / iOS), add server {{ g.url }} and log in; for devices outside this Mac, Expose the domain.</li>
+                <li>Phones: the ntfy app (Android / iOS), add server {{ g.url }} and log in; for devices outside this {{ words.computer }}, Expose the domain.</li>
               </template>
               <template v-else-if="g.kind === 'gotify'">
                 <li><code>POST {{ g.url }}/message?token=&lt;app token&gt;</code> with JSON <code>{ title, message, priority }</code>.</li>

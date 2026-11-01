@@ -14,6 +14,8 @@ import type { Route } from './proxy';
 import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './storage';
 import { dataDir, store, tld } from './store';
 import { githubLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
+import { exe, isWin } from './platform';
+import { words } from '@shared/platform';
 
 /**
  * WhatsApp gateways for local development: GOWA (go-whatsapp-web-multidevice,
@@ -71,6 +73,8 @@ const ENGINES: Record<WaEngine, EngineDef> = {
 };
 const KINDS: WaEngine[] = ['gowa', 'waha'];
 const GOWA_REPO = 'aldinokemal/go-whatsapp-web-multidevice';
+/** GOWA's program in its folder (gowa.exe on Windows). */
+const GOWA_EXE = exe('gowa');
 const WAHA_IMAGE = 'devlikeapro/waha';
 const BODY_LIMIT = 64 * 1024;
 const DELIVERIES_KEPT = 500;
@@ -302,22 +306,24 @@ export class WaManager {
 
   // ---------------------------------------------------------------- install
 
-  /** GOWA: the darwin build of the newest release; placed as `gowa` in `dir`. Resolves with the release tag. */
+  /** GOWA: this platform's build of the newest release (darwin-<arch> / windows-amd64.exe inside); placed as `gowa` in `dir`. Resolves with the release tag. */
   private async fetchGowa(dir: string, report: Report, signal: AbortSignal): Promise<string> {
     report({ step: 0, detail: `github.com/${GOWA_REPO} releases` });
-    const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
-    const a = await githubAsset(GOWA_REPO, new RegExp(`^whatsapp_[\\d.]+_darwin_${arch}\\.zip$`));
+    const os = isWin ? 'windows' : 'darwin';
+    const arch = isWin || process.arch !== 'arm64' ? 'amd64' : 'arm64';
+    const a = await githubAsset(GOWA_REPO, new RegExp(`^whatsapp_[\\d.]+_${os}_${arch}\\.zip$`));
     check(signal);
     mkdirSync(dir, { recursive: true });
-    await installFrom(a.url, a.sha256, dir, `darwin-${arch}`, `GOWA ${a.tag}`, report, signal);
-    renameSync(join(dir, `darwin-${arch}`), join(dir, 'gowa'));
+    await installFrom(a.url, a.sha256, dir, `${os}-${arch}`, `GOWA ${a.tag}`, report, signal);
+    rmSync(join(dir, GOWA_EXE), { force: true });
+    renameSync(join(dir, exe(`${os}-${arch}`)), join(dir, GOWA_EXE));
     return a.tag.replace(/^v/, '');
   }
 
   /** WAHA: `docker pull` of a tag, with the layer lines as progress. */
   private async pullWaha(tag: string, report: Report, signal: AbortSignal): Promise<void> {
     const ds = await dockerStatus();
-    if (!ds.daemon) throw new Error(ds.error ?? 'No container engine is running (Docker / OrbStack)');
+    if (!ds.daemon) throw new Error(ds.error ?? `No container engine is running (${words.dockerEngines})`);
     report({ step: 1, detail: `${WAHA_IMAGE}:${wahaTag(tag)}` });
     await new Promise<void>((resolve, reject) => {
       const proc = spawn(dockerBin(), ['pull', `${WAHA_IMAGE}:${wahaTag(tag)}`], { env: getShellEnv() as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -458,7 +464,7 @@ export class WaManager {
           stop: () => this.stop(engine),
           start: () => this.start(engine),
           wasActive,
-          version: async () => ((await run(join(this.binDir('gowa'), 'gowa'), ['--help'], { timeout: 15_000 })).code === 0 ? tag : null),
+          version: async () => ((await run(join(this.binDir('gowa'), GOWA_EXE), ['--help'], { timeout: 15_000 })).code === 0 ? tag : null),
           report: t.report,
           signal: abort.signal,
           tailAt: head.length,
@@ -501,7 +507,7 @@ export class WaManager {
     mkdirSync(c.dataDir, { recursive: true });
     const hook = `/${engine}`;
     if (engine === 'gowa') {
-      const bin = join(this.binDir('gowa'), 'gowa');
+      const bin = join(this.binDir('gowa'), GOWA_EXE);
       if (!existsSync(bin)) throw new Error('The GOWA binary is missing: remove and install again');
       const args = [
         'rest',

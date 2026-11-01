@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { computed, ref } from 'vue';
 import type { GwConfig, GwState } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
@@ -97,7 +98,7 @@ const userLabel = computed(() => (props.service.kind === 'postal' ? 'Admin email
           </label>
           <p class="col-span-2 text-xs opacity-60">
             api_id and api_hash come from <a class="link" @click="H.openUrl('https://my.telegram.org/apps')">my.telegram.org → API development tools</a> (once per Telegram account); the bot token from
-            <a class="link" @click="H.openUrl('https://t.me/BotFather')">@BotFather</a>. They stay in DevCatz's settings on this Mac.
+            <a class="link" @click="H.openUrl('https://t.me/BotFather')">@BotFather</a>. They stay in DevCatz's settings on this {{ words.computer }}.
           </p>
         </fieldset>
         <fieldset v-if="service.kind !== 'jasmin' && service.kind !== 'telegram'" class="grid grid-cols-2 gap-3">
@@ -134,9 +135,9 @@ const userLabel = computed(() => (props.service.kind === 'postal' ? 'Admin email
           </label>
         </fieldset>
         <p class="text-xs opacity-60">
-          <template v-if="service.docker">Runs in Docker (OrbStack / Docker Desktop must be running); ports are published on 127.0.0.1 only.</template>
+          <template v-if="service.docker">Runs in Docker ({{ words.dockerEngines }} must be running); ports are published on 127.0.0.1 only.</template>
           <template v-else>Downloaded from GitHub releases, SHA-256 checked; listens on 127.0.0.1 only.</template>
-          <template v-if="service.category === 'email'"> Outgoing mail goes to the DevCatz mail catcher, so nothing leaves this Mac.</template>
+          <template v-if="service.category === 'email'"> Outgoing mail goes to the DevCatz mail catcher, so nothing leaves this {{ words.computer }}.</template>
           <template v-if="service.kind === 'jasmin'"> Every SMS goes to the DevCatz SMS catcher instead of an operator.</template>
           <template v-if="mode === 'edit'"> Changing a port, the domain or the login sets the gateway up again on its next start.</template>
         </p>

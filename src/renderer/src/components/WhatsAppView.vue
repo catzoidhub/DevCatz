@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { words } from '@shared/platform';
 import { WA_LOGO } from '../logos';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { GwKind, GwState, WaContact, WaDelivery, WaEngine, WaHook, WaMessage, WaSendResult, WaState } from '@shared/types';
@@ -399,7 +400,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
             <img :src="LOGO[selected.engine]" alt="" class="size-11 rounded-xl bg-white p-1 ring-1 ring-base-content/10" draggable="false" />
             <div class="min-w-0">
               <h2 class="text-lg font-semibold tracking-tight">{{ selected.name }}</h2>
-              <div class="text-xs opacity-60">Not installed · {{ selected.docker ? 'runs in Docker (OrbStack / Docker Desktop)' : 'a single Go binary' }}</div>
+              <div class="text-xs opacity-60">Not installed · {{ selected.docker ? `runs in Docker (${words.dockerEngines})` : 'a single Go binary' }}</div>
             </div>
           </div>
         </header>

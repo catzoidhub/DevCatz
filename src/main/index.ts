@@ -1282,13 +1282,9 @@ app.whenReady().then(async () => {
     n.on('click', () => showWindow('mail'));
     n.show();
   };
-  // Mail is plain Node (SMTP catcher + web inbox): every platform. WhatsApp and the gateways run macOS builds, so
-  // Windows leaves them off for now (Catzoid #57).
   void herd.mail.autoStart();
-  if (isMac) {
-    herd.whatsapp.autoStart();
-    herd.gateways.autoStart();
-  }
+  herd.whatsapp.autoStart();
+  herd.gateways.autoStart();
   gitHosts.setAccountsListener(() => herd.emit('change'));
   // DevCatz 1.0.0's own Git accounts → the shared store (once; DialCatz then sees them too).
   void gitHosts.moveLocalAccounts().catch((e: Error) => console.warn(`Git accounts: ${e.message}`));

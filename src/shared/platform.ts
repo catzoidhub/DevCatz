@@ -28,6 +28,8 @@ export function wordsFor(os: OS) {
     sep: os === 'windows' ? '\\' : '/',
     /** What serves PHP sites: PHP-FPM pools on macOS, php-cgi FastCGI workers on Windows. */
     phpServer: os === 'windows' ? 'PHP (FastCGI)' : 'PHP-FPM',
+    /** The container apps DevCatz works with, for "must be running" hints. */
+    dockerEngines: os === 'mac' ? 'OrbStack / Docker Desktop' : os === 'windows' ? 'Docker Desktop / Rancher Desktop / Podman' : 'Docker / Podman',
     installGit: os === 'mac' ? 'run xcode-select --install in Terminal' : os === 'windows' ? 'install Git for Windows from git-scm.com' : 'install git with your package manager',
   };
 }

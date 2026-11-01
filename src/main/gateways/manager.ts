@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { connect as netConnect } from 'node:net';
@@ -17,6 +17,8 @@ import { dataDir, store, tld } from '../store';
 import { githubLatest, isNewer } from '../svcupdate';
 import { jcli } from './jcli';
 import { SmppCatcher } from './smpp';
+import { exe, isWin } from '../platform';
+import { words } from '@shared/platform';
 
 /**
  * Email, push and SMS gateways for local development, next to the WhatsApp
@@ -119,7 +121,7 @@ const ENGINES: Record<GwKind, EngineDef> = {
     port: 8494,
     ports: { jcli: 8995, smpp: 2776 },
     portFields: [
-      { key: 'smpp', label: 'SMS catcher (SMPP, on this Mac)' },
+      { key: 'smpp', label: `SMS catcher (SMPP, on this ${words.computer})` },
       { key: 'jcli', label: 'jCli console' },
     ],
     label: 'jasmin',
@@ -129,7 +131,7 @@ const ENGINES: Record<GwKind, EngineDef> = {
   telegram: {
     name: 'Telegram Bot API',
     category: 'telegram',
-    description: "Telegram's official Bot API server (tdlib/telegram-bot-api) on this Mac: the same API as api.telegram.org, webhooks to any local URL (http, any port) and files up to 2 GB (Docker).",
+    description: `Telegram's official Bot API server (tdlib/telegram-bot-api) on this ${words.computer}: the same API as api.telegram.org, webhooks to any local URL (http, any port) and files up to 2 GB (Docker).`,
     docker: true,
     port: 8496,
     ports: {},
@@ -626,13 +628,14 @@ ${svc('postal worker', '')}`;
 
   /** Stalwart and its CLI from GitHub releases (SHA-256 checked); returns the version. */
   private async fetchStalwart(dir: string, report: Report, signal: AbortSignal): Promise<string> {
-    const arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
+    // Windows: x86_64-pc-windows-msvc zips; macOS: apple-darwin tarballs.
+    const triple = isWin ? 'x86_64-pc-windows-msvc' : `${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-apple-darwin`;
     report({ step: 0, detail: 'github.com/stalwartlabs/stalwart releases' });
-    const a = await githubAsset('stalwartlabs/stalwart', new RegExp(`^stalwart-${arch}-apple-darwin\\.tar\\.gz$`));
+    const a = await githubAsset('stalwartlabs/stalwart', new RegExp(`^stalwart-${triple}\\.${isWin ? 'zip' : 'tar\\.gz'}$`));
     check(signal);
     mkdirSync(dir, { recursive: true });
     await installFrom(a.url, a.sha256, dir, 'stalwart', `Stalwart ${a.tag}`, report, signal);
-    const cli = await githubAsset('stalwartlabs/cli', new RegExp(`^stalwart-cli-${arch}-apple-darwin\\.tar\\.xz$`));
+    const cli = await githubAsset('stalwartlabs/cli', new RegExp(`^stalwart-cli-${triple}\\.${isWin ? 'zip' : 'tar\\.xz'}$`));
     check(signal);
     await installFrom(cli.url, cli.sha256, dir, 'stalwart-cli', `stalwart-cli ${cli.tag}`, report, signal);
     return a.tag.replace(/^v/, '');
@@ -651,7 +654,7 @@ ${svc('postal worker', '')}`;
     try {
       if (e.docker) {
         const ds = await dockerStatus();
-        if (!ds.daemon) throw new Error(ds.error ?? 'No container engine is running (OrbStack / Docker Desktop)');
+        if (!ds.daemon) throw new Error(ds.error ?? `No container engine is running (${words.dockerEngines})`);
         t.report({ step: 1, detail: IMAGE[kind as Exclude<GwKind, 'stalwart'>] });
         c.version = c.version || (await LATEST[kind]());
         check(abort.signal);
@@ -779,7 +782,7 @@ ${svc('postal worker', '')}`;
         v = await this.fetchStalwart(fresh, t.report, abort.signal);
         if (wasActive) await this.stop(kind);
         rmSync(this.binDir(kind), { recursive: true, force: true });
-        await run('mv', [fresh, this.binDir(kind)]);
+        renameSync(fresh, this.binDir(kind));
         this.saveConfig(kind, { ...c, version: v });
       }
       t.report({ step: steps.length - 1, received: undefined, total: undefined, detail: undefined });
@@ -811,7 +814,7 @@ ${svc('postal worker', '')}`;
       if (kind === 'stalwart') await this.startStalwart(c);
       else {
         const ds = await dockerStatus();
-        if (!ds.daemon) throw new Error(ds.error ?? 'No container engine is running (OrbStack / Docker Desktop)');
+        if (!ds.daemon) throw new Error(ds.error ?? `No container engine is running (${words.dockerEngines})`);
         if (kind === 'jasmin') await this.startSmsCatcher(c);
         this.writeCompose(kind, c);
         this.saveConfig(kind, c);
@@ -876,7 +879,7 @@ ${svc('postal worker', '')}`;
    * starts run normally with the same administrator.
    */
   private async startStalwart(c: GwConfig): Promise<void> {
-    const bin = join(this.binDir('stalwart'), 'stalwart');
+    const bin = join(this.binDir('stalwart'), exe('stalwart'));
     if (!existsSync(bin)) throw new Error('The Stalwart binary is missing: remove and install again');
     const cfg = join(c.dataDir, 'config.json');
     mkdirSync(join(c.dataDir, 'db'), { recursive: true });
@@ -890,7 +893,7 @@ ${svc('postal worker', '')}`;
       const plan = this.stalwartPlan(c);
       const planFile = join(c.dataDir, 'devcatz-plan.ndjson');
       writeFileSync(planFile, plan);
-      const r = await run(join(this.binDir('stalwart'), 'stalwart-cli'), ['apply', '--file', planFile, '--no-color'], {
+      const r = await run(join(this.binDir('stalwart'), exe('stalwart-cli')), ['apply', '--file', planFile, '--no-color'], {
         timeout: 120_000,
         env: { STALWART_URL: `http://127.0.0.1:${c.port}`, STALWART_USER: c.user, STALWART_PASSWORD: c.password },
       });
@@ -922,7 +925,8 @@ ${svc('postal worker', '')}`;
         '@type': 'upsert',
         object: 'MtaRoute',
         matchOn: ['name'],
-        value: { catcher: { '@type': 'Relay', name: 'devcatz-catcher', address: '127.0.0.1', port: this.h.mailPort(), protocol: 'smtp', implicitTls: false, allowInvalidCerts: true } },
+        // `host` (Stalwart 1.0 renamed the relay's `address`).
+        value: { catcher: { '@type': 'Relay', name: 'devcatz-catcher', host: '127.0.0.1', port: this.h.mailPort(), protocol: 'smtp', implicitTls: false, allowInvalidCerts: true } },
       },
       { '@type': 'update', object: 'SystemSettings', value: { defaultHostname: host(c.domain), defaultDomainId: '#dom' } },
       { '@type': 'update', object: 'MtaOutboundStrategy', value: { route: { match: { '0': { if: 'is_local_domain(rcpt_domain)', then: "'local'" } }, else: "'devcatz-catcher'" } } },
