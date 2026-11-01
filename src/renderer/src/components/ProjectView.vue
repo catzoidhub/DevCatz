@@ -6,7 +6,7 @@ import { attempt, herd, navRequest, notify, siteTabRequest, state } from '../sto
 import { navVisit } from '../nav';
 import AiExplain from './AiExplain.vue';
 import { aiOn } from '../ai';
-import { appCommand, frameworkTag, hasExtras, pythonInstallLabel, siteFrameworks, siteStatus, runsPerApp, runtimesOf, usesGo, usesJs, usesPhp, usesPython, portWhy, isDesktopSite } from '../runtimes';
+import { appCommand, frameworkTag, hasExtras, pythonInstallLabel, siteFrameworks, siteStatus, runsPerApp, runtimesOf, usesGo, usesJs, usesPhp, usesPython, portWhy, isDesktopSite, isDesktopApp } from '../runtimes';
 import StackMark from './StackMark.vue';
 import DataLibsCard from './DataLibsCard.vue';
 import { mark } from '../datamarks';
@@ -252,10 +252,12 @@ const startItems = computed<MenuItem[]>(() => [
   { label: `Start all`, hint: `${p.value.name} + ${worktrees.value.length} worktree${worktrees.value.length === 1 ? '' : 's'}`, action: () => void startAll() },
 ]);
 
-/** An Electron app: its own window, no web address — no URL, Share, preview or domain settings on its page. */
+/** An Electron or Tauri app: its own window, no web address — no URL, Share, preview or domain settings on its page. */
 const desktopApp = computed(() => isDesktopSite(p.value));
+/** The mark of the desktop framework (Electron / Tauri) for the label and the card. */
+const desktopMark = computed(() => frameworkTag(p.value.stack.apps[0]?.framework ?? 'node', p.value.stack.apps[0]?.library).icon);
 const openItems = computed<MenuItem[]>(() => [
-  ...p.value.stack.apps.filter((app) => app.library !== 'electron').map((app) => ({ label: app.domain, hint: 'Open in browser', icon: ICONS.globe, action: () => void herd.openUrl(url(app.domain)) })),
+  ...p.value.stack.apps.filter((app) => !isDesktopApp(app)).map((app) => ({ label: app.domain, hint: 'Open in browser', icon: ICONS.globe, action: () => void herd.openUrl(url(app.domain)) })),
   { label: 'Editor', icon: ICONS.code, action: () => void herd.openEditor(p.value.id) },
   { label: words.fileManager, icon: ICONS.folder, action: () => void herd.openFolder(p.value.id) },
   { label: 'Terminal', icon: ICONS.terminal, action: () => void herd.openTerminal(p.value.id) },
@@ -411,8 +413,8 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
             @click="tab = 'git'"
           >worktree · {{ p.git?.branch ?? 'detached' }}</button>
         </div>
-        <span v-if="desktopApp" class="url-chip no-drag mt-1.5 cursor-default" title="An Electron app: Start opens its own window">
-          <StackMark :icon="frameworkTag('node', 'electron').icon" class="size-3.5 shrink-0" />
+        <span v-if="desktopApp" class="url-chip no-drag mt-1.5 cursor-default" title="A desktop app: Start opens its own window">
+          <StackMark :icon="desktopMark" class="size-3.5 shrink-0" />
           <span class="truncate font-sans">Desktop app · opens in its own window</span>
         </span>
         <a v-else class="url-chip no-drag mt-1.5" :title="`Open ${url(p.domain)}`" @click="herd.openUrl(url(p.domain))">
@@ -592,7 +594,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
     <div class="grid gap-6 lg:grid-cols-[minmax(0,24rem)_1fr]">
       <div v-if="desktopApp" class="card">
         <div class="card-body items-center justify-center gap-2 text-center">
-          <StackMark :icon="frameworkTag('node', 'electron').icon" class="size-10" />
+          <StackMark :icon="desktopMark" class="size-10" />
           <div class="font-medium">A desktop app</div>
           <p class="text-xs opacity-70">
             Start opens its window, the way <code>{{ command ?? 'npm start' }}</code> does in a terminal. It has no web address, so there is nothing to
@@ -738,7 +740,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
               <td><code class="text-xs whitespace-nowrap">{{ appCommand(p, app) }}</code></td>
               <td v-if="app.docroot !== undefined" class="text-xs opacity-60">— <span class="opacity-70">(FastCGI)</span></td>
               <td v-else-if="app.framework === 'mix'" class="text-xs opacity-60">— <span class="opacity-70">(builds into public/)</span></td>
-              <td v-else-if="app.library === 'electron'" class="text-xs opacity-60">— <span class="opacity-70">(its own window)</span></td>
+              <td v-else-if="isDesktopApp(app) && !app.port" class="text-xs opacity-60">— <span class="opacity-70">(its own window)</span></td>
               <td v-else class="whitespace-nowrap">
                 <code>{{ app.port ?? '?' }}</code>
                 <span
@@ -751,7 +753,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
                 <span v-else-if="portWhy(p, app)" class="badge badge-ghost badge-xs ml-1 opacity-70" :title="portWhy(p, app)!.detail">{{ portWhy(p, app)!.title }}</span>
               </td>
               <td>
-                <span v-if="app.library === 'electron'" class="text-xs opacity-60">—</span>
+                <span v-if="isDesktopApp(app)" class="text-xs opacity-60" title="Shown in the app's own window, not a browser">— (its window)</span>
                 <a v-else-if="app.domain" class="link link-primary" @click="herd.openUrl(url(app.domain))">{{ app.domain }}</a>
                 <span v-else class="text-xs opacity-60">via {{ p.domain }}</span>
               </td>

@@ -4159,11 +4159,11 @@ export class Herd extends EventEmitter {
   // ------------------------------------------------------- sidebar organisation
 
   /** Site URL and folder for the sidebar's context menu. */
-  /** `desktop`: an Electron app only — its own window, no web address. */
+  /** `desktop`: an Electron / Tauri app only — its own window, no web address. */
   siteInfo(id: string): { url: string; path: string; desktop: boolean } | null {
     const p = this.projects.find((x) => x.id === id);
     const apps = this.stacks.get(id)?.apps ?? [];
-    return p ? { url: this.urlFor(p), path: p.path, desktop: apps.length > 0 && apps.every((a) => a.library === 'electron') } : null;
+    return p ? { url: this.urlFor(p), path: p.path, desktop: apps.length > 0 && apps.every((a) => a.library === 'electron' || a.library === 'tauri') } : null;
   }
 
   setFavorite(id: string, on: boolean): void {

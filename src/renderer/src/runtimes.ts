@@ -90,9 +90,12 @@ export function runtimesOf(p: ProjectState): RuntimeRow[] {
 }
 
 /** What the status dot shows: PHP sites count as running while PHP-FPM serves them; a start in progress as starting. */
-/** A desktop app only (Electron): it opens its own window, with no port and no web address to open or share. */
+/** Electron and Tauri apps open their own window: their frontend (if any) is not a page to open in a browser. */
+export const isDesktopApp = (app: { library?: string | null }): boolean => app.library === 'electron' || app.library === 'tauri';
+
+/** A desktop app only (Electron, Tauri): it opens its own window, with no web address to open or share. */
 export function isDesktopSite(p: ProjectState): boolean {
-  return p.stack.apps.length > 0 && p.stack.apps.every((a) => a.library === 'electron');
+  return p.stack.apps.length > 0 && p.stack.apps.every(isDesktopApp);
 }
 
 export function siteStatus(p: ProjectState): ProjectState['status'] {
