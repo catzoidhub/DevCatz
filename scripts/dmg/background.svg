@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+  <!-- DMG window background (600 × 400; icons at 150,190 and 450,190 — electron-builder.yml dmg.contents).
+       Colours: the app's theme (primary #6c5de7 → secondary #a35de4) and the logo's teal.
+       Mid-tone on purpose: Finder writes icon labels black in light mode and white in dark mode; both read here. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5546d4"/>
+      <stop offset="0.55" stop-color="#7b5fe6"/>
+      <stop offset="1" stop-color="#a35de4"/>
+    </linearGradient>
+    <radialGradient id="glowTeal" cx="0.12" cy="1" r="0.6">
+      <stop offset="0" stop-color="#00bbb3" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#00bbb3" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowLight" cx="0.95" cy="0.02" r="0.5">
+      <stop offset="0" stop-color="#e3c8ff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#e3c8ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="0.9" fill="#ffffff" fill-opacity="0.10"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.9"/>
+      <stop offset="0.75" stop-color="#fff" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="dotsFade"><rect width="600" height="400" fill="url(#fade)"/></mask>
+  </defs>
+
+  <rect width="600" height="400" fill="url(#bg)"/>
+  <rect width="600" height="400" fill="url(#glowTeal)"/>
+  <rect width="600" height="400" fill="url(#glowLight)"/>
+  <rect width="600" height="400" fill="url(#dots)" mask="url(#dotsFade)"/>
+
+  <!-- Wordmark and the one instruction -->
+  <g font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif" text-anchor="middle" fill="#ffffff">
+    <text x="300" y="58" font-size="24" font-weight="700" letter-spacing="-0.4">DevCatz</text>
+    <text x="300" y="82" font-size="13" font-weight="500" fill-opacity="0.78">Drag DevCatz into Applications to install</text>
+  </g>
+
+  <!-- Soft stages under the two icons -->
+  <circle cx="150" cy="190" r="92" fill="url(#halo)"/>
+  <circle cx="450" cy="190" r="92" fill="url(#halo)"/>
+
+  <!-- The arrow: the logo's code chevrons, fading in towards Applications -->
+  <g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M262 176 L276 190 L262 204" stroke-opacity="0.35"/>
+    <path d="M290 176 L304 190 L290 204" stroke-opacity="0.6"/>
+    <path d="M318 176 L332 190 L318 204" stroke-opacity="0.95"/>
+  </g>
+  <circle cx="348" cy="190" r="4" fill="#00d6c9"/>
+  <circle cx="348" cy="190" r="9" fill="#00d6c9" fill-opacity="0.25"/>
+
+  <!-- Footer -->
+  <g font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif" text-anchor="middle" fill="#ffffff" fill-opacity="0.55" font-size="11" font-weight="500">
+    <text x="300" y="372">Sites, runtimes, databases and services for every stack — on this Mac</text>
+  </g>
+</svg>

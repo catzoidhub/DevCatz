@@ -49,6 +49,10 @@ dmg:
   sign: true
   title: DevCatz ${version}
   artifactName: DevCatz-${version}-${arch}.${ext}
+  # Drawn from scripts/dmg/background.svg (1× and @2x PNG; electron-builder joins them into a Retina TIFF).
+  background: resources/dmg/background.png
+  iconSize: 112
+  iconTextSize: 13
   contents:
     - { x: 150, y: 190, type: file }
     - { x: 450, y: 190, type: link, path: /Applications }
