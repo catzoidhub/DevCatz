@@ -74,6 +74,15 @@ nsis:
   allowToChangeInstallationDirectory: true
   # What the Catzoid site's catalog matches (catalog.go winX64).
   artifactName: ${productName}-Setup-${version}.${ext}
+  # The DevCatz look (drawn from scripts/installer/*.svg) and the Welcome / Shortcuts pages (resources/installer/installer.nsh).
+  installerSidebar: resources/installer/sidebar.bmp
+  uninstallerSidebar: resources/installer/sidebar.bmp
+  installerHeader: resources/installer/header.bmp
+  include: resources/installer/installer.nsh
+  shortcutName: DevCatz
+  # Asked on the Shortcuts page instead (installer.nsh); the Start menu entry is always made.
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
   uninstallDisplayName: ${productName}
 
 # No native modules to compile: ssh2's optional cpu-features / crypto bindings fall back to pure JS.

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="164" height="314" viewBox="0 0 164 314">
+  <!-- NSIS Welcome / Finish sidebar (164 × 314, the size MUI2 draws it at); same look as scripts/dmg/background.svg. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#5546d4"/>
+      <stop offset="0.6" stop-color="#7b5fe6"/>
+      <stop offset="1" stop-color="#a35de4"/>
+    </linearGradient>
+    <radialGradient id="teal" cx="0" cy="1" r="0.75">
+      <stop offset="0" stop-color="#00bbb3" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#00bbb3" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="12" height="12" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="0.8" fill="#fff" fill-opacity="0.10"/></pattern>
+  </defs>
+  <rect width="164" height="314" fill="url(#bg)"/>
+  <rect width="164" height="314" fill="url(#teal)"/>
+  <rect width="164" height="150" fill="url(#dots)"/>
+  <circle cx="82" cy="104" r="62" fill="url(#halo)"/>
+  <image href="../../resources/icon.png" x="40" y="62" width="84" height="84"/>
+  <g font-family="-apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif" text-anchor="middle" fill="#fff">
+    <text x="82" y="176" font-size="19" font-weight="700" letter-spacing="-0.3">DevCatz</text>
+    <text x="82" y="194" font-size="9.5" font-weight="500" fill-opacity="0.8">Local dev for every stack</text>
+  </g>
+  <g fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M62 262 L68 268 L62 274" stroke-opacity="0.35"/>
+    <path d="M74 262 L80 268 L74 274" stroke-opacity="0.6"/>
+    <path d="M86 262 L92 268 L86 274" stroke-opacity="0.95"/>
+  </g>
+  <circle cx="102" cy="268" r="2.6" fill="#00d6c9"/>
+</svg>

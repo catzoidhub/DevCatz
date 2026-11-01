@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
+  <!-- NSIS header image (150 × 57, right side of the white page header). -->
+  <rect width="150" height="57" fill="#ffffff"/>
+  <image href="../../resources/icon.png" x="104" y="9" width="40" height="40"/>
+  <g font-family="-apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif" text-anchor="end">
+    <text x="100" y="30" font-size="14" font-weight="700" fill="#3d3399" letter-spacing="-0.2">DevCatz</text>
+    <text x="100" y="43" font-size="8" font-weight="500" fill="#7b6fd0">Setup</text>
+  </g>
+</svg>
