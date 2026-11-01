@@ -939,7 +939,7 @@ export type DockerAction = 'up' | 'down' | 'restart' | 'build' | 'logs';
 
 // ------------------------------------------------------------ object storage
 
-export type StorageKind = 'rustfs' | 'minio' | 'seaweedfs';
+export type StorageKind = 'rustfs' | 'minio' | 'silo' | 'seaweedfs';
 
 /** Settings of one installed object storage service (one per kind). */
 export interface StorageConfig {
@@ -1002,8 +1002,10 @@ export interface StorageState {
   urls: { api: string; console: string; apiLocal: string; consoleLocal: string } | null;
   /** Newer release available (from the same source as the installer), or null. */
   update: string | null;
-  /** No build for this platform (MinIO on Windows): why, instead of Install. */
+  /** No build for this platform: why, instead of Install. */
   unavailable: string | null;
+  /** Where its builds come from (repository / download page). */
+  sourceUrl: string | null;
   /** SeaweedFS internal ports (master / volume / filer), for information. */
   internalPorts?: Record<string, number>;
 }

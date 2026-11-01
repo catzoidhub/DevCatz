@@ -31,25 +31,46 @@ export async function downloadVerified(
 ): Promise<string> {
   // Inside a cancellable install, Cancel stops the download.
   signal ??= currentSignal();
-  // Never from or into the HTTP cache: a cached copy Windows Defender quarantined fails as ERR_CACHE_READ_FAILURE.
-  const res = await fetch(url, { headers, signal, cache: 'no-store' });
-  if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
-  const total = Number(res.headers.get('content-length')) || 0;
-  const hash = createHash(algo);
+  // A connection that stops sending (it happens on GitHub's CDN) would otherwise wait forever: no byte for a minute
+  // ends the download with a message to try again. Cancel still works through the same controller.
+  const stall = new AbortController();
+  const both = signal ? AbortSignal.any([signal, stall.signal]) : stall.signal;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  const kick = () => {
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => stall.abort(), STALL_MS);
+  };
+  kick();
   let received = 0;
-  let last = 0;
-  const body = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream);
-  body.on('data', (chunk: Buffer) => {
-    hash.update(chunk);
-    received += chunk.length;
-    if (Date.now() - last > 150) {
-      last = Date.now();
-      progress(received, total);
-    }
-  });
-  await pipeline(body, createWriteStream(dest), { signal });
-  progress(received, total);
-  const digest = hash.digest('hex');
-  if (expectedSha256 && digest !== expectedSha256) throw new Error('Checksum mismatch, download discarded');
-  return digest;
+  try {
+    // Never from or into the HTTP cache: a cached copy Windows Defender quarantined fails as ERR_CACHE_READ_FAILURE.
+    const res = await fetch(url, { headers, signal: both, cache: 'no-store' });
+    if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
+    const total = Number(res.headers.get('content-length')) || 0;
+    const hash = createHash(algo);
+    let last = 0;
+    const body = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream);
+    body.on('data', (chunk: Buffer) => {
+      kick();
+      hash.update(chunk);
+      received += chunk.length;
+      if (Date.now() - last > 150) {
+        last = Date.now();
+        progress(received, total);
+      }
+    });
+    await pipeline(body, createWriteStream(dest), { signal: both });
+    progress(received, total);
+    const digest = hash.digest('hex');
+    if (expectedSha256 && digest !== expectedSha256) throw new Error('Checksum mismatch, download discarded');
+    return digest;
+  } catch (e) {
+    if (stall.signal.aborted && !signal?.aborted) throw new Error(`The download stopped receiving data (${(received / 1048576).toFixed(1)} MB in); check the connection and try again`);
+    throw e;
+  } finally {
+    clearTimeout(watchdog);
+  }
 }
+
+/** No data for this long ends a download (the connection hung). */
+const STALL_MS = 60_000;

@@ -1,6 +1,7 @@
 import type { MonitorEntity, SearchKind, StorageKind, WaEngine, WsKind, DbServiceState } from '@shared/types';
 import rustfsLogo from './assets/logos/rustfs.png';
 import minioLogo from './assets/logos/minio.png';
+import siloLogo from './assets/logos/silo.svg';
 import seaweedfsLogo from './assets/logos/seaweedfs.png';
 import meiliLogo from './assets/logos/meilisearch.png';
 import typesenseLogo from './assets/logos/typesense.png';
@@ -20,7 +21,7 @@ import { DB_LOGO } from './db';
 import { GW_LOGO } from './gateways';
 
 /** Official marks of the services DevCatz runs (sources in assets/logos/SOURCES.md), shared by every page that shows them. */
-export const STORAGE_LOGO: Record<StorageKind, string> = { rustfs: rustfsLogo, minio: minioLogo, seaweedfs: seaweedfsLogo };
+export const STORAGE_LOGO: Record<StorageKind, string> = { rustfs: rustfsLogo, minio: minioLogo, silo: siloLogo, seaweedfs: seaweedfsLogo };
 export const SEARCH_LOGO: Record<SearchKind, string> = { meilisearch: meiliLogo, typesense: typesenseLogo, opensearch: opensearchLogo, manticore: manticoreLogo, zincsearch: zincLogo, sonic: sonicLogo };
 export const WS_LOGO: Record<WsKind, string> = { reverb: reverbLogo, sockudo: sockudoLogo, centrifugo: centrifugoLogo, mercure: mercureLogo, nats: natsLogo };
 export const WA_LOGO: Record<WaEngine, string> = { gowa: gowaLogo, waha: wahaLogo };

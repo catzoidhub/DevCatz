@@ -224,7 +224,10 @@ async function copyEnv() {
         </header>
         <div class="flex-1 overflow-y-auto p-6">
           <div class="mx-auto max-w-xl space-y-4 pt-6">
-            <p class="text-sm opacity-70">{{ selected.description }}</p>
+            <p class="text-sm opacity-70">
+              {{ selected.description }}
+              <a v-if="selected.sourceUrl" class="link text-xs" :title="selected.sourceUrl" @click="herd.openUrl(selected.sourceUrl)">{{ selected.sourceUrl.replace(/^https:\/\//, '') }}</a>
+            </p>
             <TaskStepper v-if="selected.task && !form" :task="selected.task" :cancellable="selected.task.kind === 'install'" dismissable @dismiss="herd.taskDismiss('storage', selected.kind)" @cancel="herd.storageCancelInstall(selected.kind)" />
             <div v-if="selected.unavailable" role="alert" class="alert text-sm">
               <div class="min-w-48 flex-1">{{ selected.unavailable }}</div>

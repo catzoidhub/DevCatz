@@ -18,7 +18,7 @@ import { exe, removeTemp, isWin, TAR } from './platform';
  * manager, so "Stop All" for sites leaves them alone) and served on HTTPS
  * domains through the proxy (Host kept: S3 signatures include it).
  */
-export const STORAGE_KINDS: StorageKind[] = ['rustfs', 'minio', 'seaweedfs'];
+export const STORAGE_KINDS: StorageKind[] = ['rustfs', 'minio', 'silo', 'seaweedfs'];
 
 interface Engine {
   name: string;
@@ -31,8 +31,10 @@ interface Engine {
   install(dir: string, progress: Report, signal: AbortSignal): Promise<void>;
   /** Newest release, from the installer's source (update check). */
   latest(): Promise<string>;
-  /** No build for this platform: why, shown instead of Install (MinIO on Windows). */
+  /** No build for this platform: why, shown instead of Install. */
   unavailable?: string;
+  /** Where the builds come from (repository / download page), linked on its page. */
+  sourceUrl?: string;
   /** Process specs to run (SeaweedFS needs two). */
   specs(c: StorageConfig, bin: string): { label: string; command: string; env: Record<string, string> }[];
 }
@@ -57,8 +59,8 @@ const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const host = (label: string) => `${label}.${tld()}`;
 
 /** GitHub release asset with its published SHA-256 digest. */
-export async function githubAsset(repo: string, match: RegExp): Promise<{ url: string; sha256: string; tag: string }> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, { headers: { Accept: 'application/vnd.github+json' } });
+export async function githubAsset(repo: string, match: RegExp, perPage = 10): Promise<{ url: string; sha256: string; tag: string }> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=${perPage}`, { headers: { Accept: 'application/vnd.github+json' } });
   if (!res.ok) throw new Error(`GitHub: HTTP ${res.status}${res.status === 403 ? ' (rate limit, try again later)' : ''}`);
   const releases = (await res.json()) as { tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string; digest?: string }[] }[];
   for (const r of releases) {
@@ -184,6 +186,14 @@ function bottleTag(files: Record<string, unknown>): string {
 
 /** Each server's GitHub release asset for this computer (SHA-256 in the release): Windows x64 zips, macOS builds. */
 const RUSTFS_ASSET = isWin ? /^rustfs-windows-x86_64-v[\d.]+\.zip$/ : process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\d.]+\.zip$/ : /^rustfs-macos-x86_64-v[\d.]+\.zip$/;
+/** Windows: the MinIO-named builds in Pigsty's fork (later releases are renamed Silo, so they sit further down the list). */
+const MINIO_WIN_ASSET = /^minio_[\d.]+_windows_amd64\.tar\.gz$/;
+/** Silo (the same fork under its own name): Windows zips (older ones .tar.gz), macOS tarballs. */
+const SILO_ASSET = isWin
+  ? /^silo_[\d.]+_windows_amd64\.(zip|tar\.gz)$/
+  : process.arch === 'arm64'
+    ? /^silo_[\d.]+_darwin_arm64\.tar\.gz$/
+    : /^silo_[\d.]+_darwin_amd64\.tar\.gz$/;
 const WEED_ASSET = isWin ? /^windows_amd64\.zip$/ : process.arch === 'arm64' ? /^darwin_arm64\.tar\.gz$/ : /^darwin_amd64\.tar\.gz$/;
 
 export const ENGINES: Record<StorageKind, Engine> = {
@@ -192,6 +202,7 @@ export const ENGINES: Record<StorageKind, Engine> = {
     exe: 'rustfs',
     consolePath: '/rustfs/console/',
     description: 'Fast S3-compatible storage written in Rust; Apache 2.0, built-in web console.',
+    sourceUrl: 'https://github.com/rustfs/rustfs/releases',
     defaults: { apiPort: 9000, consolePort: 9001, apiDomain: 'rustfs', consoleDomain: 'console.rustfs', accessKey: 'rustfsadmin', secretKey: 'rustfsadmin' },
     latest: async () => (await githubAsset('rustfs/rustfs', RUSTFS_ASSET)).tag.replace(/^v/, ''),
     async install(dir, progress, signal) {
@@ -211,15 +222,23 @@ export const ENGINES: Record<StorageKind, Engine> = {
   minio: {
     name: 'MinIO',
     exe: 'minio',
-    description: 'The classic S3 server. Last community release (2025-10, upstream archived), from Homebrew’s build.',
-    // dl.min.io answers 410 for the community server; what Windows package managers point to now is MinIO's commercial
-    // AIStor, under another licence — not this.
-    unavailable: isWin
-      ? 'MinIO stopped publishing its community server: there is no Windows build left (its downloads now lead to the commercial AIStor). RustFS and SeaweedFS speak the same S3 API.'
-      : undefined,
+    // Windows: MinIO, Inc. publishes no community build any more (dl.min.io answers 410; package managers now point to
+    // the commercial AIStor). Pigsty's community fork (pgsty/silo, AGPL-3.0) kept building the open-source server; its
+    // releases up to 2026-08-04 still carry the MinIO name and binary (minio.exe), same flags, env and data.
+    description: isWin
+      ? 'The classic S3 server, as the community build Pigsty keeps maintaining (github.com/pgsty/silo, AGPL-3.0): its last release under the MinIO name (2026-08). Not published by MinIO, Inc.'
+      : 'The classic S3 server. Last community release (2025-10, upstream archived), from Homebrew’s build.',
+    sourceUrl: isWin ? 'https://github.com/pgsty/silo/releases' : 'https://formulae.brew.sh/formula/minio',
     defaults: { apiPort: 9010, consolePort: 9011, apiDomain: 'minio', consoleDomain: 'console.minio', accessKey: 'minioadmin', secretKey: 'minioadmin' },
-    latest: () => brewLatest('minio'),
+    latest: async () => (isWin ? (await githubAsset('pgsty/silo', MINIO_WIN_ASSET, 100)).tag : brewLatest('minio')),
     async install(dir, progress, signal) {
+      if (isWin) {
+        progress({ step: S.find, detail: 'github.com/pgsty/silo releases (community MinIO builds)' });
+        const a = await githubAsset('pgsty/silo', MINIO_WIN_ASSET, 100);
+        check(signal);
+        await installFrom(a.url, a.sha256, dir, 'minio', `MinIO ${a.tag.replace(/^RELEASE\./, '')} (community build)`, progress, signal);
+        return;
+      }
       // MinIO stopped publishing binaries (dl.min.io answers 410); the last community release ships as a Homebrew bottle.
       progress({ step: S.find, detail: 'formulae.brew.sh (Homebrew’s MinIO bottle)' });
       const res = await fetch('https://formulae.brew.sh/api/formula/minio.json');
@@ -247,10 +266,41 @@ export const ENGINES: Record<StorageKind, Engine> = {
       },
     ],
   },
+  silo: {
+    name: 'Silo',
+    exe: 'silo',
+    // Pigsty's maintained fork of the open-source MinIO server, renamed: same S3 API, flags, MINIO_* settings and data,
+    // so a MinIO data folder can move over.
+    description: 'The open-source MinIO server, kept maintained by Pigsty under a new name (AGPL-3.0): same S3 API, settings and data as MinIO, with security fixes and the full console.',
+    sourceUrl: 'https://github.com/pgsty/silo',
+    defaults: { apiPort: 9020, consolePort: 9021, apiDomain: 'silo', consoleDomain: 'console.silo', accessKey: 'siloadmin', secretKey: 'siloadmin' },
+    latest: async () => (await githubAsset('pgsty/silo', SILO_ASSET)).tag,
+    async install(dir, progress, signal) {
+      progress({ step: S.find, detail: 'github.com/pgsty/silo releases' });
+      const a = await githubAsset('pgsty/silo', SILO_ASSET);
+      check(signal);
+      await installFrom(a.url, a.sha256, dir, 'silo', `Silo ${a.tag.replace(/^RELEASE\./, '')}`, progress, signal);
+    },
+    specs: (c, bin) => [
+      {
+        label: '',
+        command: `${q(bin)} server ${q(c.dataDir)} --address 127.0.0.1:${c.apiPort} --console-address 127.0.0.1:${c.consolePort}`,
+        env: {
+          MINIO_ROOT_USER: c.accessKey,
+          MINIO_ROOT_PASSWORD: c.secretKey,
+          MINIO_DOMAIN: host(c.apiDomain),
+          MINIO_BROWSER_REDIRECT_URL: `https://${host(c.consoleDomain)}`,
+          MINIO_UPDATE: 'off',
+          MINIO_REGION: s3Region(c),
+        },
+      },
+    ],
+  },
   seaweedfs: {
     name: 'SeaweedFS',
     exe: 'weed',
     description: 'Distributed file system with an S3 gateway and an admin UI; master, volume and filer in one process.',
+    sourceUrl: 'https://github.com/seaweedfs/seaweedfs/releases',
     defaults: { apiPort: 8333, consolePort: 23646, apiDomain: 'seaweedfs', consoleDomain: 'console.seaweedfs', accessKey: 'devcatz', secretKey: 'devcatz-secret' },
     latest: async () => (await githubAsset('seaweedfs/seaweedfs', WEED_ASSET)).tag.replace(/^v/, ''),
     async install(dir, progress, signal) {
@@ -590,7 +640,7 @@ export class StorageManager {
     const v =
       c.kind === 'seaweedfs'
         ? text.match(/version\s+(?:\S+\s+)?(\d+\.\d+)/i)?.[1]
-        : c.kind === 'minio'
+        : c.kind === 'minio' || c.kind === 'silo'
           ? text.match(/RELEASE\.[\dT:-]+Z/)?.[0]
           : text.match(/rustfs\s+([\w.-]+)/)?.[1];
     return r.code === 0 || v ? (v ?? 'unknown') : null;
@@ -634,7 +684,8 @@ export class StorageManager {
       if (!c.binaryPath) {
         // Only our file: a chosen binary folder may hold other things.
         t.report({ step: at('Removing the binary'), detail: binaryOf(c) });
-        await rm(join(binaryDirOf(c), ENGINES[kind].exe), { force: true });
+        // binaryOf: the program's real file name (rustfs.exe on Windows).
+        await rm(binaryOf(c), { force: true });
       }
       if (deleteData) {
         t.report({ step: at('Deleting the data folder'), detail: c.dataDir });
@@ -730,6 +781,7 @@ export class StorageManager {
         // A binary the user chose is theirs to update.
         update: c && !c.binaryPath ? (this.updates.get(kind) ?? null) : null,
         unavailable: ENGINES[kind].unavailable ?? null,
+        sourceUrl: ENGINES[kind].sourceUrl ?? null,
         urls: c
           ? {
               api: `https://${host(c.apiDomain)}`,
