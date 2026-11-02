@@ -4297,7 +4297,23 @@ export class Herd extends EventEmitter {
     };
     const cmd = [...args[action], ...(service ? [service] : [])];
     this.processes.log(id, 'sys', `$ docker compose -f ${file}${project ? ` -p ${project}` : ''} ${cmd.join(' ')}`);
-    const code = await docker.compose(p.path, file, project, cmd, (stream, text) => this.processes.log(id, stream === 'err' ? 'err' : 'docker', text));
+    const missing = new Set<string>();
+    const log = (stream: 'out' | 'err', text: string) => {
+      const m = /network (\S+) declared as external, but could not be found/.exec(text);
+      if (m) missing.add(m[1]);
+      this.processes.log(id, stream === 'err' ? 'err' : 'docker', text);
+    };
+    let code = await docker.compose(p.path, file, project, cmd, log);
+    // A production file (Dokploy's dokploy-network …) joins networks of its server: made here, empty and local, then once more.
+    if (code !== 0 && action === 'up' && missing.size) {
+      const made: string[] = [];
+      for (const n of missing) if (await docker.createNetwork(n)) made.push(n);
+      if (made.length) {
+        this.processes.log(id, 'sys', `Docker: created the network${made.length > 1 ? 's' : ''} ${made.join(', ')} here (the server already has ${made.length > 1 ? 'them' : 'it'}); trying again`);
+        missing.clear();
+        code = await docker.compose(p.path, file, project, cmd, log);
+      }
+    }
     this.processes.log(id, 'sys', code === 0 ? `Docker: ${action} done` : `Docker: ${action} failed (exit ${code})`);
     if (code !== 0) throw new Error(`docker compose ${action} failed (exit ${code}); see Logs`);
   }

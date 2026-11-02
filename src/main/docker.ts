@@ -1278,6 +1278,17 @@ export async function services(root: string, file: string, project: string | nul
   }));
 }
 
+/**
+ * Creates a docker network on the engine compose runs on (DoCatz's context when that is the one). A production
+ * compose file joins networks its server has (Dokploy's dokploy-network, declared `external`); here they are made
+ * empty and local so the containers can start.
+ */
+export async function createNetwork(name: string): Promise<boolean> {
+  if (!/^[\w.-]{1,64}$/.test(name)) return false;
+  const globals = cli.compose.slice(0, -1); // ['--context', 'docatz'] or nothing
+  return (await run(bin(), [...globals, 'network', 'create', name], { timeout: 30_000 })).code === 0;
+}
+
 /** Runs a compose command, streaming its output line by line. */
 export function compose(
   root: string,

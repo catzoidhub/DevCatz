@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ansiToHtml } from '../ansi';
-import { herd, loadLogs, logs } from '../store';
+import { herd, loadLogs, logs, notify } from '../store';
 import AiExplain from './AiExplain.vue';
 import { aiOn } from '../ai';
 
@@ -173,6 +173,24 @@ onMounted(async () => {
   box.value?.scrollTo({ top: box.value.scrollHeight });
 });
 
+/** Copies what is shown: the selection if there is one, else every line under the current filter / chip. */
+async function copy() {
+  const sel = window.getSelection();
+  const picked = sel && box.value && sel.toString().trim() && box.value.contains(sel.anchorNode) ? sel.toString() : null;
+  const text =
+    picked ??
+    (source.value === 'laravel'
+      ? laravelText.value
+          .split('\n')
+          .filter((l) => !filter.value || l.toLowerCase().includes(filter.value.toLowerCase()))
+          .join('\n')
+      : lines.value.map((l) => l.text.replace(/\x1b\[[\d;]*m/g, '')).join('\n'));
+  if (!text.trim()) return notify('info', 'Nothing to copy');
+  await navigator.clipboard.writeText(text + '\n');
+  const n = text.split('\n').length;
+  notify('success', picked ? 'Selection copied' : `${n} line${n === 1 ? '' : 's'} copied`);
+}
+
 async function clear() {
   await herd.clearLogs(props.projectId);
   logs.set(props.projectId, []);
@@ -207,6 +225,7 @@ async function clear() {
       <span v-else class="truncate text-xs opacity-50" :title="laravelFile ?? ''">{{ laravelFile ? laravelFile.split('/').slice(-2).join('/') : 'no laravel.log yet' }}</span>
       <div v-if="!(source === 'dev' && tags.length > 1)" class="flex-1" />
       <label class="label shrink-0 cursor-pointer gap-1 text-xs"><input v-model="follow" type="checkbox" class="toggle toggle-xs toggle-primary" /> follow</label>
+      <button class="btn btn-ghost btn-xs shrink-0" title="Copy the selected text, or every line shown (filter and chip apply)" @click="copy">Copy</button>
       <button v-if="source === 'dev'" class="btn btn-ghost btn-xs shrink-0" @click="clear">Clear</button>
       <button v-if="canAi" class="btn btn-xs shrink-0" title="Explain the selected lines (or the last ones) and suggest fixes" @click="explain">✦ Explain with AI</button>
     </div>
