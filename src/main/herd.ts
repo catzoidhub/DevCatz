@@ -76,7 +76,7 @@ import { ENGINES, StorageManager, binaryDirOf as storageBinaryDirOf, s3Region, s
 import { DB_DOMAIN_LABEL, DbServiceManager, dbProcessId } from './dbservices';
 import { DbCatz } from './dbcatz';
 import { DialCatz } from './dialcatz';
-import { DoCatz, docatzProxyPort } from './docatz';
+import { DoCatz, docatzHttpsPort, docatzProxyPort } from './docatz';
 import { onSharedChange, sharedDomains, writeShared, type SharedDomains } from './shared';
 import { Reports } from './reports';
 import { AppUpdater } from './updater';
@@ -431,6 +431,8 @@ export class Herd extends EventEmitter {
     this.dbcatz.onChange = () => this.changed();
     void this.dbcatz.locate();
     this.dialcatz.onChange = () => this.changed();
+    // DoCatz's names go through DevCatz's proxy on :443 when names without a port are on (docatzRoute), else to DoCatz's own port.
+    docker.setDocatzUrl((service, project) => `https://${service}.${project}.docatz.${tld()}${this.cleanUrls ? '' : `:${docatzHttpsPort()}`}`);
     this.docatz.onChange = () => {
       this.updateRoutes();
       this.changed();

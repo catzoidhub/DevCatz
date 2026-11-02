@@ -62,6 +62,10 @@ export const dockerBin = () => cli.bin;
 export const dockerCompose = (): string[] => [cli.bin, ...cli.compose];
 /** The CLI's full path on Windows (a docker.exe inside a project folder never runs: compose runs with cwd there). */
 const bin = () => exePath(cli.bin, getShellEnv());
+/** Compose runs on DoCatz: containers get `https://<service>.<project>.docatz.<tld>` (built by Herd: tld, port). */
+let onDocatzEngine = false;
+let docatzUrl: (service: string, project: string) => string = (s, p) => `https://${s}.${p}.docatz.localhost`;
+export const setDocatzUrl = (fn: typeof docatzUrl) => (docatzUrl = fn);
 /** OrbStack answers: containers get `<service>.<project>.orb.local`. */
 let orbLocal = false;
 
@@ -82,7 +86,7 @@ export async function dockerStatus(): Promise<DockerStatus> {
     await Promise.all(ENGINES.map(async (e) => (engineAppInstalled(e) || (e.bin && (await onPath(e.bin))) ? e : null)))
   ).filter((e): e is EngineDef => !!e);
   const docatz = docatzEngine();
-  const base = { installed: installed.map((e) => e.id), cliFound: false, context: null, engine: null, orbLocal: false, docatz, system: null, engines: [] as DockerStatus['engines'] };
+  const base = { installed: installed.map((e) => e.id), cliFound: false, context: null, engine: null, orbLocal: false, docatz, system: null, engines: [] as DockerStatus['engines'], docatzNames: null as string | null };
 
   let dockerError: string | null = null;
   if (await onPath('docker')) {
@@ -102,17 +106,18 @@ export async function dockerStatus(): Promise<DockerStatus> {
     Object.assign(base, { engines });
     // DoCatz runs but the current context is another engine's: compose runs on DoCatz (`docker --context docatz
     // compose …`) unless Settings say the system's context.
+    onDocatzEngine = onDocatz || (info.code === 0 && sysEngine === 'docatz');
     if (onDocatz) {
       cli = { bin: 'docker', compose: ['--context', 'docatz', 'compose'] };
       orbLocal = false;
       const system = ctx ? { context: ctx, engine: sysEngine, running: info.code === 0 } : null;
-      return { ...base, cliFound: true, daemon: true, context: 'docatz', engine: 'docatz', orbLocal: false, error: null, system, docatz: 'running' };
+      return { ...base, cliFound: true, daemon: true, context: 'docatz', engine: 'docatz', orbLocal: false, error: null, system, docatz: 'running', docatzNames: docatzUrl('<service>', '<project>') };
     }
     if (info.code === 0) {
       cli = { bin: 'docker', compose: ['compose'] };
       const engine = engineFromDocker(ctx, endpoint, info.stdout.trim());
       orbLocal = engine === 'orbstack';
-      return { ...base, cliFound: true, daemon: true, context: ctx || null, engine, orbLocal: engine === 'orbstack', error: null };
+      return { ...base, cliFound: true, daemon: true, context: ctx || null, engine, orbLocal: engine === 'orbstack', error: null, docatzNames: engine === 'docatz' ? docatzUrl('<service>', '<project>') : null };
     }
     // The docker CLI is there but its engine is down; Podman/Finch may still be up below.
     dockerError = info.stderr.trim().split('\n').pop() || 'The Docker engine is not running';
@@ -123,6 +128,7 @@ export async function dockerStatus(): Promise<DockerStatus> {
     if ((await run(bin, ['info'], { timeout: 8000 })).code === 0) {
       cli = { bin, compose: ['compose'] };
       orbLocal = false;
+      onDocatzEngine = false;
       return { ...base, cliFound: true, daemon: true, engine: id, orbLocal: false, error: null };
     }
   }
@@ -1267,8 +1273,11 @@ export async function services(root: string, file: string, project: string | nul
     state: s.State,
     status: s.Status,
     health: s.Health || null,
-    url: !(s.Publishers ?? []).some((x) => x.PublishedPort) && NOT_HTTP.test(s.Service)
+    // Databases, Redis, workers: no web page (their published ports show below), whatever the engine.
+    url: NOT_HTTP.test(s.Service)
       ? null
+      : onDocatzEngine
+      ? docatzUrl(s.Service, s.Project)
       : orbLocal
       ? `https://${s.Service}.${s.Project}.orb.local`
       : (s.Publishers ?? []).find((x) => x.PublishedPort)

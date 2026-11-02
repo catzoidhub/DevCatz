@@ -73,7 +73,7 @@ async function compose(action: DockerAction, service?: string) {
   else if (action === 'up' || action === 'build') notify('info', 'Building… the output streams into the Logs tab.');
   const ok = await attempt(() => herd.dockerCompose(props.project.id, file.value, action, service).then(() => true));
   busy.value = null;
-  if (ok && action === 'up') notify('success', 'Containers are up. OrbStack serves them at the URLs below.');
+  if (ok && action === 'up') notify('success', status.value?.orbLocal || status.value?.docatzNames ? `Containers are up. ${status.value?.docatzNames ? 'DoCatz' : 'OrbStack'} serves them at the URLs below.` : 'Containers are up.');
   await refresh();
 }
 
@@ -272,6 +272,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
         </div>
         <p class="text-xs opacity-60">
           <template v-if="status.orbLocal">OrbStack gives every container an <code>https://*.orb.local</code> name.</template>
+          <template v-else-if="status.docatzNames">DoCatz gives every container a name: <code>{{ status.docatzNames }}</code> — no change to your Dockerfile or compose file needed.</template>
           <template v-else>Containers are published on <code>127.0.0.1</code> ports.</template>
           <template v-if="!engineOptions.some((e) => e.id === 'docatz')"> <b>DoCatz</b>, the Catzoid container manager, is recommended: a light engine with every container, image and volume in one window.</template>
         </p>

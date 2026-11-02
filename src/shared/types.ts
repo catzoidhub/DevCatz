@@ -892,6 +892,8 @@ export interface DockerStatus {
   context: string | null;
   /** OrbStack: containers get `https://<service>.<project>.orb.local`. */
   orbLocal: boolean;
+  /** DoCatz: containers get `https://<service>.<project>.docatz.<tld>` (this is that suffix's example host). */
+  docatzNames: string | null;
   error: string | null;
   /** DoCatz's engine (its bridge.json): null = DoCatz not installed / never started. */
   docatz: 'running' | 'stopped' | null;

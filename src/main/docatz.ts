@@ -21,8 +21,9 @@ export const DOCATZ_REPO = 'catzoidhub/DoCatz';
  * (`engine: "running" | "stopped"`). Read at most every few seconds (route updates and status checks are frequent).
  * DOCATZ_BRIDGE points elsewhere, for tests.
  */
-let bridgeCache: { at: number; value: { proxy?: { httpPort?: number }; engine?: string } | null } = { at: 0, value: null };
-function docatzBridge(): { proxy?: { httpPort?: number }; engine?: string } | null {
+type DocatzBridge = { proxy?: { httpPort?: number; httpsPort?: number }; engine?: string };
+let bridgeCache: { at: number; value: DocatzBridge | null } = { at: 0, value: null };
+function docatzBridge(): DocatzBridge | null {
   if (Date.now() - bridgeCache.at < 5000) return bridgeCache.value;
   let value = null;
   try {
@@ -38,6 +39,12 @@ function docatzBridge(): { proxy?: { httpPort?: number }; engine?: string } | nu
 export function docatzProxyPort(): number | null {
   const p = Number(docatzBridge()?.proxy?.httpPort);
   return Number.isInteger(p) && p > 0 && p < 65536 ? p : null;
+}
+
+/** DoCatz's own HTTPS port (its names answer there when :443 is not forwarded), default 8743. */
+export function docatzHttpsPort(): number {
+  const p = Number(docatzBridge()?.proxy?.httpsPort);
+  return Number.isInteger(p) && p > 0 && p < 65536 ? p : 8743;
 }
 
 /** DoCatz's engine as its bridge.json says: running / stopped, null when DoCatz is not there. */
