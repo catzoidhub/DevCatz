@@ -94,7 +94,7 @@ export class DoCatz {
   }
 
   state(): DbCatzState {
-    return { installed: this.found !== null, task: this.task };
+    return { installed: this.found !== null, task: this.task, engine: docatzEngine() };
   }
 
   /** A compose file (absolute path) → its compose project; else the site's containers. */
@@ -118,17 +118,29 @@ export class DoCatz {
    * there); false when DoCatz is not installed.
    */
   async openGateway(kind: string): Promise<boolean> {
-    if (!/^[a-z]{2,20}$/.test(kind)) throw new Error('Invalid gateway');
     const path = await this.locate();
     if (!path) return false;
-    await openCatzoidApp(path, `docatz://gateways?${new URLSearchParams({ kind })}`);
+    await openCatzoidApp(path, this.gatewayLink(kind));
     return true;
   }
 
+  private gatewayLink(kind: string): string {
+    if (!/^[a-z]{2,20}$/.test(kind)) throw new Error('Invalid gateway');
+    return `docatz://gateways?${new URLSearchParams({ kind })}`;
+  }
+
+  /** Download & Install from a gateway's page (Windows: the Docker gateways run in DoCatz); DoCatz opens at it. */
+  installGateway(kind: string): Promise<void> {
+    return this.installAt(this.gatewayLink(kind));
+  }
+
   /** Downloads the latest DoCatz release, installs it and opens the link there. */
-  async install(siteId: string, composePath?: string | null): Promise<void> {
+  install(siteId: string, composePath?: string | null): Promise<void> {
+    return this.installAt(this.link(siteId, composePath));
+  }
+
+  private async installAt(link: string): Promise<void> {
     if (this.task && !this.task.done && !this.task.error) return;
-    const link = this.link(siteId, composePath);
     const steps = installSteps('DoCatz');
     const set = (p: Partial<TaskProgress>) => {
       this.task = { ...(this.task as TaskProgress), ...p };

@@ -16,6 +16,7 @@ import { GW_CATEGORIES, GW_CATEGORY_LABEL, GW_LOGO } from '../gateways';
 import { attempt, gwInstallRequest, herd, notify, state, uninstallRequest } from '../store';
 import { isWin } from '../platform';
 import docatzLogo from '../assets/logos/docatz.png';
+import DoCatzInstallCard from './DoCatzInstallCard.vue';
 import CatMood from './CatMood.vue';
 
 /**
@@ -75,6 +76,8 @@ watch(
 );
 /** Windows: WAHA (Docker) installs and runs in DoCatz, listed on DoCatz's Gateways page. */
 const inDocatz = (s: { docker: boolean }) => isWin && s.docker;
+/** DoCatz is not on this PC at all (no app, no DoCatz data), or its Download & Install is under way: that comes first. */
+const needDocatz = (s: { docker: boolean }) => inDocatz(s) && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task);
 async function openInDocatz(kind: string) {
   if (!(await attempt(() => herd.docatzOpenGateway(kind)))) notify('error', 'DoCatz is not installed: install it to see this gateway there');
 }
@@ -426,7 +429,8 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
           <div class="mx-auto max-w-xl space-y-4 pt-6">
             <p class="text-sm opacity-70">{{ selected.description }}</p>
             <TaskStepper v-if="selected.task && !form" :task="selected.task" :cancellable="selected.task.kind === 'install'" dismissable @dismiss="herd.taskDismiss('whatsapp', selected.engine)" @cancel="H.waCancelInstall(selected.engine)" />
-            <button class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
+            <DoCatzInstallCard v-if="needDocatz(selected)" :kind="selected.engine" :name="selected.name" />
+            <button v-else class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
               <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="inDocatz(selected)" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ inDocatz(selected) ? 'Install in DoCatz…' : `Install ${selected.name}…` }}
             </button>
             <div class="alert alert-warning alert-soft text-xs"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />

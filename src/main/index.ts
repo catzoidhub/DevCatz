@@ -806,6 +806,7 @@ function api(): HerdApi {
     dialcatzDismiss: async () => herd.dialcatz.dismiss(),
     docatzOpen: (siteId, file) => herd.docatz.open(String(siteId), herd.composePath(String(siteId), typeof file === 'string' ? file : null)),
     docatzOpenGateway: (kind) => herd.docatz.openGateway(String(kind)),
+    docatzInstallGateway: (kind) => herd.docatz.installGateway(String(kind)),
     docatzInstall: (siteId, file) => herd.docatz.install(String(siteId), herd.composePath(String(siteId), typeof file === 'string' ? file : null)),
     docatzCancelInstall: async () => herd.docatz.cancelInstall(),
     docatzDismiss: async () => herd.docatz.dismiss(),

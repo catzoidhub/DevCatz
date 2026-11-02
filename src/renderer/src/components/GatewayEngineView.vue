@@ -14,6 +14,7 @@ import PopMenu, { type MenuItem } from './PopMenu.vue';
 import { attempt, gwInstallRequest, herd, navRequest, notify, state, uninstallRequest } from '../store';
 import { isWin } from '../platform';
 import docatzLogo from '../assets/logos/docatz.png';
+import DoCatzInstallCard from './DoCatzInstallCard.vue';
 import CatMood from './CatMood.vue';
 
 /**
@@ -28,6 +29,8 @@ const g = computed<GwState | null>(() => state.value?.gateways.find((x) => x.kin
 const active = (s: GwState) => s.status === 'running' || s.status === 'starting';
 /** Windows: the Docker gateways install and run in DoCatz (its engine in WSL 2), listed on DoCatz's Gateways page. */
 const inDocatz = computed(() => isWin && !!g.value?.docker);
+/** DoCatz is not on this PC at all (no app, no DoCatz data), or its Download & Install is under way: that comes first. */
+const needDocatz = computed(() => inDocatz.value && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task));
 async function openInDocatz(s: GwState) {
   if (!(await attempt(() => herd.docatzOpenGateway(s.kind)))) notify('error', 'DoCatz is not installed: install it to see this gateway there');
 }
@@ -186,10 +189,11 @@ const openMail = () => (navRequest.value = { section: 'mail' });
       <div class="mx-auto max-w-xl space-y-4 pt-6">
         <p class="text-sm opacity-70">{{ g.description }}</p>
         <TaskStepper v-if="g.task && !form" :task="g.task" :cancellable="g.task.kind === 'install' && !g.task.done && !g.task.error" dismissable @cancel="H.gwCancelInstall(g.kind)" @dismiss="H.taskDismiss('gateway', g.kind)" />
-        <button class="btn btn-primary" :disabled="!!g.task && !g.task.done && !g.task.error" @click="form = { service: g, mode: 'install' }">
+        <DoCatzInstallCard v-if="needDocatz" :kind="g.kind" :name="g.name" />
+        <button v-else class="btn btn-primary" :disabled="!!g.task && !g.task.done && !g.task.error" @click="form = { service: g, mode: 'install' }">
           <span v-if="g.task && !g.task.done && !g.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="inDocatz" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ inDocatz ? 'Install in DoCatz…' : `Install ${g.name}…` }}
         </button>
-        <p v-if="inDocatz" class="text-xs opacity-60">On Windows {{ g.name }} runs in DoCatz's container engine (WSL 2): DevCatz pulls its images there and starts it, and DoCatz shows its containers on its Gateways page.</p>
+        <p v-if="inDocatz && !needDocatz" class="text-xs opacity-60">On Windows {{ g.name }} runs in DoCatz's container engine (WSL 2): DevCatz pulls its images there and starts it, and DoCatz shows its containers on its Gateways page.</p>
         <p class="text-xs opacity-60">
           <template v-if="g.category === 'email'">Everything it sends goes to the DevCatz mail catcher (Mail page), so real inboxes are never reached.</template>
           <template v-else-if="g.kind === 'jasmin'">Every SMS goes to the DevCatz SMS catcher, shown on this page; no operator account is needed.</template>
