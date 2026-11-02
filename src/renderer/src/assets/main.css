@@ -252,6 +252,15 @@ pre,
 .btn-primary:not(.btn-outline):not(.btn-ghost):not(.btn-soft):not(.btn-link):hover {
   filter: brightness(1.05);
 }
+/* Disabled or busy: the gradient stays under it, so keep the label in its own colour and fade the whole
+   button. daisyUI's grey disabled text would vanish on the violet. */
+.btn-primary:not(.btn-outline):not(.btn-ghost):not(.btn-soft):not(.btn-link):is(:disabled, [disabled], .btn-disabled) {
+  --btn-fg: var(--color-primary-content);
+  color: var(--color-primary-content);
+  opacity: 0.55;
+  box-shadow: none;
+  filter: none;
+}
 .btn {
   transition:
     background-color 120ms ease,
