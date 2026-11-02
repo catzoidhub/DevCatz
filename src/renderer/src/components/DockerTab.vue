@@ -7,6 +7,7 @@ import AiDocker from './AiDocker.vue';
 import DockerFileDialog from './DockerFileDialog.vue';
 import DockerFilesCard from './DockerFilesCard.vue';
 import DoCatzButton from './DoCatzButton.vue';
+import docatzLogo from '../assets/logos/docatz.png';
 import { aiOn } from '../ai';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComposeEnvPlan, DevComposePreview, DevServiceKind, DockerAction, DockerEngineId, DockerGenOptions, DockerTarget, DockerComposeFile, DockerFile, DockerService, DockerStatus, ProjectState } from '@shared/types';
@@ -127,6 +128,17 @@ async function write() {
 
 // ------------------------------------------------- which engine: DoCatz or the system's context
 /** Runs on DoCatz while its engine runs (default), or on the system's current context (Settings key dockerEngine). */
+/** The choices of the Engine card: what dockerStatus found, or the one engine that answers. */
+const engineOptions = computed(() => {
+  const st = status.value;
+  if (!st) return [];
+  return st.engines.length ? st.engines : [{ id: st.engine ?? ('other' as DockerEngineId), context: st.context ?? '', running: true, used: true }];
+});
+/** A click on an engine: use it; one that is not running is started first (its app, colima start …). */
+async function pickEngine(e: { id: DockerEngineId; running: boolean }) {
+  if (!e.running) await start(e.id);
+  await useEngine(e.id === 'docatz' ? 'docatz' : 'system');
+}
 async function useEngine(which: 'docatz' | 'system') {
   await attempt(() => herd.updateSettings({ dockerEngine: which }));
   await refresh();
@@ -218,23 +230,52 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
         </div>
       </div>
     </div>
-    <!-- Engines: DoCatz first, then the system's current context; the one in use is marked, another one is a click away. -->
-    <div v-else class="flex items-start gap-3">
-      <ul class="min-w-0 flex-1 space-y-1 text-xs">
-        <li v-for="e in status.engines.length ? status.engines : [{ id: status.engine ?? 'other', context: status.context ?? '', running: true, used: true }]" :key="e.id + e.context" class="flex flex-wrap items-center gap-x-2 gap-y-0.5" :class="{ 'opacity-60': !e.used }">
-          <span class="status" :class="e.running ? 'status-success' : 'status-neutral'" />
-          <span :class="{ 'font-medium': e.used }">{{ engineName(e.id) }} {{ e.running ? 'running' : 'stopped' }}</span>
-          <template v-if="e.context">· context <code>{{ e.context }}</code></template>
-          <template v-if="e.used">
-            <span class="badge badge-primary badge-soft badge-xs">in use</span>
-            <template v-if="!status.orbLocal">· containers on <code>127.0.0.1</code> ports</template>
-          </template>
-          <template v-else-if="e.running">·</template>
-          <a v-if="!e.used && e.running" class="link link-hover" :title="`Run this site's containers on ${engineName(e.id)}`" @click="useEngine(e.id === 'docatz' ? 'docatz' : 'system')">use {{ engineName(e.id) }}</a>
-          <span v-else-if="e.id === 'docatz'">· start its engine in DoCatz to run containers there</span>
-        </li>
-      </ul>
-      <DoCatzButton v-if="!files.length" :site-id="project.id" />
+    <!-- Engine: which app runs the containers — DoCatz first (recommended), then the system's current context. -->
+    <div v-else class="card">
+      <div class="card-body gap-3">
+        <div class="flex items-center gap-2">
+          <h2 class="flex-1 font-semibold">Engine</h2>
+          <DoCatzButton v-if="!files.length" :site-id="project.id" />
+        </div>
+        <div role="radiogroup" aria-label="Container engine" class="grid gap-2 sm:grid-cols-2">
+          <button
+            v-for="e in engineOptions"
+            :key="e.id + e.context"
+            type="button"
+            role="radio"
+            :aria-checked="e.used"
+            class="flex items-center gap-3 rounded-box border px-3 py-2.5 text-left transition-colors disabled:cursor-default"
+            :class="e.used ? 'border-primary/70 bg-primary/5' : e.running ? 'border-base-300/60 bg-base-200/40 hover:border-primary/50 hover:bg-base-200' : 'border-base-300/60 bg-base-200/20 opacity-70'"
+            :disabled="e.used || starting === e.id"
+            :title="e.used ? 'This site\'s containers run here' : e.running ? `Run this site's containers on ${engineName(e.id)}` : `Start ${engineName(e.id)} and run this site's containers there`"
+            @click="pickEngine(e)"
+          >
+            <img v-if="e.id === 'docatz'" :src="docatzLogo" alt="" class="size-8 shrink-0" draggable="false" />
+            <span v-else class="grid size-8 shrink-0 place-items-center rounded-lg bg-base-100 ring-1 ring-base-content/10">
+              <svg viewBox="0 0 20 20" class="size-4 opacity-70" fill="currentColor"><path d="M3 9h2v2H3V9Zm3 0h2v2H6V9Zm3 0h2v2H9V9Zm0-3h2v2H9V6Zm3 3h2v2h-2V9Zm-6-3h2v2H6V6Zm3-3h2v2H9V3ZM2 12h14.5c.6-.9 1-1.9 1.5-3l1 .5c-.4 1.3-1 2.4-1.8 3.4A8 8 0 0 1 9 17c-3.4 0-6-1.8-7-5Z" /></svg>
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-1.5 text-sm font-medium leading-tight">
+                {{ engineName(e.id) }}
+                <span v-if="e.id === 'docatz'" class="badge badge-ghost badge-xs">recommended</span>
+              </span>
+              <span class="block text-[11px] leading-tight opacity-60">
+                <template v-if="e.running">running · context {{ e.context }}</template>
+                <template v-else-if="starting === e.id">starting…</template>
+                <template v-else>not running · click to start it</template>
+              </span>
+            </span>
+            <span class="grid size-4 shrink-0 place-items-center rounded-full border" :class="e.used ? 'border-primary' : 'border-base-content/30'">
+              <span v-if="e.used" class="size-2 rounded-full bg-primary" />
+            </span>
+          </button>
+        </div>
+        <p class="text-xs opacity-60">
+          <template v-if="status.orbLocal">OrbStack gives every container an <code>https://*.orb.local</code> name.</template>
+          <template v-else>Containers are published on <code>127.0.0.1</code> ports.</template>
+          <template v-if="!engineOptions.some((e) => e.id === 'docatz')"> <b>DoCatz</b>, the Catzoid container manager, is recommended: a light engine with every container, image and volume in one window.</template>
+        </p>
+      </div>
     </div>
 
     <!-- Compose -->
@@ -317,9 +358,6 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
         <p v-else-if="ready" class="text-xs opacity-60">No containers yet. <template v-if="current?.build"><b>Build &amp; Up</b> builds the images and starts them.</template><template v-else><b>Up</b> starts them{{ withApp === file ? `, and so does Start` : '' }}.</template></p>
       </div>
     </div>
-
-    <!-- The site's own Docker files: code editor, ⌘S saves. -->
-    <DockerFilesCard :site-id="project.id" :version="filesVersion" />
 
     <!-- Development services: compose.dev.yaml, the app keeps running on this computer. -->
     <div class="card">
@@ -491,5 +529,8 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
         </div>
       </div>
     </div>
+
+    <!-- The site's own Docker files: code editor, ⌘S saves (last: the cards above make or run them). -->
+    <DockerFilesCard :site-id="project.id" :version="filesVersion" />
   </div>
 </template>
