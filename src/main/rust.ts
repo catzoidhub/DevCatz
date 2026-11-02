@@ -412,14 +412,19 @@ async function installAnchor(detail: (line: string) => void): Promise<void> {
 export async function installTool(id: RustToolId, detail: (line: string) => void): Promise<void> {
   const tool = RUST_TOOLS.find((t) => t.id === id);
   if (!tool) throw new Error(`Unknown tool ${id}`);
-  if (id === 'solana') return installSolana(detail);
-  if (id === 'anchor') return installAnchor(detail);
-  if (!toolPath('cargo')) throw new Error('Rust is not installed: install it first');
-  const binstall = await ensureBinstall(detail);
-  // Prebuilt when the crate publishes one for this computer's own architecture (never an Intel build under Rosetta on
-  // Apple silicon); otherwise cargo-binstall compiles it (cargo install) itself.
-  const code = await streamLines(binstall, ['--no-confirm', '--locked', '--targets', TRIPLE, tool.crate!], detail);
-  if (code !== 0) throw new Error(`Installing ${tool.label} failed (exit ${code})`);
+  if (id === 'solana') await installSolana(detail);
+  else if (id === 'anchor') await installAnchor(detail);
+  else {
+    if (!toolPath('cargo')) throw new Error('Rust is not installed: install it first');
+    const binstall = await ensureBinstall(detail);
+    // Prebuilt when the crate publishes one for this computer's own architecture (never an Intel build under Rosetta on
+    // Apple silicon); otherwise cargo-binstall compiles it (cargo install) itself.
+    const code = await streamLines(binstall, ['--no-confirm', '--locked', '--targets', TRIPLE, tool.crate!], detail);
+    if (code !== 0) throw new Error(`Installing ${tool.label} failed (exit ${code})`);
+  }
+  // As for Solana once: an update that leaves the old version active is a failure, not a success.
+  const state = (await toolStates(true)).find((t) => t.id === id);
+  if (state?.update) throw new Error(`${tool.label} is still ${state.version} after the update (the latest is ${state.latest})`);
 }
 
 /**

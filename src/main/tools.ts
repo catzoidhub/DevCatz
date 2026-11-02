@@ -240,14 +240,19 @@ export async function installTool(id: RuntimeToolId, rt: ToolRuntimes, log: (lin
   } else {
     const uv = uvPath();
     if (!uv) throw new Error('uv is not installed: install it on the Python page first');
-    log(`uv tool install ${t.pkg}`);
-    r = await run(uv, ['tool', 'install', '--force', t.pkg], {
+    // @latest: without it uv may reinstall the version it already has.
+    log(`uv tool install ${t.pkg}@latest`);
+    r = await run(uv, ['tool', 'install', '--force', `${t.pkg}@latest`], {
       timeout: 15 * 60_000,
       env: { ...uvEnv(), UV_TOOL_DIR: uvToolDir(), UV_TOOL_BIN_DIR: toolsBin() },
     });
   }
   for (const line of `${r.stdout}\n${r.stderr}`.split('\n')) if (line.trim()) log(line);
   if (r.code !== 0 || !binPath(t)) throw new Error(`${t.label}: ${tail(r) || `exit ${r.code}`}`);
+  // An update that leaves the old version (a pinned install, a copy the runtime kept) is a failure, not a success.
+  const now = await installedVersion(t, binPath(t)!);
+  const latest = await latestVersion(t, true).catch(() => null);
+  if (now && latest && newer(latest, now)) throw new Error(`${t.label} is still ${now} after the update (the latest is ${latest}): ${tail(r) || 'see the output'}`);
   // Electron 45+ downloads its binary on first run, not on install: fetch it now so the first `electron .` starts at once.
   if (t.id === 'electron' && rt.node) {
     const dir = isWin ? join(npmPrefix(), 'node_modules', 'electron') : join(npmPrefix(), 'lib', 'node_modules', 'electron');
