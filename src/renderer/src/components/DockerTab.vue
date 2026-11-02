@@ -10,7 +10,7 @@ import DoCatzButton from './DoCatzButton.vue';
 import { aiOn } from '../ai';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComposeEnvPlan, DevComposePreview, DevServiceKind, DockerAction, DockerEngineId, DockerGenOptions, DockerTarget, DockerComposeFile, DockerFile, DockerService, DockerStatus, ProjectState } from '@shared/types';
-import { attempt, herd, notify } from '../store';
+import { attempt, herd, notify, state } from '../store';
 const aiDockerOn = aiOn('docker');
 
 /** `desktop`: an Electron / Tauri app — it ships as an installer, so only its development services run here (no deploy files). */
@@ -123,6 +123,16 @@ async function write() {
 }
 
 
+// ------------------------------------------------- which engine: DoCatz or the system's context
+/** Runs on DoCatz while its engine runs (default), or on the system's current context (Settings key dockerEngine). */
+async function useEngine(which: 'docatz' | 'system') {
+  await attempt(() => herd.updateSettings({ dockerEngine: which }));
+  await refresh();
+  const now: DockerStatus | null = status.value;
+  notify('success', which === 'docatz' ? 'Containers now run on DoCatz' : `Containers now run on ${engineName(now?.engine ?? null)}`);
+}
+const preferSystem = computed(() => state.value?.settings.dockerEngine === 'system');
+
 // ------------------------------------------------- start with the app, .env
 /** The compose file whose services start and stop with the site. */
 const withApp = computed(() => props.project.composeWithApp ?? null);
@@ -212,6 +222,15 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
       <template v-if="status.context">· context <code>{{ status.context }}</code></template>
       <template v-if="!status.orbLocal && isWin">· containers on <code>127.0.0.1</code> ports</template>
       <template v-else-if="!status.orbLocal">· containers on <code>127.0.0.1</code> ports</template>
+      <template v-if="status.engine === 'docatz' && status.system?.running">
+        · <a class="link link-hover" :title="`Run on the current docker context (${status.system.context}) instead`" @click="useEngine('system')">use {{ engineName(status.system.engine) }} instead</a>
+      </template>
+      <template v-else-if="status.engine !== 'docatz' && status.docatz === 'running' && preferSystem">
+        · <a class="link link-primary" @click="useEngine('docatz')">use DoCatz</a>
+      </template>
+      <template v-else-if="status.engine !== 'docatz' && status.docatz === 'stopped'">
+        · DoCatz is installed, its engine is stopped (start it in DoCatz to run containers there)
+      </template>
       <template v-if="!files.length">
         <span class="flex-1" />
         <DoCatzButton :site-id="project.id" />

@@ -409,7 +409,7 @@ async function create() {
             </option>
             <option v-for="v in phpInstalled" :key="v.version" :value="v.version">{{ v.version }}{{ v.source === 'herd' ? ' (Laravel Herd)' : '' }}</option>
           </select>
-          <span v-if="!phpInstalled.length || preview.autoPhp.missing" class="flex flex-wrap items-center gap-2 text-xs text-warning">
+          <span v-if="!phpInstalled.length || preview.autoPhp.missing" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-warning">
             {{ !phpInstalled.length ? 'PHP is not installed yet.' : `composer.json asks for PHP ${preview.autoPhp.spec}, which is not installed.` }}
             <RuntimeInstallButton kind="php" :spec="preview.autoPhp.spec" @installed="refreshPreview" />
           </span>
@@ -425,7 +425,7 @@ async function create() {
             </option>
             <option v-for="v in goInstalled" :key="v.version" :value="v.version">{{ v.version }}{{ v.source === 'system' ? ' (your own)' : '' }}</option>
           </select>
-          <span v-if="!goInstalled.length || preview.autoGo.missing" class="flex flex-wrap items-center gap-2 text-xs text-warning">
+          <span v-if="!goInstalled.length || preview.autoGo.missing" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-warning">
             {{ !goInstalled.length ? 'Go is not installed yet.' : `go.mod asks for Go ${preview.autoGo.spec}.` }}
             <RuntimeInstallButton kind="go" :spec="preview.autoGo.spec" @installed="refreshPreview" />
           </span>
@@ -440,7 +440,7 @@ async function create() {
             </option>
             <option v-for="v in installed" :key="v.version" :value="v.version">{{ v.version }}{{ v.source === 'herd' ? ' (Laravel Herd)' : '' }}</option>
           </select>
-          <span v-if="!preview.autoNode.version || preview.autoNode.missing" class="flex flex-wrap items-center gap-2 text-xs text-warning">
+          <span v-if="!preview.autoNode.version || preview.autoNode.missing" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-warning">
             {{ !preview.autoNode.version ? 'Node.js is not installed yet.' : `The project asks for Node ${preview.autoNode.spec}, which is not installed.` }}
             <RuntimeInstallButton kind="node" :spec="preview.autoNode.spec" @installed="refreshPreview" />
           </span>

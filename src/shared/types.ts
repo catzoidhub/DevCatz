@@ -756,6 +756,8 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 export interface Settings {
   /** Default domain suffix: `localhost` (no setup) or e.g. `test` (needs the resolver). */
   tld: string;
+  /** Docker tab: run on DoCatz's engine while it runs (default), or always on the system's current docker context. */
+  dockerEngine?: 'docatz' | 'system';
   theme: ThemeMode;
   /** Start every site when DevCatz launches (otherwise only those marked autoStart). */
   startAllOnLaunch: boolean;
@@ -891,6 +893,10 @@ export interface DockerStatus {
   /** OrbStack: containers get `https://<service>.<project>.orb.local`. */
   orbLocal: boolean;
   error: string | null;
+  /** DoCatz's engine (its bridge.json): null = DoCatz not installed / never started. */
+  docatz: 'running' | 'stopped' | null;
+  /** The system's current docker context and its engine when DevCatz runs on DoCatz instead (to offer switching back). */
+  system: { context: string; engine: DockerEngineId; running: boolean } | null;
 }
 
 export interface DockerFile {
@@ -2475,8 +2481,8 @@ export interface MonitorSnapshot extends MonitorUpdate {
 
 export interface LogLine {
   projectId: string;
-  /** `out`/`err` from the dev process, `sys` for DevCatz messages, `db` for database tasks. */
-  stream: 'out' | 'err' | 'sys' | 'db';
+  /** `out`/`err` from the dev process, `sys` for DevCatz messages, `db` for database tasks, `docker` for compose output. */
+  stream: 'out' | 'err' | 'sys' | 'db' | 'docker';
   text: string;
   time: number;
 }

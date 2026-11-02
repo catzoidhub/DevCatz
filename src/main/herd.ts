@@ -1827,7 +1827,9 @@ export class Herd extends EventEmitter {
     if (!r) return 'none';
     if (r.reachable) return (await isPortOpen(r.port)) ? 'running' : 'stopped';
     if (r.composeFile && r.service) {
-      const { code, stdout } = await run('docker', ['compose', '-f', r.composeFile, 'ps', '--all', '--format', '{{.State}}', r.service], {
+      // The engine the Docker tab uses (DoCatz's context when it runs).
+      const [bin, ...compose] = docker.dockerCompose();
+      const { code, stdout } = await run(bin, [...compose, '-f', r.composeFile, 'ps', '--all', '--format', '{{.State}}', r.service], {
         cwd: p.path,
         timeout: 10_000,
       });
@@ -4295,7 +4297,7 @@ export class Herd extends EventEmitter {
     };
     const cmd = [...args[action], ...(service ? [service] : [])];
     this.processes.log(id, 'sys', `$ docker compose -f ${file}${project ? ` -p ${project}` : ''} ${cmd.join(' ')}`);
-    const code = await docker.compose(p.path, file, project, cmd, (stream, text) => this.processes.log(id, stream, text));
+    const code = await docker.compose(p.path, file, project, cmd, (stream, text) => this.processes.log(id, stream === 'err' ? 'err' : 'docker', text));
     this.processes.log(id, 'sys', code === 0 ? `Docker: ${action} done` : `Docker: ${action} failed (exit ${code})`);
     if (code !== 0) throw new Error(`docker compose ${action} failed (exit ${code}); see Logs`);
   }
@@ -4427,7 +4429,7 @@ export class Herd extends EventEmitter {
     const lines: string[] = [];
     const log = (stream: 'out' | 'err', text: string) => {
       lines.push(text);
-      this.processes.log(p.id, stream, text);
+      this.processes.log(p.id, stream === 'err' ? 'err' : 'docker', text);
     };
     let code = await docker.compose(p.path, file, project, ['up', '-d', '--wait'], log);
     // Podman / older compose know no --wait: start them, the app retries its connection anyway.
@@ -4442,7 +4444,7 @@ export class Herd extends EventEmitter {
     if (!docker.composeFiles(p.path).some((c) => c.file === file)) return;
     const project = this.dockerFiles(p.id).find((c) => c.file === file)?.project ?? null;
     this.processes.log(p.id, 'sys', `$ docker compose -f ${file}${project ? ` -p ${project}` : ''} stop`);
-    const code = await docker.compose(p.path, file, project, ['stop'], (stream, text) => this.processes.log(p.id, stream, text));
+    const code = await docker.compose(p.path, file, project, ['stop'], (stream, text) => this.processes.log(p.id, stream === 'err' ? 'err' : 'docker', text));
     if (code !== 0) this.processes.log(p.id, 'sys', `Docker: stop failed (exit ${code})`);
   }
 

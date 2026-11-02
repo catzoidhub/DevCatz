@@ -7,6 +7,8 @@ import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './d
 import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
 import { exePath, isWin } from './platform';
+import { docatzEngine } from './docatz';
+import { store } from './store';
 
 /**
  * Docker per site: generates a production-like Dockerfile + compose file for
@@ -77,13 +79,26 @@ export async function dockerStatus(): Promise<DockerStatus> {
   const installed = (
     await Promise.all(ENGINES.map(async (e) => (engineAppInstalled(e) || (e.bin && (await onPath(e.bin))) ? e : null)))
   ).filter((e): e is EngineDef => !!e);
-  const base = { installed: installed.map((e) => e.id), cliFound: false, context: null, engine: null, orbLocal: false };
+  const docatz = docatzEngine();
+  const base = { installed: installed.map((e) => e.id), cliFound: false, context: null, engine: null, orbLocal: false, docatz, system: null };
 
   let dockerError: string | null = null;
   if (await onPath('docker')) {
     const ctx = (await run('docker', ['context', 'show'], { timeout: 5000 })).stdout.trim();
     const endpoint = (await run('docker', ['context', 'inspect', ctx, '--format', '{{.Endpoints.docker.Host}}'], { timeout: 5000 })).stdout.trim();
     const info = await run('docker', ['info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 });
+    // DoCatz's engine runs (its bridge.json) but the current context is another engine's: compose runs on DoCatz
+    // (`docker --context docatz compose …`) unless Settings say the system's context. DoCatz never switches the
+    // current context by itself.
+    if (docatz === 'running' && ctx !== 'docatz' && store.settings.dockerEngine !== 'system') {
+      const d = await run('docker', ['--context', 'docatz', 'info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 });
+      if (d.code === 0) {
+        cli = { bin: 'docker', compose: ['--context', 'docatz', 'compose'] };
+        orbLocal = false;
+        const system = ctx ? { context: ctx, engine: engineFromDocker(ctx, endpoint, info.stdout.trim()), running: info.code === 0 } : null;
+        return { ...base, cliFound: true, daemon: true, context: 'docatz', engine: 'docatz', orbLocal: false, error: null, system };
+      }
+    }
     if (info.code === 0) {
       cli = { bin: 'docker', compose: ['compose'] };
       const engine = engineFromDocker(ctx, endpoint, info.stdout.trim());

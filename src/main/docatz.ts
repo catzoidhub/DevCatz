@@ -17,23 +17,33 @@ import { run } from './env';
 export const DOCATZ_REPO = 'catzoidhub/DoCatz';
 
 /**
- * DoCatz's proxy HTTP port from its bridge.json (`proxy: { httpsPort, httpPort }`, in DoCatz's data folder), or null
- * when DoCatz has not published one. Read at most every few seconds (route updates are frequent). DOCATZ_BRIDGE points
- * elsewhere, for tests.
+ * DoCatz's bridge.json (in DoCatz's data folder): its proxy ports (`proxy: { httpsPort, httpPort }`) and its engine
+ * (`engine: "running" | "stopped"`). Read at most every few seconds (route updates and status checks are frequent).
+ * DOCATZ_BRIDGE points elsewhere, for tests.
  */
-let portCache: { at: number; port: number | null } = { at: 0, port: null };
-export function docatzProxyPort(): number | null {
-  if (Date.now() - portCache.at < 5000) return portCache.port;
-  let port: number | null = null;
+let bridgeCache: { at: number; value: { proxy?: { httpPort?: number }; engine?: string } | null } = { at: 0, value: null };
+function docatzBridge(): { proxy?: { httpPort?: number }; engine?: string } | null {
+  if (Date.now() - bridgeCache.at < 5000) return bridgeCache.value;
+  let value = null;
   try {
-    const b = JSON.parse(readFileSync(process.env.DOCATZ_BRIDGE || join(app.getPath('appData'), 'DoCatz', 'bridge.json'), 'utf8').replace(/^\uFEFF/, '')) as { proxy?: { httpPort?: number } };
-    const p = Number(b.proxy?.httpPort);
-    port = Number.isInteger(p) && p > 0 && p < 65536 ? p : null;
+    value = JSON.parse(readFileSync(process.env.DOCATZ_BRIDGE || join(app.getPath('appData'), 'DoCatz', 'bridge.json'), 'utf8').replace(/^\uFEFF/, ''));
   } catch {
     /* DoCatz not installed, or not started yet */
   }
-  portCache = { at: Date.now(), port };
-  return port;
+  bridgeCache = { at: Date.now(), value };
+  return value;
+}
+
+/** DoCatz's proxy HTTP port, or null when DoCatz has not published one. */
+export function docatzProxyPort(): number | null {
+  const p = Number(docatzBridge()?.proxy?.httpPort);
+  return Number.isInteger(p) && p > 0 && p < 65536 ? p : null;
+}
+
+/** DoCatz's engine as its bridge.json says: running / stopped, null when DoCatz is not there. */
+export function docatzEngine(): 'running' | 'stopped' | null {
+  const e = docatzBridge()?.engine;
+  return e === 'running' ? 'running' : e ? 'stopped' : null;
 }
 const APP_PATHS = catzoidAppPaths('DoCatz');
 const BUNDLE_ID = 'com.mrcatz.docatz';
