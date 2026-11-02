@@ -273,12 +273,21 @@ export const RUST_TOOLS: { id: RustToolId; label: string; bin: string; crate: st
   { id: 'diesel-cli', label: 'Diesel CLI', bin: 'diesel', crate: 'diesel_cli', why: 'diesel setup / migration run for Diesel projects (Database tab)' },
 ];
 
+/** avm's selected Anchor (~/.avm/.version): read, not `anchor --version` — running Anchor switches Solana (below). */
+function avmAnchorVersion(): string | null {
+  try {
+    return readFileSync(join(homedir(), '.avm', '.version'), 'utf8').trim().match(/^\d+\.\d+\.\d+[\w.-]*$/)?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function toolStates(refresh = false): Promise<RustToolState[]> {
-  return Promise.all(
-    RUST_TOOLS.filter((t) => !isWin || (t.id !== 'solana' && t.id !== 'anchor')).map(async (t) => {
+  const states = await Promise.all(
+    RUST_TOOLS.filter((t) => !isWin || (t.id !== 'solana' && t.id !== 'anchor')).map(async (t): Promise<RustToolState> => {
       const path = toolPath(t.bin);
-      let version: string | null = null;
-      if (path) {
+      let version: string | null = t.id === 'anchor' && path ? avmAnchorVersion() : null;
+      if (path && !version) {
         const args = t.bin.startsWith('cargo-') ? [t.bin.slice(6), '--version'] : ['--version'];
         const r = await run(path, args, { timeout: 15_000, env: rustEnv() }).catch(() => null);
         version = r?.stdout.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? (r?.code === 0 ? '?' : null);
@@ -287,6 +296,15 @@ export async function toolStates(refresh = false): Promise<RustToolState[]> {
       return { id: t.id, label: t.label, why: t.why, version, installed: !!path, latest, update: !!(version && latest && newer(latest, version)) };
     }),
   );
+  // Anchor (1.x) switches Solana to the release it was built for every time it runs (agave-install init), even for
+  // --version: a newer Solana would not last, so none is offered while Anchor is installed.
+  const anchor = states.find((s) => s.id === 'anchor' && s.installed);
+  const solana = states.find((s) => s.id === 'solana');
+  if (anchor && solana?.update) {
+    solana.update = false;
+    solana.note = `Anchor ${anchor.version ?? ''} picks the Solana release it was built for and switches to it each time it runs, so ${solana.latest} is not offered. A project can ask for another in Anchor.toml ([toolchain] solana_version).`.replace('Anchor  ', 'Anchor ');
+  }
+  return states;
 }
 
 const rustLatest = new Map<RustToolId, { at: number; version: string }>();

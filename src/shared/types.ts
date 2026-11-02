@@ -615,6 +615,8 @@ export interface RustToolState {
   /** Newest release (crates.io, or GitHub for Solana / Anchor); null when unknown or not installed. */
   latest: string | null;
   update: boolean;
+  /** Why there is no update on offer although a newer release is out (Solana while Anchor picks its version). */
+  note?: string;
 }
 
 /** Which toolchain a site's Rust apps build with: rust-toolchain.toml's, else rustup's default. */

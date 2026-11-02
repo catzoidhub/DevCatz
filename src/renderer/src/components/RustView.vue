@@ -231,6 +231,7 @@ async function checkTools() {
                   <span v-if="neededBy(t.id).length" class="badge badge-warning badge-soft badge-sm" :title="neededBy(t.id).join(', ')">needed by {{ neededBy(t.id).length }} site{{ neededBy(t.id).length === 1 ? '' : 's' }}</span>
                 </div>
                 <div class="text-xs opacity-60">{{ t.why }}</div>
+                <div v-if="t.note" class="mt-1 text-xs text-info">{{ t.note }}</div>
               </div>
               <div v-if="t.installed" class="flex shrink-0 items-center gap-1">
                 <button v-if="t.update" class="btn btn-primary btn-xs" :disabled="!!busy || !b.rustup" @click="installTool(t.id, t.label, true)">Update</button>
