@@ -325,7 +325,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
     <!-- Default domain (used by sites and storage domains): /etc/resolver on macOS, NRPT rules on Windows -->
     <div v-if="tab === 'general'" class="card">
       <div class="card-body">
-        <h2 class="font-semibold">Default domain</h2>
+        <h2 class="font-semibold">Default domain <span class="badge badge-ghost badge-sm ml-1" title="Change it here or in DoCatz and every Catzoid app follows; sites are renamed to the new suffix">Shared with Catzoid apps</span></h2>
         <p v-if="isWin" class="text-xs opacity-70">
           Sites and object storage are served on <code>&lt;name&gt;.{{ s.domain.tld }}</code>. Browsers resolve <code>.localhost</code> by themselves;
           Node, PHP, Python and curl on Windows need a DNS rule (NRPT) that sends the suffix — and <code>.localhost</code> — to DevCatz's own DNS.
@@ -392,6 +392,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <span class="badge badge-sm ml-1" :class="s.cert.caTrusted ? 'badge-success' : 'badge-warning'">
             {{ s.cert.caTrusted ? 'trusted' : 'not trusted' }}
           </span>
+          <span class="badge badge-ghost badge-sm ml-1" title="DoCatz uses the same certificate authority for its containers' HTTPS names">Shared with Catzoid apps</span>
         </h2>
         <p class="text-xs opacity-70">
           A local certificate authority signs a certificate for every <code>*.{{ s.domain.tld }}</code> site. Add it to {{ isWin ? 'your Trusted Root certificates' : 'your login keychain' }} once
@@ -415,6 +416,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
         <h2 class="font-semibold">
           Proxy
           <span class="badge badge-sm ml-1" :class="s.proxy.https ? 'badge-success' : 'badge-error'">{{ s.proxy.https ? 'listening' : 'down' }}</span>
+          <span class="badge badge-ghost badge-sm ml-1" title="Names without a port (:443 / :80 forwarded) are shared with DoCatz">Shared with Catzoid apps</span>
         </h2>
         <p v-if="s.proxy.error" class="text-xs text-error">{{ s.proxy.error }}</p>
         <div class="flex items-end gap-2">

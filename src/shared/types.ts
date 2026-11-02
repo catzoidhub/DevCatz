@@ -123,6 +123,8 @@ export interface UninstallPlan {
   systemFiles: string[];
   /** Other Catzoid apps on this Mac: then the shared settings stay unless asked. */
   otherCatzoidApps: string[];
+  /** Installed apps that still use the shared resolver, port forwarding and local CA (DoCatz): those stay. */
+  sharedSetupKeptFor: string[];
   sharedDir: string;
   sharedKeys: string[];
 }

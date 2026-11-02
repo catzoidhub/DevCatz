@@ -37,9 +37,14 @@ const items = computed(() => {
     ...(p.systemFiles.length
       ? [{ label: isWin ? 'Port forwarding (one administrator prompt)' : 'Port forwarding and DNS files (one admin password prompt)', detail: p.systemFiles.join('\n') }]
       : []),
-    isWin
-      ? { label: 'The DevCatz Local CA, the sign-in item and the Path entry', detail: 'From your Trusted Root certificates (Windows asks to confirm)' }
-      : { label: 'The DevCatz Local CA and the login item', detail: 'From your login keychain (macOS asks to confirm)' },
+    ...(p.sharedSetupKeptFor.length
+      ? [{ label: `Kept for ${p.sharedSetupKeptFor.join(', ')}: names without a port, the DNS setup and the local CA`, detail: `${p.sharedSetupKeptFor.join(', ')} still uses them; its own uninstaller removes them` }]
+      : []),
+    p.sharedSetupKeptFor.length
+      ? { label: isWin ? 'The sign-in item and the Path entry' : 'The login item', detail: 'The local CA stays trusted (shared)' }
+      : isWin
+        ? { label: 'The DevCatz Local CA, the sign-in item and the Path entry', detail: 'From your Trusted Root certificates (Windows asks to confirm)' }
+        : { label: 'The DevCatz Local CA and the login item', detail: 'From your login keychain (macOS asks to confirm)' },
     p.homebrew
       ? { label: 'The app, through Homebrew', detail: 'brew uninstall --cask devcatz' }
       : isWin

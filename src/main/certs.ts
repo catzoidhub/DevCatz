@@ -48,7 +48,8 @@ export class CertManager {
   private ca: { cert: forge.pki.Certificate; key: forge.pki.rsa.PrivateKey; pem: Pem } | null = null;
   private contexts = new Map<string, SecureContext>();
   readonly caPath = join(certsDir(), 'ca.crt');
-  private caKeyPath = join(certsDir(), 'ca.key');
+  /** The CA's key (0600, the user's only): named in Catzoid/shared.json so DoCatz can mint certificates with the same CA. */
+  readonly caKeyPath = join(certsDir(), 'ca.key');
 
   ensureCa(): void {
     if (this.ca) return;

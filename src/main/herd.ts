@@ -77,6 +77,7 @@ import { DB_DOMAIN_LABEL, DbServiceManager, dbProcessId } from './dbservices';
 import { DbCatz } from './dbcatz';
 import { DialCatz } from './dialcatz';
 import { DoCatz } from './docatz';
+import { onSharedChange, sharedDomains, writeShared, type SharedDomains } from './shared';
 import { Reports } from './reports';
 import { AppUpdater } from './updater';
 import { browsersState, editorIcons, validBrowser } from './browsers';
@@ -472,6 +473,12 @@ export class Herd extends EventEmitter {
     this.cleanUrls = await cleanUrlsWorking();
     this.cleanHttp = await cleanHttpWorking();
     this.ipv4Free = !(await isListening('127.0.0.1', 443)) || cleanUrlsCoverIpv4();
+    // Shared domain settings (DoCatz #61): take the default domain DoCatz set while DevCatz was closed, then publish ours.
+    const sharedTld = sharedDomains().tld;
+    if (sharedTld && sharedTld !== tld()) await this.setTld(sharedTld).catch((e: Error) => console.warn('shared default domain:', e.message));
+    this.domainsReady = true;
+    this.publishDomains();
+    onSharedChange((sh) => void this.followSharedDomains(sh.domains ?? {}));
     this.timers.push(setInterval(() => void this.pollPorts(), 1500));
     void this.pollPorts();
     this.timers.push(setInterval(() => void this.pollDatabases(), 5000));
@@ -4901,12 +4908,46 @@ export class Herd extends EventEmitter {
     };
   }
 
+  /** Set once start-up has read the CA and the port forwarding: only then are they published. */
+  private domainsReady = false;
+
+  /**
+   * Catzoid/shared.json `domains` (DoCatz TODO #61): the default domain, DevCatz's CA and its names without a port,
+   * and DevCatz in `usedBy`. The CA / forwarding of another app (`by`) is left as that app wrote it. Written only
+   * when something differs.
+   */
+  private publishDomains(): void {
+    if (!this.domainsReady) return;
+    const cur = sharedDomains();
+    const patch: SharedDomains = { tld: tld(), usedBy: [...new Set([...(cur.usedBy ?? []), 'devcatz'])].sort() };
+    if (!cur.ca || cur.ca.by === 'devcatz') patch.ca = { cert: this.certs.caPath, key: this.certs.caKeyPath, trusted: this.caTrusted, by: 'devcatz' };
+    if (!cur.cleanUrls || cur.cleanUrls.by === 'devcatz') patch.cleanUrls = { on: this.cleanUrls, httpsPort: store.settings.httpsPort, httpPort: store.settings.httpPort, by: 'devcatz' };
+    if (JSON.stringify({ ...cur, ...patch }) !== JSON.stringify(cur)) writeShared({ domains: patch });
+  }
+
+  /** Another app changed the shared domain settings: a new default domain renames the sites; CA / forwarding are re-read. */
+  private seenDomains = '';
+  private async followSharedDomains(d: SharedDomains): Promise<void> {
+    // shared.json also changes for the theme, AI or Git accounts: only a change here matters.
+    const key = JSON.stringify(d);
+    if (key === this.seenDomains) return;
+    this.seenDomains = key;
+    if (d.tld && d.tld !== tld()) {
+      await this.setTld(d.tld).catch((e: Error) => console.warn('shared default domain:', e.message));
+      return;
+    }
+    this.caTrusted = await this.certs.isTrusted();
+    this.cleanUrls = await cleanUrlsWorking();
+    this.changed();
+  }
+
   private changed(): void {
     if (this.changeTimer) return;
     this.changeTimer = setTimeout(() => {
       this.changeTimer = null;
       this.dbcatz.publish(this.dbs.state());
       this.publishBridge();
+      this.publishDomains();
       this.emit('change');
     }, 50);
   }

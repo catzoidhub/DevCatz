@@ -43,8 +43,24 @@ export interface SharedAi {
   /** Providers with a key in the Keychain (names only). */
   keys?: AiProvider[];
 }
+/**
+ * Domain settings shared with DoCatz (DoCatz TODO #61): the default domain, the local certificate authority and names
+ * without a port. Either app may set them up; the other recognises and reuses them. `usedBy` lists the apps that rely
+ * on them: an app's uninstaller removes the resolver, port forwarding and CA trust only when no other app is listed.
+ */
+export interface SharedDomains {
+  /** The suffix of local names (`localhost`, `test` …); every app serves `<name>.<tld>`. */
+  tld?: string;
+  /** The local CA: certificate and key files (readable by the user only), and whether the system trusts it. */
+  ca?: { cert: string; key: string; trusted: boolean; by: string };
+  /** :443 / :80 forwarded to the proxy of `by` on these ports (names without a port). */
+  cleanUrls?: { on: boolean; httpsPort: number; httpPort: number; by: string };
+  usedBy?: string[];
+}
 export interface Shared {
   version: 1;
+  /** Default domain, local CA, names without a port (DoCatz TODO #61). */
+  domains?: SharedDomains;
   theme?: ThemeMode;
   ai?: SharedAi;
   /** Git hosting accounts, shared by the Catzoid apps (tokens in the Keychain item "Catzoid Git"). */
@@ -56,6 +72,12 @@ export interface Shared {
 }
 
 let cache: Shared | null = null;
+
+/** The shared domain settings (empty until an app wrote them). */
+export const sharedDomains = (): SharedDomains => readShared().domains ?? {};
+
+/** Other apps (not DevCatz) that rely on the shared resolver, port forwarding and CA. */
+export const otherDomainUsers = (): string[] => (sharedDomains().usedBy ?? []).filter((a) => a !== ME);
 
 /**
  * The default site address (production). While testing against dev.catzoid.tech, Catzoid/shared.json carries
@@ -92,13 +114,14 @@ export function readShared(): Shared {
 }
 
 /** Merges `patch` (ai merged one level deep) and writes the file atomically. */
-export function writeShared(patch: Partial<Omit<Shared, 'version' | 'ai' | 'git'>> & { ai?: SharedAi; git?: Shared['git'] }): Shared {
+export function writeShared(patch: Partial<Omit<Shared, 'version' | 'ai' | 'git' | 'domains'>> & { ai?: SharedAi; git?: Shared['git']; domains?: SharedDomains }): Shared {
   const cur = readShared();
   const next: Shared = {
     ...cur,
     ...patch,
     ai: patch.ai ? { ...(cur.ai ?? {}), ...patch.ai } : cur.ai,
     git: patch.git ? { ...(cur.git ?? {}), ...patch.git } : cur.git,
+    domains: patch.domains ? { ...(cur.domains ?? {}), ...patch.domains } : cur.domains,
     version: 1,
     updatedBy: ME,
     updatedAt: new Date().toISOString(),

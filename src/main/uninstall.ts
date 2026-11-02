@@ -1,5 +1,5 @@
 import { app, shell } from 'electron';
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { AiProvider, TaskProgress, UninstallPlan } from '@shared/types';
@@ -9,7 +9,7 @@ import { isWin } from './platform';
 import { setUserPath, userPathHas } from './env';
 import { shimDir } from './node';
 import { run } from './env';
-import { readShared, setSharedKey, SHARED_DIR } from './shared';
+import { otherDomainUsers, readShared, setSharedKey, sharedDomains, SHARED_DIR, writeShared } from './shared';
 
 /**
  * Uninstall DevCatz (Catzoid family #55, DevCatz TODO §24). Removes what DevCatz put on the Mac, never the user's
@@ -132,15 +132,30 @@ export function uninstallPlan(): UninstallPlan {
   const others = OTHER_APPS.filter((n) =>
     isWin ? existsSync(join(local, 'Programs', n, `${n}.exe`)) : ['/Applications', join(homedir(), 'Applications')].some((d) => existsSync(join(d, `${n}.app`))),
   );
+  // DoCatz (or another app) still relies on the resolver, the port forwarding and the CA: those stay (DoCatz #61).
+  const keptFor = otherDomainUsers().filter((a) => others.some((o) => o.toLowerCase() === a));
   return {
     app: appBundle(),
     homebrew: caskroom() !== null,
     dataDir: app.getPath('userData'),
-    systemFiles: systemLeftovers(),
+    systemFiles: keptFor.length ? [] : systemLeftovers(),
+    sharedSetupKeptFor: keptFor.map((a) => others.find((o) => o.toLowerCase() === a)!),
     otherCatzoidApps: others,
     sharedDir: SHARED_DIR,
     sharedKeys: readShared().ai?.keys ?? [],
   };
+}
+
+/** Copies DevCatz's CA into Catzoid/ca (folder 0700, key 0600) for the apps that still use it. */
+function keepCa(ca: { cert: string; key: string; trusted: boolean }): { cert: string; key: string; trusted: boolean; by: string } {
+  const dir = join(SHARED_DIR, 'ca');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const cert = join(dir, 'ca.crt');
+  const key = join(dir, 'ca.key');
+  copyFileSync(ca.cert, cert);
+  copyFileSync(ca.key, key);
+  if (!isWin) chmodSync(key, 0o600);
+  return { cert, key, trusted: ca.trusted, by: 'catzoid' };
 }
 
 export interface UninstallHooks {
@@ -164,8 +179,14 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
   // Windows: the shim folder in the user's Path would point at a folder that is about to go.
   if (isWin && userPathHas(shimDir())) await setUserPath(shimDir(), false).catch((e: Error) => console.warn('uninstall: Path', e.message));
 
-  set({ step: 2, detail: isWin ? 'DevCatz Local CA, from your Trusted Root certificates' : 'DevCatz Local CA, from the login keychain' });
-  await hooks.untrustCa().catch((e: Error) => console.warn('uninstall: CA', e.message));
+  const kept = plan.sharedSetupKeptFor;
+  // DevCatz no longer uses the shared setup; the next app's uninstaller removes it when it is the last one. A CA that
+  // lives in DevCatz's data folder moves to the shared folder first, so the other app keeps minting with it.
+  const ca = sharedDomains().ca;
+  const caMoved = kept.length && ca?.by === 'devcatz' && existsSync(ca.cert) && existsSync(ca.key) ? keepCa(ca) : null;
+  writeShared({ domains: { usedBy: (sharedDomains().usedBy ?? []).filter((a) => a !== 'devcatz'), ...(caMoved ? { ca: caMoved } : {}) } });
+  set({ step: 2, detail: kept.length ? `Kept: still used by ${kept.join(', ')}` : isWin ? 'DevCatz Local CA, from your Trusted Root certificates' : 'DevCatz Local CA, from the login keychain' });
+  if (!kept.length) await hooks.untrustCa().catch((e: Error) => console.warn('uninstall: CA', e.message));
   app.setLoginItemSettings({ openAtLogin: false });
 
   set({ step: 3, detail: opts.removeData ? plan.dataDir : 'Kept: the data folder' });
