@@ -5,13 +5,13 @@ export const herd = window.herd;
 
 export const state = ref<AppState | null>(null);
 export const logs = reactive(new Map<string, LogLine[]>());
-export const toast = ref<{ kind: 'error' | 'success' | 'info'; text: string } | null>(null);
+export const toast = ref<{ kind: 'error' | 'success' | 'info' | 'warning'; text: string } | null>(null);
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
-export function notify(kind: 'error' | 'success' | 'info', text: string): void {
+export function notify(kind: 'error' | 'success' | 'info' | 'warning', text: string): void {
   toast.value = { kind, text };
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (toast.value = null), kind === 'error' ? 7000 : 3500);
+  toastTimer = setTimeout(() => (toast.value = null), kind === 'error' || kind === 'warning' ? 7000 : 3500);
 }
 
 /** Runs an IPC call and turns failures into a toast. */

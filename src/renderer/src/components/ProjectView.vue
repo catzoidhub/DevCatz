@@ -257,7 +257,7 @@ async function dockerAction(file: string, action: 'up' | 'down') {
 // Only when the site has a compose file: no Docker group (and no Build ▾ just for it) otherwise.
 const dockerItems = computed<MenuItem[]>(() => !composeFiles.value.length ? [] : [
   ...composeFiles.value.flatMap((f, i): MenuItem[] => [
-    { label: `Up · ${f.file}`, hint: f.build ? 'build the images, then start the containers' : 'start the containers', separator: i > 0, action: () => void dockerAction(f.file, 'up') },
+    { label: `${f.build ? 'Build & Up' : 'Up'} · ${f.file}`, hint: f.build ? 'build the images, then (re)create and start the containers' : 'start the containers', separator: i > 0, action: () => void dockerAction(f.file, 'up') },
     { label: `Down · ${f.file}`, hint: 'stop and remove its containers (volumes stay)', action: () => void dockerAction(f.file, 'down') },
   ]),
   {

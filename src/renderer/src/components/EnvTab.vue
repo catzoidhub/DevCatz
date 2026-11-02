@@ -79,6 +79,17 @@ async function save() {
   changedOnDisk.value = false;
   notify('success', `Saved ${selected.value}${props.project.status === 'running' ? '. Restart the site to apply it.' : ''}`);
   void loadList();
+  void warnContainers();
+}
+/** Running compose containers read .env when they are created: they keep the old values until Build & Up recreates them. */
+async function warnContainers() {
+  const files = await herd.dockerFiles(props.project.id).catch(() => []);
+  const running: string[] = [];
+  for (const f of files) {
+    const svc = await herd.dockerServices(props.project.id, f.file).catch(() => []);
+    if (svc.some((x) => x.state === 'running' || x.state === 'restarting')) running.push(f.file);
+  }
+  if (running.length) notify('warning', `Containers of ${running.join(', ')} still use the old values: run Build & Up again (Docker tab or Build ▾) to apply ${selected.value}.`);
 }
 function onKey(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') {

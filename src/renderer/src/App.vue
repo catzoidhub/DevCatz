@@ -870,7 +870,7 @@ async function park() {
       <div
         role="status"
         class="alert max-w-md items-start gap-2.5 text-sm shadow-lg"
-        :class="{ 'alert-error': toast.kind === 'error', 'alert-success': toast.kind === 'success', 'alert-info': toast.kind === 'info' }"
+        :class="{ 'alert-error': toast.kind === 'error', 'alert-success': toast.kind === 'success', 'alert-info': toast.kind === 'info', 'alert-warning': toast.kind === 'warning' }"
       >
         <CatMood :mood="toast.kind" class="-my-1 size-8 shrink-0" />
         <span class="selectable min-w-0 flex-1">{{ toast.text }}</span>
