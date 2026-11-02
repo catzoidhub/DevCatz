@@ -11,7 +11,10 @@ import docatzLogo from '../assets/logos/docatz.png';
  * DoCatz is not installed, a dialog offers Download & Install — the latest release from GitHub, verified — and then
  * opens the same place. DoCatz is also the container engine the Docker tab recommends.
  */
-const props = withDefaults(defineProps<{ siteId: string; /** A compose file of the site (its root). */ file?: string | null; label?: string; primary?: boolean }>(), { file: null, label: 'Open in DoCatz', primary: false });
+const props = withDefaults(
+  defineProps<{ siteId: string; /** A compose file of the site (its root). */ file?: string | null; label?: string; primary?: boolean; /** Why it is off (the button is disabled), e.g. the containers run on another engine. */ disabledReason?: string | null }>(),
+  { file: null, label: 'Open in DoCatz', primary: false, disabledReason: null },
+);
 const asking = ref(false);
 const installed = computed(() => state.value?.docatz.installed ?? null);
 const task = computed(() => state.value?.docatz.task ?? null);
@@ -33,8 +36,9 @@ function close() {
 
 <template>
   <!-- The tooltip sits on a wrapper: a disabled button shows none. -->
-  <span class="inline-flex" :title="installed === false ? `DoCatz is not installed on this ${words.computer}: click to download and install it` : file ? `Open ${file} in DoCatz: its containers, logs and images` : 'Open DoCatz: containers, images and volumes'">
-    <button type="button" class="btn btn-sm gap-2" :class="{ 'btn-primary': primary }" @click="open">
+  <!-- The tooltip sits on a wrapper: a disabled button shows none. -->
+  <span class="inline-flex" :title="disabledReason ?? (installed === false ? `DoCatz is not installed on this ${words.computer}: click to download and install it` : file ? `Open ${file} in DoCatz: its containers, logs and images` : 'Open DoCatz: containers, images and volumes')">
+    <button type="button" class="btn btn-sm gap-2" :class="{ 'btn-primary': primary }" :disabled="!!disabledReason" @click="open">
       <img :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ label }}
     </button>
   </span>

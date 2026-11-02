@@ -141,6 +141,8 @@ async function pickEngine(e: { id: DockerEngineId; running: boolean }) {
   if (!e.running) await start(e.id);
   await useEngine(e.id === 'docatz' ? 'docatz' : 'system');
 }
+/** Open in DoCatz is off while the containers run on another engine (OrbStack …): DoCatz would not show them. */
+const notOnDocatz = computed(() => (status.value?.daemon && status.value.engine !== 'docatz' ? `The containers run on ${engineName(status.value.engine)}: pick DoCatz in step 1 to see them in DoCatz` : null));
 async function useEngine(which: 'docatz' | 'system') {
   await attempt(() => herd.updateSettings({ dockerEngine: which }));
   await refresh();
@@ -242,7 +244,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
       <div class="card-body gap-3">
         <div class="flex items-center gap-2">
           <h2 class="flex flex-1 items-center gap-2 font-semibold"><span class="step-num">1</span>Docker engine <span class="text-xs font-normal opacity-60">where your containers run while you test them</span></h2>
-          <DoCatzButton v-if="!files.length" :site-id="project.id" />
+          <DoCatzButton v-if="!files.length" :site-id="project.id" :disabled-reason="notOnDocatz" />
         </div>
         <div role="radiogroup" aria-label="Container engine" class="grid gap-2 sm:grid-cols-2">
           <button
@@ -429,7 +431,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
       <div class="card-body">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="flex flex-1 items-center gap-2 font-semibold"><span class="step-num">{{ desktop ? 2 : 3 }}</span>{{ desktop ? 'Containers' : 'Test in containers' }}</h2>
-          <DoCatzButton v-if="file && files.length" :site-id="project.id" :file="file" />
+          <DoCatzButton v-if="file && files.length" :site-id="project.id" :file="file" :disabled-reason="notOnDocatz" />
           <select v-if="files.length" v-model="file" class="select select-sm w-auto">
             <option v-for="f in files" :key="f.file" :value="f.file">{{ f.file }}{{ f.coversAll ? ' · every app' : f.covers.length ? ` · ${f.covers.join(', ')}` : '' }}{{ f.generated ? ' (generated)' : f.build ? '' : ' (no app build)' }}</option>
           </select>
