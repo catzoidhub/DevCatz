@@ -76,7 +76,7 @@ async function uninstall(t: RuntimeToolState) {
             <div class="flex flex-wrap items-center gap-1.5">
               <span class="font-medium">{{ t.label }}</span>
               <span v-if="(t.installed || t.onPath) && t.version" class="badge badge-ghost badge-sm font-mono">{{ t.version }}</span>
-              <span v-if="t.update" class="badge badge-info badge-soft badge-sm font-mono" :title="`${t.latest} is out`">→ {{ t.latest }}</span>
+              <span v-if="t.update" class="badge badge-primary badge-soft badge-sm font-mono" :title="`${t.latest} is out`">→ {{ t.latest }}</span>
               <span v-if="t.neededBy.length" class="badge badge-warning badge-soft badge-sm" :title="t.neededBy.join(', ')">needed by {{ t.neededBy.length }} site{{ t.neededBy.length === 1 ? '' : 's' }}</span>
             </div>
             <div class="text-xs opacity-60">{{ t.why }}</div>

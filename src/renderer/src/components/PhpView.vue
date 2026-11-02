@@ -147,7 +147,7 @@ const tab = ref<Tab>('installed');
     </p>
     <div class="no-drag mt-3 flex flex-wrap items-center gap-3">
       <div role="tablist" class="seg">
-        <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-info badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
+        <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-primary badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
         <a role="tab" class="seg-item normal-case" :class="{ 'is-active': tab === 'ini' }" @click="tab = 'ini'">php.ini</a>
         <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'extensions' }" @click="tab = 'extensions'">Extensions</a>
         <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>

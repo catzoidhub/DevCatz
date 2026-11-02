@@ -100,7 +100,7 @@ onMounted(() => void herd.refreshRuntimes().catch(() => undefined));
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5">
               <span class="font-medium">{{ r.label }}</span>
-              <span v-if="r.updates" class="badge badge-info badge-xs" :title="`${r.updates} update${r.updates === 1 ? '' : 's'} available`">↑ {{ r.updates }}</span>
+              <span v-if="r.updates" class="badge badge-primary badge-xs" :title="`${r.updates} update${r.updates === 1 ? '' : 's'} available`">↑ {{ r.updates }}</span>
             </div>
             <div class="truncate text-xs opacity-60">{{ r.detail }}</div>
           </div>

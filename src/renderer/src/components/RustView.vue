@@ -98,9 +98,9 @@ async function checkTools() {
       terminal use the same toolchains. A project’s <code>rust-toolchain.toml</code> picks its own.
     </p>
     <div role="tablist" class="seg no-drag mt-3">
-      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-info badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-primary badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>
-      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'tools' }" @click="tab = 'tools'">Tools<span v-if="toolUpdates" class="badge badge-info badge-xs ml-1" title="Tool updates available">{{ toolUpdates }}</span></a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'tools' }" @click="tab = 'tools'">Tools<span v-if="toolUpdates" class="badge badge-primary badge-xs ml-1" title="Tool updates available">{{ toolUpdates }}</span></a>
     </div>
   </PageHeader>
 
@@ -227,7 +227,7 @@ async function checkTools() {
                 <div class="flex flex-wrap items-center gap-1.5">
                   <span class="font-medium">{{ t.label }}</span>
                   <span v-if="t.installed" class="badge badge-ghost badge-sm font-mono">{{ t.version }}</span>
-                  <span v-if="t.update" class="badge badge-info badge-soft badge-sm font-mono" :title="`${t.latest} is out`">→ {{ t.latest }}</span>
+                  <span v-if="t.update" class="badge badge-primary badge-soft badge-sm font-mono" :title="`${t.latest} is out`">→ {{ t.latest }}</span>
                   <span v-if="neededBy(t.id).length" class="badge badge-warning badge-soft badge-sm" :title="neededBy(t.id).join(', ')">needed by {{ neededBy(t.id).length }} site{{ neededBy(t.id).length === 1 ? '' : 's' }}</span>
                 </div>
                 <div class="text-xs opacity-60">{{ t.why }}</div>

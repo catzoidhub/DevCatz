@@ -600,7 +600,7 @@ async function park() {
           {{ r.short }}
           <span
             v-if="sectionUpdates[r.id]"
-            class="absolute top-1.5 right-4 size-2 rounded-full bg-info ring-2 ring-base-200"
+            class="absolute top-1.5 right-4 size-2 rounded-full bg-primary ring-2 ring-base-200"
             :title="`${sectionUpdates[r.id]} update${sectionUpdates[r.id] === 1 ? '' : 's'} available`"
           />
           <span v-if="r.id === 'mail' && state?.mail.unread" class="absolute top-1 right-3 rounded-full bg-[var(--c-mail)] px-1.5 text-[10px] font-semibold leading-4 text-white ring-2 ring-base-200" :title="`${state.mail.unread} new mail`">{{ state.mail.unread > 99 ? '99+' : state.mail.unread }}</span>
