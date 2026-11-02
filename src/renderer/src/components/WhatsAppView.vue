@@ -13,7 +13,9 @@ import ConfirmDialog from './ConfirmDialog.vue';
 import PopMenu, { type MenuItem } from './PopMenu.vue';
 import GatewayEngineView from './GatewayEngineView.vue';
 import { GW_CATEGORIES, GW_CATEGORY_LABEL, GW_LOGO } from '../gateways';
-import { attempt, herd, notify, state, uninstallRequest } from '../store';
+import { attempt, gwInstallRequest, herd, notify, state, uninstallRequest } from '../store';
+import { isWin } from '../platform';
+import docatzLogo from '../assets/logos/docatz.png';
 import CatMood from './CatMood.vue';
 
 /**
@@ -48,7 +50,7 @@ watch(
   () => props.focus,
   (f) => {
     if (!f) return;
-    if (['gowa', 'waha', 'inspector', 'webhooks', 'stalwart', 'postal', 'ntfy', 'gotify', 'jasmin'].includes(f)) page.value = f as Page;
+    if (['gowa', 'waha', 'inspector', 'webhooks', 'telegram', 'stalwart', 'postal', 'ntfy', 'gotify', 'jasmin'].includes(f)) page.value = f as Page;
     else if (sites.value.some((p) => p.id === f)) {
       page.value = 'webhooks';
       hookForm.value = { siteId: f, url: hookUrlFor(f), events: '', enabled: true };
@@ -61,6 +63,21 @@ watch(
 type Tab = 'sessions' | 'send' | 'contacts' | 'connection' | 'logs';
 const tab = ref<Tab>('sessions');
 const form = ref<{ service: WaState; mode: 'install' | 'edit' } | null>(null);
+// DoCatz's Gateways page → Install (devcatz://gateways/waha?install=1): the install dialog, nothing installed without it.
+watch(
+  [gwInstallRequest, selected],
+  ([k, s]) => {
+    if (!k || !s || k !== s.engine) return;
+    gwInstallRequest.value = null;
+    if (!s.installed) form.value = { service: s, mode: 'install' };
+  },
+  { immediate: true },
+);
+/** Windows: WAHA (Docker) installs and runs in DoCatz, listed on DoCatz's Gateways page. */
+const inDocatz = (s: { docker: boolean }) => isWin && s.docker;
+async function openInDocatz(kind: string) {
+  if (!(await attempt(() => herd.docatzOpenGateway(kind)))) notify('error', 'DoCatz is not installed: install it to see this gateway there');
+}
 const removing = ref<WaState | null>(null);
 
 // Ask DevCatz's "Uninstall …" opens this page's own dialog (with its typed confirmation); nothing is removed without it.
@@ -93,6 +110,7 @@ const moreItems = computed<MenuItem[]>(() => {
   if (!s?.installed) return [];
   return [
     { label: s.engine === 'gowa' ? 'Open web UI' : 'Open dashboard', action: () => herd.openUrl(s.url! + s.dashboardPath) },
+    ...(inDocatz(s) ? [{ label: 'Open in DoCatz', action: () => openInDocatz(s.engine) }] : []),
     { label: 'Open data folder', action: () => herd.waOpenData(s.engine) },
     { label: 'Check for updates', action: checkUpdates },
     { label: 'Settings…', action: () => (form.value = { service: s, mode: 'edit' }) },
@@ -319,7 +337,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
               <div class="truncate font-medium">{{ s.name }}</div>
               <div class="truncate font-mono text-[11px] opacity-60">
                 <template v-if="s.installed">{{ s.config?.version }} · :{{ s.config?.port }}<span v-if="s.update" class="ml-1 font-sans text-warning" :title="`${s.update} available`">· update</span></template>
-                <template v-else>{{ s.docker ? 'Docker image' : 'Go binary' }}</template>
+                <template v-else>{{ inDocatz(s) ? 'in DoCatz' : s.docker ? 'Docker image' : 'Go binary' }}</template>
               </div>
               <div v-if="s.task && !s.task.done" class="mt-1">
                 <progress class="progress h-1 w-full" :class="s.task.error ? 'progress-error' : 'progress-primary'" :value="s.task.error ? 100 : s.task.step" :max="s.task.steps.length" />
@@ -365,7 +383,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
                 <div class="truncate font-medium">{{ g.name }}</div>
                 <div class="truncate font-mono text-[11px] opacity-60">
                   <template v-if="g.installed">{{ g.config?.version }} · :{{ g.config?.port }}<span v-if="g.update" class="ml-1 font-sans text-warning">· update</span></template>
-                  <template v-else>{{ g.docker ? 'Docker' : 'binary' }}</template>
+                  <template v-else>{{ inDocatz(g) ? 'in DoCatz' : g.docker ? 'Docker' : 'binary' }}</template>
                 </div>
                 <div v-if="g.task && !g.task.done" class="mt-1">
                   <progress class="progress h-1 w-full" :class="g.task.error ? 'progress-error' : 'progress-primary'" :value="g.task.error ? 100 : g.task.step" :max="g.task.steps.length" />
@@ -400,7 +418,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
             <img :src="LOGO[selected.engine]" alt="" class="size-11 rounded-xl bg-white p-1 ring-1 ring-base-content/10" draggable="false" />
             <div class="min-w-0">
               <h2 class="text-lg font-semibold tracking-tight">{{ selected.name }}</h2>
-              <div class="text-xs opacity-60">Not installed · {{ selected.docker ? `runs in Docker (${words.dockerEngines})` : 'a single Go binary' }}</div>
+              <div class="text-xs opacity-60">Not installed · {{ inDocatz(selected) ? "runs in DoCatz's engine" : selected.docker ? `runs in Docker (${words.dockerEngines})` : 'a single Go binary' }}</div>
             </div>
           </div>
         </header>
@@ -409,7 +427,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
             <p class="text-sm opacity-70">{{ selected.description }}</p>
             <TaskStepper v-if="selected.task && !form" :task="selected.task" :cancellable="selected.task.kind === 'install'" dismissable @dismiss="herd.taskDismiss('whatsapp', selected.engine)" @cancel="H.waCancelInstall(selected.engine)" />
             <button class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
-              <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" />Install {{ selected.name }}…
+              <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="inDocatz(selected)" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ inDocatz(selected) ? 'Install in DoCatz…' : `Install ${selected.name}…` }}
             </button>
             <div class="alert alert-warning alert-soft text-xs"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />
               Both engines use the WhatsApp Web protocol, which WhatsApp does not sanction: a number can be banned. Link a test number, keep volumes low, and use the

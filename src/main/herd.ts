@@ -1,5 +1,5 @@
 import { shell } from 'electron';
-import { probeOpenApi, specFiles, writeBridge, type BridgeSite } from './bridge';
+import { probeOpenApi, specFiles, writeBridge, type BridgeGateway, type BridgeSite } from './bridge';
 import { depFolders, isRealDirInside, lastActivity, sizeOf } from './depclean';
 import { EventEmitter } from 'node:events';
 import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
@@ -57,7 +57,7 @@ import { aiSettings } from './ai/settings';
 import { branchLabel, cloneDeps, copyEnvFiles, copyLocalFile, copyLocalSqlite, copyName, rewriteEnvDb } from './worktrees';
 import { MailManager } from './mail/manager';
 import { WaManager } from './whatsapp';
-import { GatewayManager } from './gateways/manager';
+import { GatewayManager, gwProject } from './gateways/manager';
 import { ExposeManager } from './expose';
 import { SearchManager, binaryDirOf as searchBinaryDirOf, searchId } from './search';
 import { detectSearch } from './searchdetect';
@@ -1607,7 +1607,39 @@ export class Herd extends EventEmitter {
         openapi: [...(this.specFileCache.get(p.id) ?? []), ...(this.openapiUrls.get(p.id) ?? [])],
       };
     });
-    writeBridge(sites);
+    const gateways: BridgeGateway[] = [
+      ...this.whatsapp.state().map((w) => ({
+        kind: w.engine,
+        name: w.name,
+        category: 'whatsapp',
+        docker: w.docker,
+        installed: w.installed,
+        status: w.status,
+        version: w.config?.version ?? null,
+        url: w.url,
+        api: w.apiLocal,
+        webUi: w.url ? w.url + w.dashboardPath : null,
+        project: null,
+        container: w.docker ? 'devcatz-waha' : null,
+        link: `devcatz://gateways/${w.engine}`,
+      })),
+      ...this.gateways.state().map((g) => ({
+        kind: g.kind,
+        name: g.name,
+        category: g.category,
+        docker: g.docker,
+        installed: g.installed,
+        status: g.status,
+        version: g.config?.version ?? null,
+        url: g.url,
+        api: g.apiLocal,
+        webUi: g.url && g.webPath ? g.url + g.webPath : null,
+        project: g.docker ? gwProject(g.kind) : null,
+        container: null,
+        link: `devcatz://gateways/${g.kind}`,
+      })),
+    ];
+    writeBridge(sites, gateways);
   }
 
   /** A spec file DevCatz found for this site (Overview → API → Show in Finder only reveals those). */

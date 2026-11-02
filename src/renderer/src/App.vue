@@ -2,7 +2,7 @@
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { attempt, cloneRequest, dbGroupRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog, runtimeTabRequest, confirmRequest } from './store';
+import { attempt, cloneRequest, dbGroupRequest, gwInstallRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog, runtimeTabRequest, confirmRequest } from './store';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ReportDialog from './components/ReportDialog.vue';
 import UninstallDialog from './components/UninstallDialog.vue';
@@ -504,6 +504,15 @@ function navigate(target: string) {
   if (PANELS.includes(target)) {
     section.value = 'runtimes';
     runtime.value = target as RuntimeId;
+    return;
+  }
+  // devcatz://gateways/<kind>[?install=1] (DoCatz's Gateways page): that gateway, with its install dialog.
+  if (target.startsWith('gateways:')) {
+    const [, kind, install] = target.split(':');
+    section.value = 'whatsapp';
+    waFocus.value = null;
+    void nextTick(() => (waFocus.value = kind));
+    gwInstallRequest.value = install ? kind : null;
     return;
   }
   if (!target.startsWith('new-group:') && !target.startsWith('rename-group:')) section.value = 'projects';

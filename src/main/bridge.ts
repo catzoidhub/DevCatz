@@ -23,14 +23,35 @@ export interface BridgeSite {
   openapi: SiteOpenApi['specs'];
 }
 
+/**
+ * A gateway DevCatz runs (email / push / SMS / Telegram, WhatsApp), for DoCatz's Gateways page: on Windows the Docker
+ * ones run in DoCatz's engine. `project` / `container` is how they appear there; `link` (devcatz://gateways/<kind>)
+ * opens it in DevCatz, with `?install=1` its install dialog, `?action=start|stop|restart` runs that. No secrets.
+ */
+export interface BridgeGateway {
+  kind: string;
+  name: string;
+  category: string;
+  docker: boolean;
+  installed: boolean;
+  status: string;
+  version: string | null;
+  url: string | null;
+  api: string | null;
+  webUi: string | null;
+  project: string | null;
+  container: string | null;
+  link: string;
+}
+
 export const bridgeFile = () => join(app.getPath('userData'), 'bridge.json');
 
 let last = '';
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 /** Writes bridge.json (debounced, only when it changed). */
-export function writeBridge(sites: BridgeSite[]): void {
-  const body = JSON.stringify(sites);
+export function writeBridge(sites: BridgeSite[], gateways: BridgeGateway[] = []): void {
+  const body = JSON.stringify([sites, gateways]);
   if (body === last) return;
   last = body;
   if (timer) clearTimeout(timer);
@@ -41,7 +62,7 @@ export function writeBridge(sites: BridgeSite[]): void {
       const dir = join(file, '..');
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
       const tmp = `${file}.tmp`;
-      writeFileSync(tmp, `${JSON.stringify({ schema: 1, app: 'DevCatz', written: new Date().toISOString(), sites }, null, 2)}\n`, { mode: 0o600 });
+      writeFileSync(tmp, `${JSON.stringify({ schema: 1, app: 'DevCatz', written: new Date().toISOString(), sites, gateways }, null, 2)}\n`, { mode: 0o600 });
       chmodSync(tmp, 0o600);
       renameSync(tmp, file);
     } catch (e) {

@@ -7,7 +7,7 @@ import { connect as netConnect } from 'node:net';
 import { join } from 'node:path';
 import type { CaughtSms, GwCategory, GwConfig, GwKind, GwSendInput, GwSendResult, GwState, ProjectConfig, StorageAction, TaskProgress } from '@shared/types';
 import { readEnvFiles } from '../detect';
-import { dockerBin, dockerCompose, dockerStatus } from '../docker';
+import { gatewayCompose, gatewayDocker, gatewayEngineReady } from '../docker';
 import { getShellEnv, run } from '../env';
 import { sendMail } from '../mail/smtp';
 import { ProcessManager } from '../processes';
@@ -18,6 +18,7 @@ import { githubLatest, isNewer } from '../svcupdate';
 import { jcli } from './jcli';
 import { SmppCatcher } from './smpp';
 import { exe, isWin } from '../platform';
+import { firewallWords, forwardFromWsl, wslReaches } from '../wslhost';
 import { words } from '@shared/platform';
 
 /**
@@ -153,6 +154,8 @@ const IMAGE: Record<Exclude<GwKind, 'stalwart'>, string> = {
 const MAIL_DOMAIN = 'devcatz.test';
 const gwId = (kind: GwKind) => `gw:${kind}`;
 const project = (kind: GwKind) => `devcatz-gw-${kind}`;
+/** A Docker gateway's compose project (how DoCatz lists its containers). */
+export const gwProject = project;
 const host = (label: string) => `${label}.${tld()}`;
 const secret = (n = 18) => randomBytes(n).toString('base64url').slice(0, n);
 const q = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
@@ -593,13 +596,13 @@ ${svc('postal worker', '')}`;
   }
 
   private compose(kind: GwKind, args: string[], timeout = 600_000) {
-    const [bin, ...pre] = dockerCompose();
+    const [bin, ...pre] = gatewayCompose();
     return run(bin, [...pre, '-f', this.composeFile(kind), '-p', project(kind), ...args], { timeout, cwd: join(this.dir, kind) });
   }
 
   /** `docker compose pull` with its progress lines in the task. */
   private pull(kind: GwKind, report: Report, signal: AbortSignal, step: number): Promise<void> {
-    const [bin, ...pre] = dockerCompose();
+    const [bin, ...pre] = gatewayCompose();
     return new Promise((resolve, reject) => {
       const proc = spawn(bin, [...pre, '-f', this.composeFile(kind), '-p', project(kind), 'pull'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: join(this.dir, kind), env: getShellEnv() as NodeJS.ProcessEnv });
       let last = '';
@@ -653,8 +656,7 @@ ${svc('postal worker', '')}`;
     this.aborts.set(kind, abort);
     try {
       if (e.docker) {
-        const ds = await dockerStatus();
-        if (!ds.daemon) throw new Error(ds.error ?? `No container engine is running (${words.dockerEngines})`);
+        await gatewayEngineReady((detail) => t.report({ detail }));
         t.report({ step: 1, detail: IMAGE[kind as Exclude<GwKind, 'stalwart'>] });
         c.version = c.version || (await LATEST[kind]());
         check(abort.signal);
@@ -720,7 +722,7 @@ ${svc('postal worker', '')}`;
       t.report({ step: 1 });
       if (e.docker) {
         if (existsSync(this.composeFile(kind))) await this.compose(kind, ['down', '--remove-orphans'], 120_000);
-        await run(dockerBin(), ['rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
+        await run(gatewayDocker()[0], [...gatewayDocker().slice(1), 'rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
         rmSync(this.composeFile(kind), { force: true });
       } else rmSync(this.binDir(kind), { recursive: true, force: true });
       if (deleteData) {
@@ -774,7 +776,7 @@ ${svc('postal worker', '')}`;
         this.writeCompose(kind, next);
         await this.pull(kind, t.report, abort.signal, 1);
         if (wasActive) await this.stop(kind);
-        if (c.version !== v) await run(dockerBin(), ['rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
+        if (c.version !== v) await run(gatewayDocker()[0], [...gatewayDocker().slice(1), 'rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
         this.saveConfig(kind, next);
       } else {
         const fresh = `${this.binDir(kind)}.update`;
@@ -813,13 +815,13 @@ ${svc('postal worker', '')}`;
     try {
       if (kind === 'stalwart') await this.startStalwart(c);
       else {
-        const ds = await dockerStatus();
-        if (!ds.daemon) throw new Error(ds.error ?? `No container engine is running (${words.dockerEngines})`);
+        await gatewayEngineReady((detail) => this.processes.log(id, 'sys', detail));
         if (kind === 'jasmin') await this.startSmsCatcher(c);
+        await this.wslCallbacks(kind, c);
         this.writeCompose(kind, c);
         this.saveConfig(kind, c);
         if (kind === 'postal' && !c.setupDone) await this.setupPostal(c);
-        const [bin, ...pre] = dockerCompose();
+        const [bin, ...pre] = gatewayCompose();
         this.processes.startMany(id, [{ label: '', cwd: join(this.dir, kind), command: [bin, ...pre, '-f', this.composeFile(kind), '-p', project(kind), 'up', '--remove-orphans'].map(q).join(' '), env: {} }]);
       }
       this.h.changed();
@@ -837,6 +839,22 @@ ${svc('postal worker', '')}`;
       this.processes.log(id, 'sys', `Start failed: ${(err as Error).message}`);
       this.h.changed();
       throw err;
+    }
+  }
+
+  /**
+   * Windows: the DevCatz ports a gateway container calls back (Postal → the mail catcher, Jasmin → the SMS catcher)
+   * opened on WSL's network too (wslhost.ts), and plain words in the gateway's error when Windows Firewall blocks them.
+   */
+  private async wslCallbacks(kind: GwKind, c: GwConfig): Promise<void> {
+    if (!isWin) return;
+    const back = kind === 'postal' ? { what: 'mail catcher', port: this.h.mailPort() } : kind === 'jasmin' ? { what: 'SMS catcher', port: c.ports.smpp } : null;
+    if (!back) return;
+    await forwardFromWsl(back.port);
+    if ((await wslReaches(back.port)) === false) {
+      const msg = firewallWords(back.what, back.port);
+      this.errors.set(kind, msg);
+      this.processes.log(gwId(kind), 'sys', msg);
     }
   }
 

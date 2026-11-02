@@ -11,7 +11,9 @@ import GwForm from './GwForm.vue';
 import GwEnvWriter from './GwEnvWriter.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
 import PopMenu, { type MenuItem } from './PopMenu.vue';
-import { attempt, herd, navRequest, notify, state, uninstallRequest } from '../store';
+import { attempt, gwInstallRequest, herd, navRequest, notify, state, uninstallRequest } from '../store';
+import { isWin } from '../platform';
+import docatzLogo from '../assets/logos/docatz.png';
 import CatMood from './CatMood.vue';
 
 /**
@@ -24,6 +26,11 @@ const H = herd;
 const tld = computed(() => state.value?.settings.tld ?? 'localhost');
 const g = computed<GwState | null>(() => state.value?.gateways.find((x) => x.kind === props.kind) ?? null);
 const active = (s: GwState) => s.status === 'running' || s.status === 'starting';
+/** Windows: the Docker gateways install and run in DoCatz (its engine in WSL 2), listed on DoCatz's Gateways page. */
+const inDocatz = computed(() => isWin && !!g.value?.docker);
+async function openInDocatz(s: GwState) {
+  if (!(await attempt(() => herd.docatzOpenGateway(s.kind)))) notify('error', 'DoCatz is not installed: install it to see this gateway there');
+}
 type Tab = 'overview' | 'send' | 'sms' | 'logs';
 const tab = ref<Tab>('overview');
 watch(
@@ -50,6 +57,16 @@ watch(
   },
   { immediate: true },
 );
+// DoCatz's Gateways page → Install (devcatz://gateways/<kind>?install=1): the install dialog, nothing installed without it.
+watch(
+  [gwInstallRequest, g],
+  ([k, s]) => {
+    if (!k || k !== props.kind || !s) return;
+    gwInstallRequest.value = null;
+    if (!s.installed) form.value = { service: s, mode: 'install' };
+  },
+  { immediate: true },
+);
 const busy = ref<string | null>(null);
 async function act(s: GwState, action: 'start' | 'stop' | 'restart') {
   busy.value = action;
@@ -72,6 +89,7 @@ const moreItems = computed<MenuItem[]>(() => {
   if (!s?.installed) return [];
   return [
     ...(s.webPath ? [{ label: 'Open web UI', action: () => herd.openUrl(s.url! + s.webPath) }] : []),
+    ...(isWin && s.docker ? [{ label: 'Open in DoCatz', action: () => openInDocatz(s) }] : []),
     { label: 'Open data folder', action: () => herd.gwOpenData(s.kind) },
     { label: 'Check for updates', action: checkUpdates },
     { label: 'Settings…', action: () => (form.value = { service: s, mode: 'edit' }) },
@@ -160,7 +178,7 @@ const openMail = () => (navRequest.value = { section: 'mail' });
         <img :src="GW_LOGO[g.kind]" alt="" class="size-11 rounded-xl bg-white p-1 ring-1 ring-base-content/10" draggable="false" />
         <div class="min-w-0">
           <h2 class="text-lg font-semibold tracking-tight">{{ g.name }}</h2>
-          <div class="text-xs opacity-60">Not installed · {{ GW_CATEGORY_LABEL[g.category] }} · {{ g.docker ? 'Docker' : 'a single binary' }}</div>
+          <div class="text-xs opacity-60">Not installed · {{ GW_CATEGORY_LABEL[g.category] }} · {{ inDocatz ? 'runs in DoCatz' : g.docker ? 'Docker' : 'a single binary' }}</div>
         </div>
       </div>
     </header>
@@ -169,8 +187,9 @@ const openMail = () => (navRequest.value = { section: 'mail' });
         <p class="text-sm opacity-70">{{ g.description }}</p>
         <TaskStepper v-if="g.task && !form" :task="g.task" :cancellable="g.task.kind === 'install' && !g.task.done && !g.task.error" dismissable @cancel="H.gwCancelInstall(g.kind)" @dismiss="H.taskDismiss('gateway', g.kind)" />
         <button class="btn btn-primary" :disabled="!!g.task && !g.task.done && !g.task.error" @click="form = { service: g, mode: 'install' }">
-          <span v-if="g.task && !g.task.done && !g.task.error" class="loading loading-spinner loading-xs" />Install {{ g.name }}…
+          <span v-if="g.task && !g.task.done && !g.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="inDocatz" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ inDocatz ? 'Install in DoCatz…' : `Install ${g.name}…` }}
         </button>
+        <p v-if="inDocatz" class="text-xs opacity-60">On Windows {{ g.name }} runs in DoCatz's container engine (WSL 2): DevCatz pulls its images there and starts it, and DoCatz shows its containers on its Gateways page.</p>
         <p class="text-xs opacity-60">
           <template v-if="g.category === 'email'">Everything it sends goes to the DevCatz mail catcher (Mail page), so real inboxes are never reached.</template>
           <template v-else-if="g.kind === 'jasmin'">Every SMS goes to the DevCatz SMS catcher, shown on this page; no operator account is needed.</template>
@@ -194,7 +213,7 @@ const openMail = () => (navRequest.value = { section: 'mail' });
               <span v-if="updating(g)" class="loading loading-spinner loading-xs" />Update to {{ g.update }}
             </button>
           </h2>
-          <div class="text-xs opacity-60">{{ GW_CATEGORY_LABEL[g.category] }} · 127.0.0.1:{{ g.config.port }}{{ g.docker ? ' · Docker' : '' }}{{ g.config.autoStart ? ' · starts with DevCatz' : '' }}</div>
+          <div class="text-xs opacity-60">{{ GW_CATEGORY_LABEL[g.category] }} · 127.0.0.1:{{ g.config.port }}{{ inDocatz ? ' · in DoCatz' : g.docker ? ' · Docker' : '' }}{{ g.config.autoStart ? ' · starts with DevCatz' : '' }}</div>
         </div>
         <div class="flex shrink-0 flex-wrap items-center gap-2">
           <button v-if="!active(g)" class="btn btn-primary btn-sm" :disabled="!!busy" @click="act(g, 'start')"><span v-if="busy === 'start'" class="loading loading-spinner loading-xs" />Start</button>

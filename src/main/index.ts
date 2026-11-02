@@ -805,6 +805,7 @@ function api(): HerdApi {
     dialcatzCancelInstall: async () => herd.dialcatz.cancelInstall(),
     dialcatzDismiss: async () => herd.dialcatz.dismiss(),
     docatzOpen: (siteId, file) => herd.docatz.open(String(siteId), herd.composePath(String(siteId), typeof file === 'string' ? file : null)),
+    docatzOpenGateway: (kind) => herd.docatz.openGateway(String(kind)),
     docatzInstall: (siteId, file) => herd.docatz.install(String(siteId), herd.composePath(String(siteId), typeof file === 'string' ? file : null)),
     docatzCancelInstall: async () => herd.docatz.cancelInstall(),
     docatzDismiss: async () => herd.docatz.dismiss(),
@@ -1105,6 +1106,8 @@ async function quit(reason: string): Promise<void> {
 /**
  * devcatz:// links (DBCatz's "Open in DevCatz", scripts):
  *   devcatz://db/<service id>   the Database page at that service
+ *   devcatz://gateways/<kind>   a gateway (gowa, waha, postal, ntfy …); ?install=1 its install dialog,
+ *                               ?action=start|stop|restart runs that (DoCatz's Gateways page, Windows)
  *   devcatz://<section>          a rail section (database, storage, …)
  */
 function handleLink(raw: string): void {
@@ -1112,6 +1115,19 @@ function handleLink(raw: string): void {
     const u = new URL(raw);
     const id = u.pathname.replace(/^\/+/, '');
     if (u.hostname === 'db' && id) return showWindow(`db:${decodeURIComponent(id)}`);
+    // DoCatz's Gateways page: devcatz://gateways/<kind>[?install=1 | ?action=start|stop|restart].
+    if (u.hostname === 'gateways') {
+      const wa = herd.whatsapp.state().some((w) => w.engine === id);
+      const gw = herd.gateways.state().some((g) => g.kind === id);
+      if (!wa && !gw) return showWindow('whatsapp');
+      const action = u.searchParams.get('action');
+      if (action === 'start' || action === 'stop' || action === 'restart') {
+        const done = wa ? herd.whatsapp.action(id as WaEngine, action) : herd.gateways.action(id as GwKind, action);
+        void done.catch((e: Error) => console.warn(`devcatz://gateways/${id}?action=${action}:`, e.message));
+        return;
+      }
+      return showWindow(`gateways:${id}${u.searchParams.get('install') === '1' ? ':install' : ''}`);
+    }
     showWindow(u.hostname || undefined);
   } catch {
     showWindow();

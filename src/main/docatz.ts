@@ -113,6 +113,18 @@ export class DoCatz {
     return true;
   }
 
+  /**
+   * DoCatz's Gateways page at one of DevCatz's gateways (`docatz://gateways?kind=<kind>`; on Windows the Docker ones run
+   * there); false when DoCatz is not installed.
+   */
+  async openGateway(kind: string): Promise<boolean> {
+    if (!/^[a-z]{2,20}$/.test(kind)) throw new Error('Invalid gateway');
+    const path = await this.locate();
+    if (!path) return false;
+    await openCatzoidApp(path, `docatz://gateways?${new URLSearchParams({ kind })}`);
+    return true;
+  }
+
   /** Downloads the latest DoCatz release, installs it and opens the link there. */
   async install(siteId: string, composePath?: string | null): Promise<void> {
     if (this.task && !this.task.done && !this.task.error) return;

@@ -61,6 +61,39 @@ let cli: { bin: string; compose: string[] } = { bin: 'docker', compose: ['compos
 export const dockerBin = () => cli.bin;
 /** The compose command of that CLI: e.g. ['docker', 'compose']. */
 export const dockerCompose = (): string[] => [cli.bin, ...cli.compose];
+/**
+ * The docker command of DevCatz's Docker gateways (Postal, ntfy, Gotify, Jasmin, Telegram Bot API, WAHA). On Windows
+ * they always run in DoCatz (`docker --context docatz`, its engine in WSL 2; DoCatz lists them on its Gateways page),
+ * whatever engine the Docker tab uses; elsewhere on the engine compose runs on.
+ */
+export const gatewayDocker = (): string[] => (isWin ? ['docker', '--context', 'docatz'] : [cli.bin, ...cli.compose.slice(0, -1)]);
+export const gatewayCompose = (): string[] => [...gatewayDocker(), 'compose'];
+
+/**
+ * The gateways' engine answers, or why not in plain words. Windows: DoCatz's engine; a DoCatz that is installed but
+ * not running is opened (it starts its engine) and waited for. `report` gets what is happening meanwhile.
+ */
+export async function gatewayEngineReady(report: (detail: string) => void = () => undefined): Promise<void> {
+  if (!isWin) {
+    const ds = await dockerStatus();
+    if (!ds.daemon) throw new Error(ds.error ?? 'No container engine is running');
+    return;
+  }
+  const up = async () => (await run('docker', ['--context', 'docatz', 'info', '--format', '{{.ServerVersion}}'], { timeout: 10_000 })).code === 0;
+  if (await up()) return;
+  const def = ENGINES.find((e) => e.id === 'docatz')!;
+  const context = (await onPath('docker')) && (await run('docker', ['context', 'inspect', 'docatz'], { timeout: 5000 })).code === 0;
+  if (!engineAppInstalled(def) && !context) throw new Error(`On Windows the Docker gateways run in DoCatz, which is not installed. Install DoCatz (${def.download}), then Install in DoCatz again`);
+  if (!engineAppInstalled(def)) throw new Error("DoCatz's engine is not running: start it in DoCatz (Engine), then try again");
+  report('Opening DoCatz and waiting for its engine');
+  await startEngine('docatz');
+  for (const end = Date.now() + 180_000; Date.now() < end; ) {
+    await new Promise((r) => setTimeout(r, 3000));
+    if (await up()) return;
+  }
+  throw new Error("DoCatz's engine did not start in 3 minutes: start it in DoCatz (Engine), then try again");
+}
+
 /** The CLI's full path on Windows (a docker.exe inside a project folder never runs: compose runs with cwd there). */
 const bin = () => exePath(cli.bin, getShellEnv());
 /** Compose runs on DoCatz: containers get `https://<service>.<project>.docatz.<tld>` (built by Herd: tld, port). */

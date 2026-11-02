@@ -7,7 +7,7 @@ import { request as httpsRequest } from 'node:https';
 import { basename, extname, join } from 'node:path';
 import type { ProcessStatus, ProjectConfig, StorageAction, TaskProgress, WaConfig, WaContact, WaDelivery, WaEngine, WaHook, WaMessage, WaSendInput, WaSendResult, WaSession, WaState } from '@shared/types';
 import { readEnvFiles } from './detect';
-import { dockerBin, dockerStatus } from './docker';
+import { gatewayDocker, gatewayEngineReady } from './docker';
 import { getShellEnv, run } from './env';
 import { ProcessManager } from './processes';
 import type { Route } from './proxy';
@@ -15,7 +15,7 @@ import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './sto
 import { dataDir, store, tld } from './store';
 import { githubLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { exe, isWin } from './platform';
-import { words } from '@shared/platform';
+import { firewallWords, forwardFromWsl, wslReaches } from './wslhost';
 
 /**
  * WhatsApp gateways for local development: GOWA (go-whatsapp-web-multidevice,
@@ -322,11 +322,10 @@ export class WaManager {
 
   /** WAHA: `docker pull` of a tag, with the layer lines as progress. */
   private async pullWaha(tag: string, report: Report, signal: AbortSignal): Promise<void> {
-    const ds = await dockerStatus();
-    if (!ds.daemon) throw new Error(ds.error ?? `No container engine is running (${words.dockerEngines})`);
+    await gatewayEngineReady((detail) => report({ detail }));
     report({ step: 1, detail: `${WAHA_IMAGE}:${wahaTag(tag)}` });
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(dockerBin(), ['pull', `${WAHA_IMAGE}:${wahaTag(tag)}`], { env: getShellEnv() as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn(gatewayDocker()[0], [...gatewayDocker().slice(1), 'pull', `${WAHA_IMAGE}:${wahaTag(tag)}`], { env: getShellEnv() as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'] });
       let last = '';
       const feed = (d: Buffer) => {
         const line = d.toString().trim().split('\n').pop() ?? '';
@@ -410,7 +409,7 @@ export class WaManager {
     try {
       await this.stop(engine);
       t.report({ step: 1 });
-      if (engine === 'waha') await run(dockerBin(), ['rmi', `${WAHA_IMAGE}:${wahaTag(c.version)}`], { timeout: 60_000 });
+      if (engine === 'waha') await run(gatewayDocker()[0], [...gatewayDocker().slice(1), 'rmi', `${WAHA_IMAGE}:${wahaTag(c.version)}`], { timeout: 60_000 });
       else rmSync(join(this.dir, engine), { recursive: true, force: true });
       if (deleteData) {
         t.report({ step: 2, detail: c.dataDir });
@@ -478,7 +477,7 @@ export class WaManager {
         t.report({ step: head.length + 1 });
         const old = c.version;
         this.save({ configs: { ...this.stored().configs, waha: { ...c, version: v } } });
-        if (old !== v) await run(dockerBin(), ['rmi', `${WAHA_IMAGE}:${wahaTag(old)}`], { timeout: 60_000 });
+        if (old !== v) await run(gatewayDocker()[0], [...gatewayDocker().slice(1), 'rmi', `${WAHA_IMAGE}:${wahaTag(old)}`], { timeout: 60_000 });
         if (wasActive) {
           t.report({ step: head.length + 3 });
           await this.start(engine);
@@ -521,13 +520,17 @@ export class WaManager {
       ];
       this.processes.startMany(waId(engine), [{ label: '', cwd: c.dataDir, command: `${q(bin)} ${args.map(q).join(' ')}`, env: {} }]);
     } else {
-      const ds = await dockerStatus();
-      if (!ds.daemon) {
-        this.errors.set(engine, ds.error ?? 'No container engine is running');
+      try {
+        await gatewayEngineReady();
+      } catch (e) {
+        this.errors.set(engine, (e as Error).message);
         this.h.changed();
-        throw new Error(this.errors.get(engine));
+        throw e;
       }
-      await run(dockerBin(), ['rm', '-f', 'devcatz-waha'], { timeout: 20_000 });
+      await run(gatewayDocker()[0], [...gatewayDocker().slice(1), 'rm', '-f', 'devcatz-waha'], { timeout: 20_000 });
+      // Windows: WAHA's webhooks come from WSL's network (wslhost.ts).
+      await forwardFromWsl(this.receiverPort);
+      if ((await wslReaches(this.receiverPort)) === false) this.errors.set(engine, firewallWords('webhook receiver', this.receiverPort));
       const sessions = join(c.dataDir, 'sessions');
       const media = join(c.dataDir, 'media');
       mkdirSync(sessions, { recursive: true });
@@ -547,7 +550,7 @@ export class WaManager {
         WAHA_PRINT_QR: 'False',
       };
       const args = ['run', '--rm', '--name', 'devcatz-waha', '-p', `127.0.0.1:${c.port}:3000`, '--add-host=host.docker.internal:host-gateway', '-v', `${sessions}:/app/.sessions`, '-v', `${media}:/app/.media`, ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), `${WAHA_IMAGE}:${wahaTag(c.version)}`];
-      this.processes.startMany(waId(engine), [{ label: '', cwd: c.dataDir, command: `${q(dockerBin())} ${args.map(q).join(' ')}`, env: {} }]);
+      this.processes.startMany(waId(engine), [{ label: '', cwd: c.dataDir, command: [...gatewayDocker(), ...args].map(q).join(' '), env: {} }]);
     }
     this.h.changed();
     // Mark running once the API answers (up to 60 s: WAHA's image boots slowly the first time).
@@ -563,7 +566,7 @@ export class WaManager {
 
   async stop(engine: WaEngine): Promise<void> {
     await this.processes.stop(waId(engine));
-    if (engine === 'waha') await run(dockerBin(), ['rm', '-f', 'devcatz-waha'], { timeout: 20_000 }).catch(() => undefined);
+    if (engine === 'waha') await run(gatewayDocker()[0], [...gatewayDocker().slice(1), 'rm', '-f', 'devcatz-waha'], { timeout: 20_000 }).catch(() => undefined);
     this.sessions.delete(engine);
     this.h.changed();
   }

@@ -2683,6 +2683,8 @@ export interface HerdApi {
   dialcatzDismiss(): Promise<void>;
   /** Opens DoCatz at a site's compose file (docatz://compose?path=…) or its containers; false when DoCatz is not installed. */
   docatzOpen(siteId: string, file?: string | null): Promise<boolean>;
+  /** DoCatz's Gateways page at a gateway (Windows: the Docker gateways run in DoCatz); false = DoCatz not installed. */
+  docatzOpenGateway(kind: string): Promise<boolean>;
   /** Downloads the latest DoCatz release, installs it and opens the same link; progress in state.docatz.task. */
   docatzInstall(siteId: string, file?: string | null): Promise<void>;
   docatzCancelInstall(): Promise<void>;
@@ -3219,7 +3221,8 @@ export interface HerdApi {
 
 export const API_METHODS: (keyof HerdApi)[] = [
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
-  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
+  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
+  'docatzOpenGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',
   'installDeps', 'depCommands', 'depRun', 'nodeRemote', 'nodeInstall', 'nodeUninstall', 'nodeSetDefault', 'shimPathSet',
