@@ -1,6 +1,6 @@
 import { shell } from 'electron';
 import { spawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { InstalledRust, RemoteRust, RuntimeInstallProgress, RustToolId, RustToolState } from '@shared/types';
@@ -364,6 +364,26 @@ async function ensureBinstall(detail: (line: string) => void): Promise<string> {
 export const SOLANA_WIN = 'Solana and Anchor run on Windows inside WSL (Windows Subsystem for Linux), as their docs say; DevCatz installs them on macOS';
 
 /** Solana's installer (agave-install-init, checksum from the GitHub release), which fetches the stable release. */
+const solanaInstallDir = () => join(homedir(), '.local', 'share', 'solana', 'install');
+async function activeSolana(): Promise<string | null> {
+  const solana = toolPath('solana');
+  return solana ? ((await run(solana, ['--version'], { timeout: 15_000, env: rustEnv() })).stdout.match(/\d+\.\d+\.\d+/)?.[0] ?? null) : null;
+}
+/** Points Agave's install at an unpacked release: explicit_release in config.yml, and the active_release link. */
+function activateSolana(version: string): boolean {
+  const release = join(solanaInstallDir(), 'releases', version, 'solana-release');
+  if (!existsSync(join(release, 'bin'))) return false;
+  const config = join(homedir(), '.config', 'solana', 'install', 'config.yml');
+  if (existsSync(config)) {
+    const text = readFileSync(config, 'utf8');
+    if (/^explicit_release:/m.test(text)) writeFileSync(config, text.replace(/^explicit_release:.*$/m, `explicit_release: !Semver ${version}`));
+  }
+  const active = join(solanaInstallDir(), 'active_release');
+  rmSync(active, { force: true, recursive: false });
+  symlinkSync(release, active);
+  return true;
+}
+
 async function installSolana(detail: (line: string) => void): Promise<void> {
   const rel = await latestRelease('anza-xyz/agave');
   if (isWin) throw new Error(SOLANA_WIN);
@@ -384,8 +404,10 @@ async function installSolana(detail: (line: string) => void): Promise<void> {
     const version = rel.tag.replace(/^v/, '');
     const code = await streamLines(init, ['--no-modify-path', version], detail);
     if (code !== 0) throw new Error(`The Solana installer failed (exit ${code})`);
-    const solana = toolPath('solana');
-    const active = solana ? (await run(solana, ['--version'], { timeout: 15_000, env: rustEnv() })).stdout.match(/\d+\.\d+\.\d+/)?.[0] : null;
+    // Seen twice on a Mac pinned to 4.1.2: the installer unpacked 4.4.0 but pointed active_release back at the pinned
+    // release. Then DevCatz finishes it as the installer would: the pin (config.yml) and the link to the new release.
+    if ((await activeSolana()) !== version && activateSolana(version)) detail(`Switched the active Solana release to ${version}`);
+    const active = await activeSolana();
     if (active !== version) throw new Error(`The Solana installer finished, but the active release is ${active ?? 'missing'}, not ${version}`);
   } finally {
     removeTemp(tmp);
