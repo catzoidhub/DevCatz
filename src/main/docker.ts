@@ -1417,15 +1417,18 @@ async function envOverride(root: string, file: string, project: string | null): 
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const envFiles: string[] = [];
   const notes: string[] = [...copyNote];
+  if (docatz) {
+    envFiles.push(docatz);
+    notes.push(`DoCatz .env of this project: ${docatz}`);
+    // A DoCatz .env can carry the same local hosts (copied from .env as they were): pointed too, and last, so they
+    // win — only 127.0.0.1 / localhost hosts change, everything else set in DoCatz stays as it is.
+    local = loopbackToHost({ ...readEnvFiles(join(root, '.env')), ...readEnvFiles(docatz) });
+  }
   if (Object.keys(local).length) {
     const f = join(dir, `${name}.local-hosts.env`);
     writeFileSync(f, `# Written by DevCatz before each run here: .env hosts on this computer, as containers reach them.\n${Object.entries(local).map(([k, v]) => `${k}=${v}`).join('\n')}\n`, { mode: 0o600 });
     envFiles.push(f);
-    notes.push(`Containers reach this computer's ${Object.keys(local).join(', ')} through host.docker.internal (for this test only; .env is unchanged)`);
-  }
-  if (docatz) {
-    envFiles.push(docatz);
-    notes.push(`DoCatz .env of this project: ${docatz}`);
+    notes.push(`Containers reach this computer's ${Object.keys(local).join(', ')} through host.docker.internal (for this test only; .env${docatz ? ' and the DoCatz .env stay' : ' stays'} unchanged)`);
   }
   const override = join(dir, `${name}.env-override.yaml`);
   writeFileSync(override, `# Written by DevCatz before each run.\nservices:\n${services.map((s) => `  ${JSON.stringify(s)}:\n    env_file:\n${envFiles.map((f) => `      - ${JSON.stringify(f)}`).join('\n')}`).join('\n')}\n`, { mode: 0o600 });
