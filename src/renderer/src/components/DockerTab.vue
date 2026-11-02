@@ -16,7 +16,7 @@ const aiDockerOn = aiOn('docker');
 
 /** `desktop`: an Electron / Tauri app — it ships as an installer, so only its development services run here (no deploy files). */
 const props = defineProps<{ project: ProjectState; desktop?: boolean; /** Build ▾ at the top asked for this (it runs here, with its progress). */ request?: { file: string; action: 'up' | 'down'; n: number } | null }>();
-const emit = defineEmits<{ logs: []; git: []; busy: [on: boolean]; handled: [] }>();
+const emit = defineEmits<{ logs: []; git: []; handled: [] }>();
 
 const status = ref<DockerStatus | null>(null);
 const files = ref<DockerComposeFile[]>([]);
@@ -25,6 +25,11 @@ const services = ref<DockerService[]>([]);
 const busy = ref<string | null>(null);
 
 const ready = computed(() => Boolean(status.value?.daemon));
+/**
+ * What runs, as the main process knows it (project.dockerRun): also a run started before this tab was opened again
+ * or from Build ▾, so the buttons stay off until it ends. `busy` covers the moment before that state arrives.
+ */
+const busyKey = computed(() => busy.value ?? (props.project.dockerRun ? `${props.project.dockerRun.action}:${props.project.dockerRun.service ?? ''}` : null));
 
 /** Same order as the main process: most recommended first. */
 // Windows: OrbStack, Colima and Finch are macOS-only.
@@ -125,6 +130,7 @@ async function cancelRun() {
 
 async function compose(action: DockerAction, service?: string) {
   if (!file.value) return;
+  if (action !== 'logs' && busyKey.value) return notify('info', 'Docker Compose is still running for this site: wait for it, or Cancel it');
   busy.value = `${action}:${service ?? ''}`;
   if (action === 'logs') emit('logs');
   else {
@@ -149,7 +155,29 @@ async function compose(action: DockerAction, service?: string) {
   void loadDocatzEnv();
 }
 onBeforeUnmount(() => clearInterval(tick));
-watch(busy, (b) => emit('busy', !!b));
+// A run this tab did not start (opened again while it builds): its progress panel, until the main process says it ended.
+watch(
+  () => props.project.dockerRun?.at ?? 0,
+  async (at) => {
+    const r = props.project.dockerRun;
+    if (r && !run.value) {
+      file.value = r.file;
+      await loadLogs(props.project.id).catch(() => undefined);
+      const all = logs.get(props.project.id) ?? [];
+      const from = all.findIndex((l) => l.time >= r.at - 1000);
+      run.value = { action: r.action, from: from < 0 ? all.length : from, at: r.at };
+      clearInterval(tick);
+      now.value = Date.now();
+      tick = setInterval(() => (now.value = Date.now()), 1000);
+    } else if (!at && run.value && !busy.value) {
+      clearInterval(tick);
+      run.value = null;
+      cancelling.value = false;
+      await refresh();
+    }
+  },
+  { immediate: true },
+);
 // A request from Build ▾: select its file, wait until the engine is known, then run it like the buttons here.
 watch(
   () => props.request?.n,
@@ -522,18 +550,18 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="flex flex-1 items-center gap-2 font-semibold"><span class="step-num">{{ desktop ? 2 : 3 }}</span>{{ desktop ? 'Containers' : 'Test in containers' }}</h2>
           <DoCatzButton v-if="file && files.length" :site-id="project.id" :file="file" :disabled-reason="notOnDocatz" />
-          <select v-if="files.length" v-model="file" class="select select-sm w-auto">
+          <select v-if="files.length" v-model="file" class="select select-sm w-auto" :disabled="!!busyKey && !!run">
             <option v-for="f in files" :key="f.file" :value="f.file">{{ f.file }}{{ f.coversAll ? ' · every app' : f.covers.length ? ` · ${f.covers.join(', ')}` : '' }}{{ f.generated ? ' (generated)' : f.build ? '' : ' (no app build)' }}</option>
           </select>
         </div>
         <p v-if="!files.length" class="text-xs opacity-60">{{ desktop ? 'Create the development services below first.' : 'Generate the Docker files first (step 2), or add your own docker-compose.yml.' }}</p>
         <div v-if="files.length" class="flex flex-wrap gap-1.5">
-          <button class="btn btn-primary btn-sm" :disabled="!ready || !!busy" @click="compose('up')">
-            <span v-if="busy === 'up:'" class="loading loading-spinner loading-xs" />{{ current?.build ? 'Build & Up' : 'Up' }}
+          <button class="btn btn-primary btn-sm" :disabled="!ready || !!busyKey" @click="compose('up')">
+            <span v-if="busyKey === 'up:'" class="loading loading-spinner loading-xs" />{{ current?.build ? 'Build & Up' : 'Up' }}
           </button>
-          <button class="btn btn-sm" :disabled="!ready || !!busy" @click="compose('down')"><span v-if="busy === 'down:'" class="loading loading-spinner loading-xs" />Down</button>
-          <button class="btn btn-sm" :disabled="!ready || !!busy || !services.length" @click="compose('restart')">Restart</button>
-          <button class="btn btn-sm" :disabled="!ready || !!busy" @click="compose('build')"><span v-if="busy === 'build:'" class="loading loading-spinner loading-xs" />Build only</button>
+          <button class="btn btn-sm" :disabled="!ready || !!busyKey" @click="compose('down')"><span v-if="busyKey === 'down:'" class="loading loading-spinner loading-xs" />Down</button>
+          <button class="btn btn-sm" :disabled="!ready || !!busyKey || !services.length" @click="compose('restart')">Restart</button>
+          <button class="btn btn-sm" :disabled="!ready || !!busyKey" @click="compose('build')"><span v-if="busyKey === 'build:'" class="loading loading-spinner loading-xs" />Build only</button>
           <button class="btn btn-sm btn-ghost" :disabled="!ready || !services.length" @click="compose('logs')">Logs</button>
         </div>
         <!-- On DoCatz: the environment its containers get — DoCatz's .env of the project (kept unless replaced, asked). -->
@@ -588,7 +616,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
                   <div v-if="s.published.length" class="text-xs opacity-50">ports {{ s.published.join(', ') }}</div>
                 </td>
                 <td class="whitespace-nowrap text-right">
-                  <button class="btn btn-ghost btn-xs" :disabled="!!busy" @click="compose('restart', s.service)">Restart</button>
+                  <button class="btn btn-ghost btn-xs" :disabled="!!busyKey" @click="compose('restart', s.service)">Restart</button>
                   <button class="btn btn-ghost btn-xs" @click="compose('logs', s.service)">Logs</button>
                 </td>
               </tr>

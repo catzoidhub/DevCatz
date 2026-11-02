@@ -17,6 +17,8 @@ export interface MenuItem {
   separator?: boolean;
   /** A small heading above this item that names the group it starts (e.g. "Build", "Docker Compose"). */
   group?: string;
+  /** Shown greyed out, not clickable (e.g. while that action already runs). */
+  disabled?: boolean;
   action: () => void;
 }
 
@@ -62,6 +64,7 @@ function close() {
 }
 
 function run(item: MenuItem) {
+  if (item.disabled) return;
   close();
   item.action();
 }
@@ -86,7 +89,7 @@ defineExpose({ toggle });
       <template v-for="item in items" :key="item.label">
       <li v-if="item.group" class="menu-title px-3 pt-2 pb-0.5 text-[11px] font-semibold tracking-wide uppercase opacity-50" :class="{ 'mt-1 border-t border-base-300/60': item.separator }">{{ item.group }}</li>
       <li :class="{ 'mt-1 border-t border-base-300/60 pt-1': item.separator && !item.group }">
-        <a role="menuitem" class="items-start gap-2.5" @click="run(item)">
+        <a role="menuitem" class="items-start gap-2.5" :class="{ 'pointer-events-none opacity-40': item.disabled }" :aria-disabled="item.disabled" @click="run(item)">
           <span v-if="item.checked !== undefined" class="w-3 shrink-0 text-center text-xs" :class="item.checked ? 'opacity-100' : 'opacity-0'">✓</span>
           <svg v-if="item.icon" class="mt-0.5 size-4 shrink-0 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="item.icon" /></svg>
           <span class="min-w-0">

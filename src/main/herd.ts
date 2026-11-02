@@ -4289,6 +4289,7 @@ export class Herd extends EventEmitter {
 
   /** Running compose commands per site, to cancel (Docker tab). */
   private dockerRuns = new Map<string, AbortController>();
+  private dockerRunInfo = new Map<string, { file: string; action: DockerAction; service: string | null; at: number }>();
   dockerCancel(id: string): void {
     this.dockerRuns.get(id)?.abort();
   }
@@ -4310,6 +4311,21 @@ export class Herd extends EventEmitter {
   }
 
   async dockerCompose(id: string, file: string, action: DockerAction, service?: string): Promise<void> {
+    if (action === 'logs') return this.dockerComposeRun(id, file, action, service);
+    // One at a time per site: a second Build & Up while one builds would race it.
+    const running = this.dockerRunInfo.get(id);
+    if (running) throw new Error(`Busy: docker compose ${running.action} (${running.file}) is still running`);
+    this.dockerRunInfo.set(id, { file, action, service: service ?? null, at: Date.now() });
+    this.changed();
+    try {
+      await this.dockerComposeRun(id, file, action, service);
+    } finally {
+      this.dockerRunInfo.delete(id);
+      this.changed();
+    }
+  }
+
+  private async dockerComposeRun(id: string, file: string, action: DockerAction, service?: string): Promise<void> {
     const { p, project } = this.composeTarget(id, file);
     // The engine to use (DoCatz while it runs …) is decided by the status check: also from the header's Docker menu.
     if (!(await docker.dockerStatus()).daemon) throw new Error('No container engine is running: start one (Docker tab)');
@@ -4331,8 +4347,7 @@ export class Herd extends EventEmitter {
     // A worktree (feat-login.shop.localhost) runs beside its main site: its own container names, no fixed ports.
     const worktree = p.worktreeOf ? slugify(p.domain.split('.')[0]) : undefined;
     const abort = new AbortController();
-    this.dockerRuns.get(id)?.abort();
-    this.dockerRuns.set(id, abort);
+    if (action !== 'logs') this.dockerRuns.set(id, abort);
     const signal = abort.signal;
     let code = await docker.compose(p.path, file, project, cmd, log, { worktree, signal });
     // A production file (Dokploy's dokploy-network …) joins networks of its server: made here, empty and local, then once more.
@@ -4798,6 +4813,7 @@ export class Herd extends EventEmitter {
       openPorts: this.openPorts.get(p.id) ?? [],
       dbStatus: this.dbStates.get(p.id) ?? (this.stacks.get(p.id)?.database ? 'unknown' : 'none'),
       dbTask: this.dbTasks.get(p.id) ?? null,
+      dockerRun: this.dockerRunInfo.get(p.id) ?? null,
       redisStatus: this.redisStates.get(p.id) ?? (this.stacks.get(p.id)?.redis ? 'unknown' : 'none'),
       screenshotAt: screenshotTime(p.id),
       capturing: this.capturing.has(p.id),

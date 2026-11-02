@@ -246,7 +246,8 @@ const buildItems = computed<MenuItem[]>(() =>
 const composeFiles = ref<DockerComposeFile[]>([]);
 const loadCompose = async () => (composeFiles.value = (await herd.dockerFiles(p.value.id).catch(() => [])) ?? []);
 watch(() => `${p.value.id}|${tab.value}`, () => void loadCompose(), { immediate: true });
-const dockerBusy = ref(false);
+/** A compose command of the site runs (main process): Build ▾ spins and its Docker items wait. */
+const dockerBusy = computed(() => !!p.value.dockerRun);
 /** Build ▾ → Docker Compose: run in the Docker tab (its step 3 shows the progress), the request handed over there. */
 const dockerRequest = ref<{ file: string; action: 'up' | 'down'; n: number } | null>(null);
 function dockerAction(file: string, action: 'up' | 'down') {
@@ -256,8 +257,8 @@ function dockerAction(file: string, action: 'up' | 'down') {
 // Only when the site has a compose file: no Docker group (and no Build ▾ just for it) otherwise.
 const dockerItems = computed<MenuItem[]>(() => !composeFiles.value.length ? [] : [
   ...composeFiles.value.flatMap((f, i): MenuItem[] => [
-    { label: `${f.build ? 'Build & Up' : 'Up'} · ${f.file}`, hint: f.build ? 'build the images, then (re)create and start the containers' : 'start the containers', separator: i > 0, action: () => void dockerAction(f.file, 'up') },
-    { label: `Down · ${f.file}`, hint: 'stop and remove its containers (volumes stay)', action: () => void dockerAction(f.file, 'down') },
+    { label: `${f.build ? 'Build & Up' : 'Up'} · ${f.file}`, hint: f.build ? 'build the images, then (re)create and start the containers' : 'start the containers', separator: i > 0, disabled: dockerBusy.value, action: () => void dockerAction(f.file, 'up') },
+    { label: `Down · ${f.file}`, hint: 'stop and remove its containers (volumes stay)', disabled: dockerBusy.value, action: () => void dockerAction(f.file, 'down') },
   ]),
   {
     label: 'Docker tab',
@@ -858,7 +859,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
 
   <!-- Docker -->
   <section v-else-if="tab === 'docker'" class="site-tab">
-    <DockerTab :key="p.id" :project="p" :desktop="desktopApp" :request="dockerRequest" @logs="tab = 'logs'" @git="tab = 'git'" @busy="(b) => (dockerBusy = b)" @handled="dockerRequest = null" />
+    <DockerTab :key="p.id" :project="p" :desktop="desktopApp" :request="dockerRequest" @logs="tab = 'logs'" @git="tab = 'git'" @handled="dockerRequest = null" />
   </section>
 
   <!-- Database -->
