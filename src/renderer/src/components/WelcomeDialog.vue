@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import TaskStepper from './TaskStepper.vue';
 import { confirmCleanUrls, confirmResolver, confirmTrustCa } from '../confirms';
-import { computed, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import CatMood from './CatMood.vue';
 import { attempt, herd, state } from '../store';
 import { isWin } from '../platform';
@@ -40,6 +40,42 @@ async function securityDoc() {
   const info = await attempt(() => herd.aboutInfo());
   if (info?.site) await herd.openUrl(`${info.site}/docs/security`);
 }
+/**
+ * The setup cards scroll inside the dialog, so it fits a small window (on Windows the first run opens a normal-size
+ * window, and three cards with their steps are taller than it). A soft fade marks more above / below.
+ */
+const list = ref<HTMLElement | null>(null);
+const fadeTop = ref(false);
+const fadeBottom = ref(false);
+function edges() {
+  const el = list.value;
+  if (!el) return;
+  fadeTop.value = el.scrollTop > 2;
+  fadeBottom.value = el.scrollTop + el.clientHeight < el.scrollHeight - 2;
+}
+let ro: ResizeObserver | null = null;
+watch(list, (el) => {
+  ro?.disconnect();
+  if (!el) return;
+  ro = new ResizeObserver(edges);
+  ro.observe(el);
+  for (const c of Array.from(el.children)) ro.observe(c);
+  // Opens at the first card (the dialog's focus on a later button must not scroll the list down).
+  void nextTick(() => {
+    el.scrollTop = 0;
+    edges();
+  });
+});
+// A step list appearing under a card makes it taller.
+watch(() => s.value?.setup, () => void nextTick(edges), { deep: true });
+onBeforeUnmount(() => ro?.disconnect());
+const fade = computed(() => {
+  const top = fadeTop.value ? 'transparent, black 1.25rem' : 'black';
+  const bottom = fadeBottom.value ? 'black calc(100% - 1.25rem), transparent' : 'black';
+  const m = `linear-gradient(to bottom, ${top}, ${bottom})`;
+  return { maskImage: m, WebkitMaskImage: m };
+});
+
 async function done() {
   dismissed.value = true;
   await attempt(() => herd.updateSettings({ welcomeSeen: true }));
@@ -49,8 +85,8 @@ async function done() {
 <template>
   <Teleport to="body">
     <dialog v-if="open && s" open class="modal modal-open" @keydown.esc="done">
-      <div class="modal-box w-[38rem] max-w-[95vw] space-y-5">
-        <div class="flex items-start gap-3">
+      <div class="modal-box flex max-h-[calc(100vh-2.5rem)] w-[38rem] max-w-[95vw] flex-col gap-5 overflow-hidden">
+        <div class="flex shrink-0 items-start gap-3">
           <CatMood mood="success" class="size-11 shrink-0" />
           <div>
             <h3 class="text-lg font-semibold tracking-tight">Welcome to DevCatz</h3>
@@ -61,7 +97,7 @@ async function done() {
           </div>
         </div>
 
-        <div class="space-y-1">
+        <div class="shrink-0 space-y-1">
           <p class="label-caps">{{ count }} things {{ isWin ? 'ask you to confirm' : 'ask for your password' }} — only if you choose them</p>
           <p class="text-xs opacity-60">
             Nothing is installed now. Each button says what it does first; {{ s.domain.needsResolver ? 'all' : 'both' }} can be undone in Settings
@@ -69,7 +105,7 @@ async function done() {
           </p>
         </div>
 
-        <div class="space-y-3">
+        <div ref="list" class="-mx-1 min-h-0 flex-1 space-y-3 overflow-y-auto px-1 [scrollbar-width:thin]" :style="fade" @scroll.passive="edges">
           <div class="rounded-xl border border-base-300/70 bg-base-200/40 p-4">
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0">
@@ -133,15 +169,15 @@ async function done() {
           </div>
         </div>
 
-        <p class="text-xs opacity-60">
+        <p class="shrink-0 text-xs opacity-60">
           <template v-if="isWin">
             No changes to the <span class="font-mono">hosts</span> file, no drivers, nothing at sign-in unless you turn it on.
           </template>
           <template v-else>No changes to <span class="font-mono">/etc/hosts</span>, no kernel extensions, nothing at login unless you turn it on.</template>
-          <a class="link" @click="securityDoc">What DevCatz changes on your {{ isWin ? 'PC' : 'Mac' }}</a>
+          {{ ' ' }}<a class="link" @click="securityDoc">What DevCatz changes on your {{ isWin ? 'PC' : 'Mac' }}</a>
         </p>
 
-        <div class="modal-action mt-0">
+        <div class="modal-action mt-0 shrink-0">
           <button class="btn btn-ghost btn-sm" @click="done">Maybe later</button>
           <button class="btn btn-primary btn-sm" @click="done">Get started</button>
         </div>

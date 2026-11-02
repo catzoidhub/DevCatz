@@ -76,28 +76,10 @@ const s3Status = computed(() => {
   const s = state.value?.storage.find((x) => x.kind === (p.value.s3.service ?? p.value.storageService));
   return s?.installed && p.value.s3.service ? s.status : 'stopped';
 });
-/**
- * Docker files of a desktop app (Electron / Tauri). It ships as an installer, not a container, so its Docker tab only
- * shows when the project already has compose files (its own, a database for development say, or generated earlier).
- */
-const desktopDocker = ref(false);
-/** Opened from the desktop card ("Services with Docker Compose…") before any compose file exists. */
-const desktopDockerAsked = ref(false);
+/** Desktop card → Docker tab (development services for an Electron / Tauri app). */
 function openDocker() {
-  desktopDockerAsked.value = true;
-  void nextTick(() => (tab.value = 'docker'));
+  tab.value = 'docker';
 }
-// A string, not an array: a new array every state update would re-run this (and hide the tab again).
-watch(
-  () => `${p.value.id}|${isDesktopSite(p.value)}`,
-  async (key) => {
-    const [id, desktop] = [key.slice(0, key.lastIndexOf('|')), key.endsWith('|true')];
-    desktopDocker.value = false;
-    desktopDockerAsked.value = false;
-    if (desktop) desktopDocker.value = (await herd.dockerFiles(id).catch(() => [])).length > 0 && p.value.id === id;
-  },
-  { immediate: true },
-);
 const allTabs = computed<Tab[]>(() => [
   'overview',
   'env',
@@ -109,7 +91,7 @@ const allTabs = computed<Tab[]>(() => [
   'git',
   ...(p.value.mailInfo ? (['mail'] as Tab[]) : []),
   ...(p.value.waInfo || p.value.gwInfo ? (['whatsapp'] as Tab[]) : []),
-  ...(!isDesktopSite(p.value) || desktopDocker.value || desktopDockerAsked.value ? (['docker'] as Tab[]) : []),
+  'docker',
   'logs',
   'settings',
 ]);
@@ -630,7 +612,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
           <p class="text-xs opacity-70">
             <template v-if="p.composeWithApp">Its services in <code>{{ p.composeWithApp }}</code> start and stop with it.</template>
             <template v-else>A database or Redis for it: from DevCatz (Database tab), or in Docker.</template>
-            {{ ' ' }}<a class="link link-primary" @click="openDocker">{{ p.composeWithApp || desktopDocker ? 'Docker tab' : 'Services with Docker Compose…' }}</a>
+            {{ ' ' }}<a class="link link-primary" @click="openDocker">{{ p.composeWithApp ? 'Docker tab' : 'Services with Docker Compose…' }}</a>
           </p>
         </div>
       </div>
@@ -834,7 +816,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
 
   <!-- Docker -->
   <section v-else-if="tab === 'docker'" class="site-tab">
-    <DockerTab :key="p.id" :project="p" :desktop="desktopApp" @logs="tab = 'logs'" @files="(n) => desktopApp && (desktopDocker = n > 0)" />
+    <DockerTab :key="p.id" :project="p" :desktop="desktopApp" @logs="tab = 'logs'" />
   </section>
 
   <!-- Database -->

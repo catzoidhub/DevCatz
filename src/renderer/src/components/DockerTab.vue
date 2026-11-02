@@ -15,7 +15,7 @@ const aiDockerOn = aiOn('docker');
 
 /** `desktop`: an Electron / Tauri app — it ships as an installer, so only its development services run here (no deploy files). */
 const props = defineProps<{ project: ProjectState; desktop?: boolean }>();
-const emit = defineEmits<{ logs: []; files: [count: number] }>();
+const emit = defineEmits<{ logs: [] }>();
 
 const status = ref<DockerStatus | null>(null);
 const files = ref<DockerComposeFile[]>([]);
@@ -52,7 +52,6 @@ const existingSetup = computed(() => files.value.some((f) => f.build && !f.gener
 async function refresh() {
   status.value = await herd.dockerStatus().catch(() => null);
   files.value = await herd.dockerFiles(props.project.id).catch(() => []);
-  emit('files', files.value.length);
   if (!files.value.some((f) => f.file === file.value)) file.value = files.value.find((f) => f.build)?.file ?? files.value[0]?.file ?? '';
   services.value = ready.value && file.value ? await herd.dockerServices(props.project.id, file.value).catch(() => []) : [];
 }
