@@ -7,6 +7,7 @@ import devcatzLogo from '../assets/logos/devcatz.svg';
 import dbcatzLogo from '../assets/logos/dbcatz.png';
 import dialcatzLogo from '../assets/logos/dialcatz.png';
 import docatzLogo from '../assets/logos/docatz.png';
+import mcatzpLogo from '../assets/logos/mcatzp.svg';
 
 /**
  * Settings → About (Catzoid family #62; the app menu's About DevCatz opens it): the app, its slogan and version, the
@@ -45,6 +46,8 @@ const FAMILY: { name: string; logo: string; what: string }[] = [
   { name: 'DialCatz', logo: dialcatzLogo, what: 'API client' },
   { name: 'DoCatz', logo: docatzLogo, what: 'container manager' },
 ];
+/** Not one of the apps but the link between them, so it sits apart, under the four (<site>/mcatzp). */
+const MCATZP = { name: 'MCatzP', logo: mcatzpLogo, what: 'One MCP server for the whole family: your AI assistant works with every Catzoid app you have, only as far as you allow.' };
 
 const u = computed(() => state.value?.appUpdate ?? null);
 // as DBCatz and DialCatz: the dialog opens at once and shows the check (Looking… / up to date / the new version)
@@ -109,7 +112,7 @@ function copyDetails() {
           <button
             class="flex h-full w-full items-center gap-2.5 rounded-box border border-base-300/60 bg-base-200/40 px-3 py-2 text-left transition-colors hover:border-primary/50 hover:bg-base-200 disabled:cursor-default"
             :disabled="!info"
-            :title="info ? `${host}/${f.name.toLowerCase()}` : undefined"
+            :title="info ? `${info.site}/${f.name.toLowerCase()}` : undefined"
             @click="info && herd.openUrl(`${info.site}/${f.name.toLowerCase()}`)"
           >
             <img :src="f.logo" alt="" class="size-8 shrink-0" draggable="false" />
@@ -120,6 +123,23 @@ function copyDetails() {
           </button>
         </li>
       </ul>
+      <div class="flex items-center gap-3 pt-1">
+        <span class="label-caps shrink-0 opacity-60">Connects them all</span>
+        <span class="h-px flex-1 bg-base-300/60" />
+      </div>
+      <button
+        type="button"
+        class="flex w-full items-center gap-3 rounded-box border border-base-300/60 bg-base-200/40 px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-base-200 disabled:cursor-default"
+        :disabled="!info"
+        :title="info ? `${info.site}/mcatzp` : undefined"
+        @click="info && herd.openUrl(`${info.site}/mcatzp`)"
+      >
+        <img :src="MCATZP.logo" alt="" class="size-10 shrink-0" draggable="false" />
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium leading-tight">{{ MCATZP.name }}</span>
+          <span class="block text-[11px] leading-snug opacity-55">{{ MCATZP.what }}</span>
+        </span>
+      </button>
       <p class="text-xs opacity-55">Links follow the Catzoid site address shared by the Catzoid apps ({{ host || '…' }}).</p>
     </div>
   </div>

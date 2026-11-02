@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    MCatzP app icon — the family look, turned to MCP: "one door for your AI into the whole litter".
+    · the same rounded tile and MrCatz (eyes are the code brackets "< >") as DevCatz, DBCatz, DialCatz and DoCatz
+    · the cat sits on a HUB: a dark switchboard puck with four lit ports, one per cat (indigo DevCatz, amber DBCatz,
+      teal DialCatz, sky DoCatz) — the cat is the thing every assistant plugs into
+    · an MCP plug comes in from the left on a cable and docks into the hub, its tip glowing: the connection being made
+    · the tile is raspberry → pink: a warm colour of its own, so it is clearly a sibling and not the indigo parent, and
+      distinct from every other cat (indigo, amber, teal, sky)
+    Palette: raspberry #C2255C → #FF8DBE tile · indigo #3B33A8 ink · white fur · hub #241F66 / #17134A · ports in the
+    four cats' colours · plug tip #F4E6FF.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#C2255C"/>
+      <stop offset="1" stop-color="#FF8DBE"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.38" r="0.65">
+      <stop offset="0" stop-color="#FFE3EF" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#FFE3EF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFEFF6"/>
+    </linearGradient>
+    <linearGradient id="hub" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2E2880"/>
+      <stop offset="1" stop-color="#17134A"/>
+    </linearGradient>
+    <linearGradient id="hubTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4A41C2"/>
+      <stop offset="1" stop-color="#2E2880"/>
+    </linearGradient>
+    <linearGradient id="plug" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DDD3FF"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#5A0A2C" flood-opacity="0.38"/>
+    </filter>
+    <filter id="soft" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#4A0824" flood-opacity="0.38"/>
+    </filter>
+    <filter id="eyeglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <filter id="portglow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+  </defs>
+
+  <!-- tile -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#tile)" filter="url(#shadow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#glow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#sheen)"/>
+
+  <!-- the hub: a switchboard puck the cat sits on; its front face carries the four ports -->
+  <g filter="url(#soft)">
+    <rect x="206" y="596" width="612" height="236" rx="48" fill="url(#hub)"/>
+    <rect x="206" y="596" width="612" height="64" rx="32" fill="url(#hubTop)"/>
+    <rect x="206" y="640" width="612" height="10" fill="#17134A" opacity="0.6"/>
+  </g>
+  <!-- the ports: one per cat, lit (DevCatz indigo, DBCatz amber, DialCatz teal, DoCatz sky) -->
+  <g>
+    <g>
+      <rect x="306" y="724" width="76" height="44" rx="12" fill="#0E0B33"/>
+      <rect x="318" y="734" width="52" height="24" rx="7" fill="#8E7BFF" filter="url(#portglow)" opacity="0.9"/>
+      <rect x="318" y="734" width="52" height="24" rx="7" fill="#8E7BFF"/>
+    </g>
+    <g>
+      <rect x="418" y="724" width="76" height="44" rx="12" fill="#0E0B33"/>
+      <rect x="430" y="734" width="52" height="24" rx="7" fill="#FFC14D" filter="url(#portglow)" opacity="0.9"/>
+      <rect x="430" y="734" width="52" height="24" rx="7" fill="#FFC14D"/>
+    </g>
+    <g>
+      <rect x="530" y="724" width="76" height="44" rx="12" fill="#0E0B33"/>
+      <rect x="542" y="734" width="52" height="24" rx="7" fill="#2FD3BC" filter="url(#portglow)" opacity="0.9"/>
+      <rect x="542" y="734" width="52" height="24" rx="7" fill="#2FD3BC"/>
+    </g>
+    <g>
+      <rect x="642" y="724" width="76" height="44" rx="12" fill="#0E0B33"/>
+      <rect x="654" y="734" width="52" height="24" rx="7" fill="#6CC4FF" filter="url(#portglow)" opacity="0.9"/>
+      <rect x="654" y="734" width="52" height="24" rx="7" fill="#6CC4FF"/>
+    </g>
+  </g>
+
+  <!-- MrCatz on the hub, eyes as < > (the same cat as its siblings) -->
+  <g transform="translate(512 -8) scale(0.8) translate(-512 0)">
+    <!-- robot neck ring: a metal joint under the chin (drawn first, the chin covers its back half) -->
+    <ellipse cx="512" cy="782" rx="184" ry="40" fill="none" stroke="#2A2480" stroke-width="30"/>
+    <ellipse cx="512" cy="782" rx="184" ry="40" fill="none" stroke="#6D5DF6" stroke-width="16"/>
+    <!-- robot antenna with a glowing teal tip: the "-oid" -->
+    <g filter="url(#soft)">
+      <path d="M560 336 L582 196" fill="none" stroke="#3B33A8" stroke-width="22" stroke-linecap="round"/>
+      <circle cx="584" cy="176" r="40" fill="#2FD3BC" opacity="0.35" filter="url(#eyeglow)"/>
+      <circle cx="584" cy="176" r="28" fill="#2FD3BC" stroke="#FFFFFF" stroke-width="8"/>
+    </g>
+    <g filter="url(#soft)">
+      <path fill="url(#fur)" stroke="url(#fur)" stroke-width="36" stroke-linejoin="round"
+        d="M268 418 L246 222 L446 334
+           C 487 318, 537 318, 578 334
+           L778 222 L756 418
+           C 792 470, 808 528, 808 586
+           C 808 712, 676 790, 512 790
+           C 348 790, 216 712, 216 586
+           C 216 528, 232 470, 268 418 Z"/>
+      <path fill="#FF4F93" opacity="0.3" d="M300 404 L286 282 L420 356 Z"/>
+      <path fill="#FF4F93" opacity="0.3" d="M724 404 L738 282 L604 356 Z"/>
+    </g>
+    <g fill="none" stroke="#3B33A8" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="446,548 392,596 446,644"/>
+      <polyline points="578,548 632,596 578,644"/>
+    </g>
+    <path fill="#3B33A8" stroke="#3B33A8" stroke-width="16" stroke-linejoin="round" d="M486 662 L538 662 L512 694 Z"/>
+    <path fill="none" stroke="#3B33A8" stroke-width="18" stroke-linecap="round" d="M470 724 C 490 744, 504 744, 512 728 C 520 744, 534 744, 554 724"/>
+  </g>
+
+  <!-- the MCP plug: a cable from the left edge, docking into the hub's side; the tip glows where it meets -->
+  <g filter="url(#soft)">
+    <path d="M118 790 C 150 790, 146 690, 186 690" fill="none" stroke="#2E2880" stroke-width="34" stroke-linecap="round"/>
+    <path d="M118 790 C 150 790, 146 690, 186 690" fill="none" stroke="#6D5DF6" stroke-width="16" stroke-linecap="round"/>
+    <!-- the plug body -->
+    <rect x="150" y="652" width="104" height="76" rx="22" fill="url(#plug)"/>
+    <rect x="150" y="652" width="104" height="76" rx="22" fill="none" stroke="#3B33A8" stroke-width="10"/>
+    <!-- the two pins, already inside the hub -->
+    <rect x="236" y="668" width="30" height="14" rx="5" fill="#F4E6FF"/>
+    <rect x="236" y="698" width="30" height="14" rx="5" fill="#F4E6FF"/>
+    <!-- the connection light -->
+    <circle cx="258" cy="690" r="30" fill="#F4E6FF" opacity="0.5" filter="url(#eyeglow)"/>
+    <circle cx="202" cy="690" r="11" fill="#2FD3BC"/>
+  </g>
+</svg>
