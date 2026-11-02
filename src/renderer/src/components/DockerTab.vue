@@ -66,6 +66,21 @@ onMounted(() => {
 onBeforeUnmount(() => clearInterval(timer));
 watch(file, () => void refresh());
 
+// ---- On DoCatz: which .env the containers get (DoCatz's own, per project), and replacing it with the project's — asked.
+type DocatzEnv = Awaited<ReturnType<typeof herd.dockerDocatzEnv>>;
+const docatzEnv = ref<DocatzEnv | null>(null);
+async function loadDocatzEnv() {
+  docatzEnv.value = status.value?.engine === 'docatz' && file.value ? ((await herd.dockerDocatzEnv(props.project.id, file.value).catch(() => null)) ?? null) : null;
+}
+watch(() => `${file.value}|${status.value?.engine}`, () => void loadDocatzEnv());
+async function replaceDocatzEnv() {
+  const e = docatzEnv.value;
+  if (!e) return;
+  if (!confirm(`Replace DoCatz's .env of ${e.project} with this project's .env?\n\nWhat you changed in DoCatz is lost; hosts on this computer become host.docker.internal. Run Build & Up afterwards so the containers get it.`)) return;
+  if (await attempt(() => herd.dockerDocatzEnvReplace(props.project.id, file.value))) notify('success', `DoCatz's .env of ${e.project} now matches the project's .env: run Build & Up to apply it`);
+  await loadDocatzEnv();
+}
+
 // ---- Progress of Build & Up / Build / Down: read from the compose output as it streams into the site's log.
 const run = ref<{ action: DockerAction; from: number; at: number } | null>(null);
 const now = ref(Date.now());
@@ -117,6 +132,7 @@ async function compose(action: DockerAction, service?: string) {
   if (ok && action === 'up') notify('success', status.value?.orbLocal || status.value?.docatzNames ? `Containers are up. ${status.value?.docatzNames ? 'DoCatz' : 'OrbStack'} serves them at the URLs below.` : 'Containers are up.');
   if (ok === undefined && action !== 'logs') emit('logs');
   await refresh();
+  void loadDocatzEnv();
 }
 onBeforeUnmount(() => clearInterval(tick));
 
@@ -488,6 +504,20 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
           <button class="btn btn-sm" :disabled="!ready || !!busy || !services.length" @click="compose('restart')">Restart</button>
           <button class="btn btn-sm" :disabled="!ready || !!busy" @click="compose('build')"><span v-if="busy === 'build:'" class="loading loading-spinner loading-xs" />Build only</button>
           <button class="btn btn-sm btn-ghost" :disabled="!ready || !services.length" @click="compose('logs')">Logs</button>
+        </div>
+        <!-- On DoCatz: the environment its containers get — DoCatz's .env of the project (kept unless replaced, asked). -->
+        <div v-if="docatzEnv && files.length" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+          <span class="opacity-60">Environment:</span>
+          <template v-if="docatzEnv.exists">
+            <span :title="docatzEnv.path ?? ''">DoCatz's .env of <b>{{ docatzEnv.project }}</b></span>
+            <span v-if="docatzEnv.same" class="badge badge-ghost badge-xs">same as the project's .env</span>
+            <template v-else-if="docatzEnv.projectEnv">
+              <span class="badge badge-warning badge-soft badge-xs" title="DoCatz's is the one used; the project's .env is left out">differs from the project's .env</span>
+              <button class="btn btn-ghost btn-xs" @click="replaceDocatzEnv">Replace with the project's .env…</button>
+            </template>
+          </template>
+          <span v-else-if="docatzEnv.projectEnv" class="opacity-70">the project's .env — copied to DoCatz's .env of <b>{{ docatzEnv.project }}</b> on the first Build &amp; Up (then kept, change it in DoCatz)</span>
+          <span v-else class="opacity-60">none (no .env in the project)</span>
         </div>
         <!-- While it runs: phase, time, each service's build step and each container's state, the latest line. -->
         <div v-if="run && progress" class="space-y-2 rounded-box border border-primary/30 bg-primary/5 px-3 py-2.5" aria-live="polite">

@@ -4286,6 +4286,22 @@ export class Herd extends EventEmitter {
     return written;
   }
 
+  /** The DoCatz .env the file's containers get on DoCatz (Docker tab, step 3). */
+  dockerDocatzEnv(id: string, file: string) {
+    const { p, project } = this.composeTarget(id, file);
+    return docker.docatzEnvInfo(p.path, file, project);
+  }
+
+  /** Replaces the project's DoCatz .env with its .env (asked first in the Docker tab). */
+  dockerDocatzEnvReplace(id: string, file: string): string {
+    const { p, project } = this.composeTarget(id, file);
+    const name = docker.composeProjectName(p.path, file, project);
+    const path = docker.copyEnvToDocatz(p.path, name);
+    if (!path) throw new Error('No .env in the project to copy');
+    this.processes.log(id, 'sys', `Docker: DoCatz's .env of ${name} replaced with the project's .env (local hosts → host.docker.internal)`);
+    return path;
+  }
+
   async dockerCompose(id: string, file: string, action: DockerAction, service?: string): Promise<void> {
     const { p, project } = this.composeTarget(id, file);
     // The engine to use (DoCatz while it runs …) is decided by the status check: also from the header's Docker menu.

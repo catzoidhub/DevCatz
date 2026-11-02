@@ -931,6 +931,8 @@ function api(): HerdApi {
     dockerWrite: async (id, options, paths, overwrite, edited) => herd.dockerWrite(id, options, paths, overwrite, edited ?? {}),
     dockerCompose: (id, file, action, service) => herd.dockerCompose(id, file, action, service),
     dockerDevPreview: (id, services) => herd.dockerDevPreview(id, services),
+    dockerDocatzEnv: async (id, file) => herd.dockerDocatzEnv(String(id), String(file)),
+    dockerDocatzEnvReplace: async (id, file) => herd.dockerDocatzEnvReplace(String(id), String(file)),
     dockerDevWrite: (id, services, content) => herd.dockerDevWrite(id, services, content),
     dockerComposeEnv: (id, file, apply) => herd.dockerComposeEnv(id, file, apply),
     startEngine: (id) => startEngine(id),

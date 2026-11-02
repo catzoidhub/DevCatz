@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { app } from 'electron';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, posix, relative } from 'node:path';
 import { isPhpFramework, isPythonFramework, type AppInfo, type DockerEngineId, type DockerFile, type DockerGenOptions, type DockerTarget, type DockerService, type DockerStatus, type ProjectConfig, type StackInfo } from '@shared/types';
@@ -1381,6 +1381,39 @@ export function loopbackToHost(env: Record<string, string>): Record<string, stri
   return out;
 }
 
+/** Compose's project name for a file: the -p DevCatz passes (generated files), else compose's own (its folder's name). */
+export const composeProjectName = (root: string, file: string, project: string | null) => project ?? projectNameOf(root, file);
+
+/** Writes the project's .env as DoCatz's .env of `name` (local hosts → host.docker.internal, 0600); its path, or null. */
+export function copyEnvToDocatz(root: string, name: string): string | null {
+  const target = docatzEnvPath(name);
+  if (!target || !existsSync(join(root, '.env'))) return null;
+  const local = loopbackToHost(readEnvFiles(join(root, '.env')));
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+  const lines = readFileSync(join(root, '.env'), 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/);
+  const out = lines.map((l) => {
+    const m = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$/.exec(l);
+    return m && m[2] in local ? `${m[1]}${m[2]}${m[3]}${local[m[2]]}` : l;
+  });
+  writeFileSync(target, `# Copied by DevCatz from ${name}'s .env (local hosts → host.docker.internal); change it in DoCatz.\n${out.join('\n')}`, { mode: 0o600 });
+  return target;
+}
+
+/** Which environment the file's containers get on DoCatz: its DoCatz .env (and whether it still matches .env), or none yet. */
+export function docatzEnvInfo(root: string, file: string, project: string | null): { project: string; path: string | null; exists: boolean; projectEnv: boolean; same: boolean; updatedAt: number | null } {
+  const name = composeProjectName(root, file, project);
+  const path = docatzEnvPath(name);
+  const exists = !!path && existsSync(path);
+  const projectEnv = existsSync(join(root, '.env'));
+  let same = false;
+  if (exists && projectEnv) {
+    const a = readEnvFiles(path!);
+    const b = { ...readEnvFiles(join(root, '.env')), ...loopbackToHost(readEnvFiles(join(root, '.env'))) };
+    same = Object.keys(a).length === Object.keys(b).length && Object.entries(b).every(([k, v]) => a[k] === v);
+  }
+  return { project: name, path, exists, projectEnv, same, updatedAt: exists ? statSync(path!).mtimeMs : null };
+}
+
 /**
  * What every service of the file also gets when it runs here, through one override (`env_file:` per service, written
  * to DevCatz's data, 0600): the .env's local hosts pointed at host.docker.internal, then — on DoCatz — the project's
@@ -1394,17 +1427,10 @@ async function envOverride(root: string, file: string, project: string | null): 
   const copyNote: string[] = [];
   // On DoCatz with no DoCatz .env for this project yet: the project's .env becomes it (local hosts already pointed at
   // host.docker.internal), DoCatz's place for a project's environment, to change there like Dokploy's Environment tab.
+  // An existing one is never replaced here (the Docker tab offers that, asked).
   if (onDocatzEngine && !docatz && existsSync(join(root, '.env'))) {
-    const target = docatzEnvPath(name);
-    if (target) {
-      mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
-      const lines = readFileSync(join(root, '.env'), 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/);
-      const out = lines.map((l) => {
-        const m = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$/.exec(l);
-        return m && m[2] in local ? `${m[1]}${m[2]}${m[3]}${local[m[2]]}` : l;
-      });
-      writeFileSync(target, `# Copied by DevCatz from ${name}'s .env (local hosts → host.docker.internal); change it in DoCatz.\n${out.join('\n')}`, { mode: 0o600 });
-      docatz = target;
+    docatz = copyEnvToDocatz(root, name);
+    if (docatz) {
       copyNote.push(`DevCatz copied .env to DoCatz's .env of ${name}${Object.keys(local).length ? ` (${Object.keys(local).join(', ')} → host.docker.internal)` : ''}: change it in DoCatz`);
       local = {};
     }
