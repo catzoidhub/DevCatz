@@ -7,7 +7,6 @@ import devcatzLogo from '../assets/logos/devcatz.svg';
 import dbcatzLogo from '../assets/logos/dbcatz.png';
 import dialcatzLogo from '../assets/logos/dialcatz.png';
 import docatzLogo from '../assets/logos/docatz.png';
-import mcatzpLogo from '../assets/logos/mcatzp.svg';
 
 /**
  * Settings → About (Catzoid family #62; the app menu's About DevCatz opens it): the app, its slogan and version, the
@@ -45,7 +44,6 @@ const FAMILY: { name: string; logo: string; what: string }[] = [
   { name: 'DBCatz', logo: dbcatzLogo, what: 'database viewer' },
   { name: 'DialCatz', logo: dialcatzLogo, what: 'API client' },
   { name: 'DoCatz', logo: docatzLogo, what: 'container manager' },
-  { name: 'MCatzP', logo: mcatzpLogo, what: 'MCP server for the family' },
 ];
 
 const u = computed(() => state.value?.appUpdate ?? null);
@@ -106,7 +104,7 @@ function copyDetails() {
         <span class="flex-1" />
         <button v-if="info" class="btn btn-ghost btn-xs" @click="herd.openUrl(info.site)">{{ host }}</button>
       </div>
-      <ul class="grid grid-cols-5 gap-2">
+      <ul class="grid grid-cols-4 gap-2">
         <li v-for="f in FAMILY" :key="f.name">
           <button
             class="flex h-full w-full items-center gap-2.5 rounded-box border border-base-300/60 bg-base-200/40 px-3 py-2 text-left transition-colors hover:border-primary/50 hover:bg-base-200 disabled:cursor-default"

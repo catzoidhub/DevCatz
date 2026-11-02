@@ -60,7 +60,6 @@ Our own:
 - dbcatz.png — the DBCatz app icon from the Catzoid site (public/brand/dbcatz/icon-64.png).
 - dialcatz.png — the DialCatz app icon (DialCatz/resources/icon.png at 128 px).
 - docatz.png — the DoCatz app icon, provisional (Catzoid/apps/web/public/brand/docatz/icon-192.png; source Catzoid/art/logos/docatz.svg).
-- mcatzp.svg — the MCatzP logo (Catzoid/art/logos/mcatzp.svg).
 
 - devcatz.svg — the DevCatz app icon (our own; the same file as scripts/icons/app.svg, the source of resources/icon.png).
 
