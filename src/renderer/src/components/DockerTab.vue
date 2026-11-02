@@ -289,8 +289,9 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
       <div class="card-body">
         <h2 class="flex items-center gap-2 font-semibold"><span class="step-num">2</span>Docker files <span class="text-xs font-normal opacity-60">the same ones Dokploy deploys later</span></h2>
         <p v-if="existingSetup" class="text-xs opacity-70">
-          This project already has its own Docker setup ({{ files.filter((f) => f.build && !f.generated).map((f) => f.file).join(', ') }}); use it above.
-          Generating is still possible and never overwrites without asking.
+          This project already has its own Docker setup:
+          <template v-for="(f, i) in files.filter((x) => x.build && !x.generated)" :key="f.file">{{ i ? ', ' : '' }}<code>{{ f.file }}</code>{{ f.coversAll ? ' (one compose file for every app of the monorepo)' : f.covers.length ? ` (builds ${f.covers.join(', ')})` : '' }}</template>.
+          Test it in step 3 as it is. Generating is still possible and never overwrites without asking.
         </p>
         <p v-else class="text-xs opacity-70">
           For the detected stack: a multi-stage <code>Dockerfile</code> per app, <code>docker-compose.yml</code> (the file Dokploy and Coolify read),
@@ -412,7 +413,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
           <h2 class="flex flex-1 items-center gap-2 font-semibold"><span class="step-num">{{ desktop ? 2 : 3 }}</span>{{ desktop ? 'Containers' : 'Test in containers' }}</h2>
           <DoCatzButton v-if="file && files.length" :site-id="project.id" :file="file" />
           <select v-if="files.length" v-model="file" class="select select-sm w-auto">
-            <option v-for="f in files" :key="f.file" :value="f.file">{{ f.file }}{{ f.generated ? ' (generated)' : f.build ? '' : ' (no app build)' }}</option>
+            <option v-for="f in files" :key="f.file" :value="f.file">{{ f.file }}{{ f.coversAll ? ' · every app' : f.covers.length ? ` · ${f.covers.join(', ')}` : '' }}{{ f.generated ? ' (generated)' : f.build ? '' : ' (no app build)' }}</option>
           </select>
         </div>
         <p v-if="!files.length" class="text-xs opacity-60">{{ desktop ? 'Create the development services below first.' : 'Generate the Docker files first (step 2), or add your own docker-compose.yml.' }}</p>

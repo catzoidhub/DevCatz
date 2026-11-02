@@ -3970,7 +3970,17 @@ export class Herd extends EventEmitter {
 
   dockerFiles(id: string): DockerComposeFile[] {
     const p = this.project(id);
-    return docker.composeFiles(p.path).map((c) => ({ ...c, project: c.generated ? docker.projectName(p, c.file) : null }));
+    // Which apps each file builds: a monorepo often has one compose file for all of them.
+    const apps = (this.stacks.get(id)?.apps ?? []).filter((a) => a.kind !== 'assets');
+    return docker.composeFiles(p.path).map((c) => {
+      const dirs = c.build ? docker.buildDirs(p.path, c.file) : [];
+      // A service named like the app's folder (web ↔ web/) counts too: `build: .` with the Dockerfile picked elsewhere.
+      const names = c.build ? docker.buildServices(p.path, c.file).map((n) => n.toLowerCase()) : [];
+      const covers = apps
+        .filter((a) => dirs.some((d) => d === a.dir || (d === '.' && apps.length === 1) || a.dir.startsWith(`${d}/`) || d.startsWith(`${a.dir}/`)) || names.includes(basename(a.dir === '.' ? a.name : a.dir).toLowerCase()))
+        .map((a) => (a.dir === '.' ? a.name : basename(a.dir)));
+      return { ...c, project: c.generated ? docker.projectName(p, c.file) : null, covers, coversAll: apps.length > 1 && covers.length === apps.length };
+    });
   }
 
   private composeTarget(id: string, file: string): { p: ProjectConfig; project: string | null } {
@@ -4228,7 +4238,8 @@ export class Herd extends EventEmitter {
   /** Docker files a user may adjust with AI: Dockerfile*, *compose*.y(a)ml, .dockerignore, in the site's folder (one level of app folders too). */
   dockerListFiles(id: string): string[] {
     const p = this.project(id);
-    const dirs = ['.', ...(this.stacks.get(id)?.apps.map((a) => a.dir) ?? [])].filter((d, i, all) => all.indexOf(d) === i);
+    // The root, each app's folder, and docker/, deploy/ … where a monorepo often keeps its one compose file.
+    const dirs = ['.', ...(this.stacks.get(id)?.apps.map((a) => a.dir) ?? []), ...docker.COMPOSE_DIRS].filter((d, i, all) => all.indexOf(d) === i);
     const out: string[] = [];
     for (const d of dirs)
       for (const f of (() => {

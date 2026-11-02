@@ -925,6 +925,10 @@ export interface DockerComposeFile {
   generated: boolean;
   /** `-p` used for it (generated files), null = compose's own default. */
   project: string | null;
+  /** The site's apps this file builds images of (a monorepo's one compose file for every app). */
+  covers: string[];
+  /** It builds every app of the site. */
+  coversAll: boolean;
 }
 
 /** `local`: try it here (database/Redis containers, localhost ports). `production`: Dokploy-style, services from env. */
