@@ -379,8 +379,14 @@ async function installSolana(detail: (line: string) => void): Promise<void> {
       chmodSync(init, 0o755);
       await run('xattr', ['-d', 'com.apple.quarantine', init]);
     }
-    const code = await streamLines(init, [rel.tag], detail);
+    // The plain version: given "v4.4.0" the installer kept the release it was pinned to (config.yml explicit_release)
+    // and only downloaded the new one. --no-modify-path: DevCatz puts Solana's folder on the PATH itself.
+    const version = rel.tag.replace(/^v/, '');
+    const code = await streamLines(init, ['--no-modify-path', version], detail);
     if (code !== 0) throw new Error(`The Solana installer failed (exit ${code})`);
+    const solana = toolPath('solana');
+    const active = solana ? (await run(solana, ['--version'], { timeout: 15_000, env: rustEnv() })).stdout.match(/\d+\.\d+\.\d+/)?.[0] : null;
+    if (active !== version) throw new Error(`The Solana installer finished, but the active release is ${active ?? 'missing'}, not ${version}`);
   } finally {
     removeTemp(tmp);
   }
