@@ -12,6 +12,7 @@ import docatzLogo from '../assets/logos/docatz.png';
 const props = defineProps<{ kind: string; name: string }>();
 const task = computed(() => state.value?.docatz.task ?? null);
 const installing = computed(() => !!task.value && !task.value.done && !task.value.error);
+const install = () => attempt(() => herd.docatzInstallGateway(props.kind));
 </script>
 
 <template>
@@ -29,7 +30,7 @@ const installing = computed(() => !!task.value && !task.value.done && !task.valu
       <TaskStepper v-if="task" :task="task" cancellable dismissable @cancel="herd.docatzCancelInstall()" @dismiss="herd.docatzDismiss()" />
       <p v-else class="text-xs opacity-60">Download & Install fetches DoCatz's latest release from GitHub (checksum verified), runs its installer just for you (no administrator rights) and opens it.</p>
       <div class="flex flex-wrap gap-2">
-        <button v-if="!task || task.error" type="button" class="btn btn-primary btn-sm gap-2" :disabled="installing" @click="attempt(() => herd.docatzInstallGateway(props.kind))">
+        <button v-if="!task || task.error" type="button" class="btn btn-primary btn-sm gap-2" :disabled="installing" @click="install">
           <img :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ task?.error ? 'Try again' : 'Download & Install DoCatz' }}
         </button>
         <a v-if="!installing" class="btn btn-ghost btn-sm" @click="herd.openUrl('https://github.com/catzoidhub/DoCatz/releases/latest')">Releases page</a>
