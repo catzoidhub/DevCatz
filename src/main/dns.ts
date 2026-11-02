@@ -23,7 +23,7 @@ async function bindError(err: NodeJS.ErrnoException): Promise<string> {
   const at = `${DNS_HOST}:${DNS_PORT}`;
   const what = WIN ? '*.localhost and the default domain do not resolve outside browsers' : 'the default domain does not resolve';
   // Windows answers EACCES, not EADDRINUSE, when another program holds the port exclusively.
-  const o = err.code === 'EADDRINUSE' || err.code === 'EACCES' ? await udpPortOwner(DNS_PORT).catch(() => null) : null;
+  const o = err.code === 'EADDRINUSE' || err.code === 'EACCES' ? await udpPortOwner(DNS_PORT, DNS_HOST).catch(() => null) : null;
   if (err.code === 'EADDRINUSE' || o) {
     if (!o) return `Port ${DNS_PORT} (${at}) is taken by another program, so ${what}. Close it, then Try again.`;
     const who = `${o.service ? `${o.service} (${o.name}, pid ${o.pid})` : `${o.name} (pid ${o.pid})`}`;
@@ -91,13 +91,49 @@ function rr(type: number, data: Buffer): Buffer {
   return Buffer.concat([b, data]);
 }
 
+/**
+ * Whether the DNS on DNS_HOST:DNS_PORT already answers every zone the way DevCatz would (a name under it → 127.0.0.1):
+ * DoCatz runs the same server on the same address, and whichever app starts first serves both.
+ */
+function answersHere(zones: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = createSocket('udp4');
+    const pending = new Set(zones.map((_, i) => i));
+    const done = (ok: boolean) => {
+      clearTimeout(timer);
+      s.close();
+      resolve(ok);
+    };
+    const timer = setTimeout(() => done(false), 1500);
+    s.on('error', () => done(false));
+    s.on('message', (m) => {
+      const id = m.readUInt16BE(0);
+      if (!pending.has(id) || (m[3] & 15) !== 0 || m.readUInt16BE(6) < 1) return done(false);
+      pending.delete(id);
+      if (!pending.size) done(true);
+    });
+    zones.forEach((z, i) => {
+      const name = Buffer.concat([...`devcatz-check.${z}`.split('.').map((l) => Buffer.concat([Buffer.from([l.length]), Buffer.from(l, 'ascii')])), Buffer.from([0])]);
+      const head = Buffer.alloc(12);
+      head.writeUInt16BE(i, 0);
+      head.writeUInt16BE(0x0100, 2);
+      head.writeUInt16BE(1, 4);
+      s.send(Buffer.concat([head, name, Buffer.from([0, TYPE_A, 0, 1])]), DNS_PORT, DNS_HOST);
+    });
+  });
+}
+
 export class DnsServer {
   private socket: Socket | null = null;
   tld = '';
   error: string | null = null;
+  /** Another program (DoCatz) answers DevCatz's names on the same address: shared, taken back when it stops. */
+  sharedWith: string | null = null;
+  private retry: ReturnType<typeof setInterval> | null = null;
 
   async start(tld: string): Promise<void> {
     await this.stop();
+    this.sharedWith = null;
     this.tld = tld;
     this.error = null;
     // macOS resolves .localhost itself; on Windows only browsers do, so DevCatz answers it there as well.
@@ -117,17 +153,28 @@ export class DnsServer {
       });
       socket.bind(DNS_PORT, DNS_HOST, () => resolve());
     });
+    if (failed) socket.close();
+    if (failed && (await answersHere(zones))) {
+      // DoCatz (the same server) has the address: its answers are DevCatz's, so nothing is wrong. DevCatz takes the
+      // address back once it stops answering (DoCatz quit).
+      this.sharedWith = (await udpPortOwner(DNS_PORT, DNS_HOST).catch(() => null))?.name.replace(/\.exe$/i, '') ?? 'another program';
+      this.retry = setInterval(() => void answersHere(zones).then((ok) => (ok ? undefined : this.start(this.tld))), 30_000);
+      return;
+    }
     if (failed) this.error = await bindError(failed);
     if (!this.error) this.socket = socket;
   }
 
   async stop(): Promise<void> {
+    if (this.retry) clearInterval(this.retry);
+    this.retry = null;
     const s = this.socket;
     this.socket = null;
     if (s) await new Promise<void>((resolve) => s.close(() => resolve()));
   }
 
+  /** DevCatz's names resolve: its own server, or the one it shares the address with. */
   get running(): boolean {
-    return this.socket !== null;
+    return this.socket !== null || this.sharedWith !== null;
   }
 }

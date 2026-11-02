@@ -4917,6 +4917,7 @@ export class Herd extends EventEmitter {
         needsResolver: tld() !== 'localhost' || isWin,
         dnsRunning: this.dns.running,
         dnsError: this.dns.error,
+        dnsShared: this.dns.sharedWith,
         resolver: tld() === 'localhost' && !isWin ? 'none' : resolverStatus(tld()),
         resolves: this.resolves,
       },

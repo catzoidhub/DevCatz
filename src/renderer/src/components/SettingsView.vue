@@ -367,6 +367,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
               {{ s.domain.resolves ? `*.${s.domain.tld} resolves` : `*.${s.domain.tld} does not resolve yet` }}
             </span>
           </div>
+          <p v-if="s.domain.dnsShared" class="mt-1 text-xs opacity-60">{{ s.domain.dnsShared }} answers these names on the same address (it runs the same DNS), so DevCatz uses it; DevCatz answers again when {{ s.domain.dnsShared }} quits.</p>
           <div v-if="s.domain.dnsError" class="mt-1 flex items-start gap-2">
             <p class="flex-1 text-xs text-error">{{ s.domain.dnsError }}</p>
             <button class="btn btn-xs" @click="restartDns">Try again</button>

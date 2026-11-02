@@ -214,13 +214,12 @@ export async function portOwner(port: number): Promise<string | null> {
 }
 
 /** Who has a UDP port (DNS): Windows — netstat, plus the service inside svchost; macOS — lsof. */
-export async function udpPortOwner(port: number): Promise<{ name: string; pid: string; service?: string } | null> {
+export async function udpPortOwner(port: number, host?: string): Promise<{ name: string; pid: string; service?: string } | null> {
   if (isWin) {
     const { stdout } = await run('netstat', ['-ano', '-p', 'UDP']);
-    const pid = stdout
-      .split(/\r?\n/)
-      .map((l) => l.trim().split(/\s+/))
-      .find((c) => c[0] === 'UDP' && c[1]?.endsWith(`:${port}`))?.[3];
+    const rows = stdout.split(/\r?\n/).map((l) => l.trim().split(/\s+/)).filter((c) => c[0] === 'UDP');
+    // The program on that very address first (127.53.0.1:53), else whoever has the port on every address.
+    const pid = (rows.find((c) => host && c[1] === `${host}:${port}`) ?? rows.find((c) => c[1]?.endsWith(`:${port}`)))?.[3];
     if (!pid) return null;
     const t = await run('tasklist', ['/SVC', '/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH']);
     const m = t.stdout.match(/^"([^"]+)","\d+","([^"]*)"/);

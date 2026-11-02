@@ -1393,6 +1393,8 @@ export interface DomainState {
   needsResolver: boolean;
   dnsRunning: boolean;
   dnsError: string | null;
+  /** Another program (DoCatz) answers DevCatz's names on the same DNS address, so DevCatz uses it (e.g. "DoCatz"). */
+  dnsShared: string | null;
   resolver: 'ours' | 'foreign' | 'none';
   /** A test name under the TLD resolves to this Mac. */
   resolves: boolean;
