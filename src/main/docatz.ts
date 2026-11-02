@@ -21,7 +21,7 @@ export const DOCATZ_REPO = 'catzoidhub/DoCatz';
  * (`engine: "running" | "stopped"`). Read at most every few seconds (route updates and status checks are frequent).
  * DOCATZ_BRIDGE points elsewhere, for tests.
  */
-type DocatzBridge = { proxy?: { httpPort?: number; httpsPort?: number }; engine?: string };
+type DocatzBridge = { proxy?: { httpPort?: number; httpsPort?: number }; engine?: string; containers?: { project?: string; service?: string; url?: string | null }[] };
 let bridgeCache: { at: number; value: DocatzBridge | null } = { at: 0, value: null };
 function docatzBridge(): DocatzBridge | null {
   if (Date.now() - bridgeCache.at < 5000) return bridgeCache.value;
@@ -39,6 +39,21 @@ function docatzBridge(): DocatzBridge | null {
 export function docatzProxyPort(): number | null {
   const p = Number(docatzBridge()?.proxy?.httpPort);
   return Number.isInteger(p) && p > 0 && p < 65536 ? p : null;
+}
+
+/** A container's DoCatz address as DoCatz names it (users can rename the part before .docatz.<tld>); null = not listed. */
+export function docatzContainerUrl(project: string, service: string): string | null {
+  return docatzBridge()?.containers?.find((c) => c.project === project && c.service === service)?.url ?? null;
+}
+
+/**
+ * DoCatz's own .env for a compose project (Dokploy-style, `<DoCatz data>/env/<project>.env`, 0600), which DoCatz applies
+ * when it runs the project; null when there is none. DOCATZ_DATA points elsewhere, for tests.
+ */
+export function docatzEnvFile(project: string): string | null {
+  if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(project)) return null;
+  const file = join(process.env.DOCATZ_DATA || join(app.getPath('appData'), 'DoCatz'), 'env', `${project}.env`);
+  return existsSync(file) ? file : null;
 }
 
 /** DoCatz's own HTTPS port (its names answer there when :443 is not forwarded), default 8743. */

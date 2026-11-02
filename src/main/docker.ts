@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process';
+import { app } from 'electron';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, posix, relative } from 'node:path';
+import { basename, dirname, isAbsolute, join, posix, relative } from 'node:path';
 import { isPhpFramework, isPythonFramework, type AppInfo, type DockerEngineId, type DockerFile, type DockerGenOptions, type DockerTarget, type DockerService, type DockerStatus, type ProjectConfig, type StackInfo } from '@shared/types';
 import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './detect';
 import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
 import { exePath, isWin } from './platform';
-import { docatzEngine } from './docatz';
+import { docatzEngine, docatzEnvFile } from './docatz';
 import { store } from './store';
 
 /**
@@ -1357,16 +1358,40 @@ export async function createNetwork(name: string): Promise<boolean> {
   return (await run(bin(), [...globals, 'network', 'create', name], { timeout: 30_000 })).code === 0;
 }
 
+/** Compose's own project name for a compose file (what `docker compose` uses without -p): its folder's name. */
+const projectNameOf = (root: string, file: string) => basename(dirname(join(root, file))).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+
+/**
+ * On DoCatz, the project's DoCatz .env (set in DoCatz, Dokploy-style) as DoCatz itself applies it: `--env-file` for
+ * the file's own ${…} and an override giving every service `env_file:` — written to DevCatz's data, 0600.
+ */
+async function docatzEnvArgs(root: string, file: string, project: string | null): Promise<string[]> {
+  if (!onDocatzEngine) return [];
+  const name = project ?? projectNameOf(root, file);
+  const env = docatzEnvFile(name);
+  if (!env) return [];
+  const r = await run(bin(), [...cli.compose, '-f', file, '-p', name, 'config', '--services'], { cwd: root, timeout: 30_000 });
+  const services = r.code === 0 ? r.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+  if (!services.length) return ['--env-file', env];
+  const dir = join(app.getPath('userData'), 'docker');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const override = join(dir, `${name}.docatz-env.yaml`);
+  writeFileSync(override, `# Written by DevCatz before each run: every service gets ${name}'s DoCatz .env.\nservices:\n${services.map((s) => `  ${JSON.stringify(s)}:\n    env_file:\n      - ${JSON.stringify(env)}`).join('\n')}\n`, { mode: 0o600 });
+  return ['--env-file', env, '-f', override];
+}
+
 /** Runs a compose command, streaming its output line by line. */
-export function compose(
+export async function compose(
   root: string,
   file: string,
   project: string | null,
   args: string[],
   onLine: (stream: 'out' | 'err', text: string) => void,
 ): Promise<number> {
+  const envArgs = await docatzEnvArgs(root, file, project);
+  if (envArgs.length) onLine('out', `DoCatz .env of this project: ${envArgs[1]}`);
   return new Promise((resolve) => {
-    const child = spawn(bin(), [...cli.compose, '-f', file, ...(project ? ['-p', project] : []), ...args], {
+    const child = spawn(bin(), [...cli.compose, '-f', file, ...envArgs.slice(2), ...(project ? ['-p', project] : []), ...envArgs.slice(0, 2), ...args], {
       cwd: root,
       env: { ...getShellEnv(), COMPOSE_PROGRESS: 'plain', BUILDKIT_PROGRESS: 'plain', COMPOSE_ANSI: 'never' },
       stdio: ['ignore', 'pipe', 'pipe'],
