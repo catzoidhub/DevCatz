@@ -9,14 +9,14 @@ import DockerFilesCard from './DockerFilesCard.vue';
 import DoCatzButton from './DoCatzButton.vue';
 import docatzLogo from '../assets/logos/docatz.png';
 import { aiOn } from '../ai';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComposeEnvPlan, DevComposePreview, DevServiceKind, DockerAction, DockerEngineId, DockerGenOptions, DockerTarget, DockerComposeFile, DockerFile, DockerService, DockerStatus, ProjectState } from '@shared/types';
 import { attempt, herd, loadLogs, logs, notify } from '../store';
 const aiDockerOn = aiOn('docker');
 
 /** `desktop`: an Electron / Tauri app — it ships as an installer, so only its development services run here (no deploy files). */
-const props = defineProps<{ project: ProjectState; desktop?: boolean }>();
-const emit = defineEmits<{ logs: []; git: [] }>();
+const props = defineProps<{ project: ProjectState; desktop?: boolean; /** Build ▾ at the top asked for this (it runs here, with its progress). */ request?: { file: string; action: 'up' | 'down'; n: number } | null }>();
+const emit = defineEmits<{ logs: []; git: []; busy: [on: boolean]; handled: [] }>();
 
 const status = ref<DockerStatus | null>(null);
 const files = ref<DockerComposeFile[]>([]);
@@ -83,6 +83,7 @@ async function replaceDocatzEnv() {
 
 // ---- Progress of Build & Up / Build / Down: read from the compose output as it streams into the site's log.
 const run = ref<{ action: DockerAction; from: number; at: number } | null>(null);
+const testCard = ref<HTMLElement | null>(null);
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | undefined;
 const elapsed = computed(() => {
@@ -99,9 +100,10 @@ const progress = computed(() => {
   let phase = r.action === 'down' ? 'Stopping containers' : r.action === 'build' ? 'Building images' : 'Preparing';
   let last = '';
   for (const { text } of lines) {
-    const step = /^#\d+ \[([\w.-]+) [^\]]*?(\d+)\/(\d+)\]/.exec(text);
+    // "#7 [app stage-2 3/5] …" (several services) or "#7 [3/3] …" (one).
+    const step = /^#\d+ \[(?:([\w.-]+) )?(?:[^\]]*? )?(\d+)\/(\d+)\]/.exec(text);
     if (step) {
-      steps.set(step[1], `${step[2]}/${step[3]}`);
+      steps.set(step[1] ?? 'build', `${step[2]}/${step[3]}`);
       phase = 'Building images';
     }
     const c = /^\s*Container (\S+)\s+(Creating|Created|Starting|Started|Waiting|Healthy|Running|Stopping|Stopped|Removing|Removed|Error)/.exec(text);
@@ -115,6 +117,12 @@ const progress = computed(() => {
   return { phase, steps: [...steps], containers: [...containers], last };
 });
 
+const cancelling = ref(false);
+async function cancelRun() {
+  cancelling.value = true;
+  await attempt(() => herd.dockerCancel(props.project.id));
+}
+
 async function compose(action: DockerAction, service?: string) {
   if (!file.value) return;
   busy.value = `${action}:${service ?? ''}`;
@@ -125,16 +133,39 @@ async function compose(action: DockerAction, service?: string) {
     now.value = Date.now();
     tick = setInterval(() => (now.value = Date.now()), 1000);
   }
-  const ok = await attempt(() => herd.dockerCompose(props.project.id, file.value, action, service).then(() => true));
+  const ok = await attempt(() => herd.dockerCompose(props.project.id, file.value, action, service).then(() => true).catch((e: Error) => {
+    if (cancelling.value || /Cancelled/.test(e.message)) return false; // asked for: not an error
+    throw e;
+  }));
   busy.value = null;
   clearInterval(tick);
   run.value = null;
+  if (cancelling.value) notify('info', `${action === 'up' ? 'Build & Up' : action} cancelled`);
+  const wasCancelled = cancelling.value;
+  cancelling.value = false;
   if (ok && action === 'up') notify('success', status.value?.orbLocal || status.value?.docatzNames ? `Containers are up. ${status.value?.docatzNames ? 'DoCatz' : 'OrbStack'} serves them at the URLs below.` : 'Containers are up.');
-  if (ok === undefined && action !== 'logs') emit('logs');
+  if (ok === undefined && action !== 'logs' && !wasCancelled) emit('logs');
   await refresh();
   void loadDocatzEnv();
 }
 onBeforeUnmount(() => clearInterval(tick));
+watch(busy, (b) => emit('busy', !!b));
+// A request from Build ▾: select its file, wait until the engine is known, then run it like the buttons here.
+watch(
+  () => props.request?.n,
+  async () => {
+    const r = props.request;
+    if (!r) return;
+    emit('handled');
+    for (let i = 0; i < 50 && (!status.value || !files.value.length); i++) await new Promise((res) => setTimeout(res, 200));
+    if (!files.value.some((f) => f.file === r.file)) return notify('error', `${r.file} not found`);
+    file.value = r.file;
+    await nextTick();
+    testCard.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    await compose(r.action);
+  },
+  { immediate: true },
+);
 
 // ---------------------------------------------------------------- generator
 type Preview = { files: (DockerFile & { pick: boolean; orig: string })[]; composeFile: string; project: string; options: DockerGenOptions; mrcatzDetected: boolean };
@@ -486,7 +517,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
     <DockerFilesCard v-if="!desktop" :site-id="project.id" :version="filesVersion" />
 
     <!-- 3 · Test: Build & Up on the chosen engine, then commit and push for Dokploy. -->
-    <div class="card">
+    <div ref="testCard" class="card">
       <div class="card-body">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="flex flex-1 items-center gap-2 font-semibold"><span class="step-num">{{ desktop ? 2 : 3 }}</span>{{ desktop ? 'Containers' : 'Test in containers' }}</h2>
@@ -527,6 +558,9 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             <span class="font-mono text-xs opacity-60">{{ elapsed }}</span>
             <span class="flex-1" />
             <button class="btn btn-ghost btn-xs" @click="emit('logs')">Open Logs</button>
+            <button class="btn btn-ghost btn-xs text-error" :disabled="cancelling" title="Stop it: compose and the builds it started (containers already made stay; Down removes them)" @click="cancelRun">
+              <span v-if="cancelling" class="loading loading-spinner loading-xs" />Cancel
+            </button>
           </div>
           <div v-if="progress.steps.length || progress.containers.length" class="flex flex-wrap gap-1.5 text-xs">
             <span v-for="[svc, step] in progress.steps" :key="'s' + svc" class="badge badge-ghost badge-sm font-mono">{{ svc }} · step {{ step }}</span>

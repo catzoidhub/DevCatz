@@ -7,7 +7,7 @@ import { isPhpFramework, isPythonFramework, type AppInfo, type DockerEngineId, t
 import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './detect';
 import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
-import { exePath, isWin } from './platform';
+import { exePath, isWin, killTree } from './platform';
 import { docatzEngine, docatzEnvFile, docatzEnvPath } from './docatz';
 import { store } from './store';
 
@@ -1495,7 +1495,7 @@ export async function compose(
   project: string | null,
   args: string[],
   onLine: (stream: 'out' | 'err', text: string) => void,
-  opts: { worktree?: string } = {},
+  opts: { worktree?: string; signal?: AbortSignal } = {},
 ): Promise<number> {
   // Only when containers are made or built: logs, ps, down need no environment.
   const env = ['up', 'build', 'create', 'run', 'restart'].includes(args[0]) ? await envOverride(root, file, project, opts.worktree) : { files: [], globals: [], notes: [] };
@@ -1515,6 +1515,10 @@ export async function compose(
         for (const l of parts) if (l.trim()) onLine(stream, l);
       };
     };
+    // Cancel: compose and what it started (BuildKit's client, pulls) — the whole process tree.
+    const onAbort = () => (child.pid ? killTree(child.pid) : child.kill('SIGTERM'));
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    child.on('close', () => opts.signal?.removeEventListener('abort', onAbort));
     child.stdout.on('data', pipe('out'));
     // Compose writes its progress to stderr; that is not an error.
     child.stderr.on('data', pipe('out'));

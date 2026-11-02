@@ -4287,6 +4287,12 @@ export class Herd extends EventEmitter {
     return written;
   }
 
+  /** Running compose commands per site, to cancel (Docker tab). */
+  private dockerRuns = new Map<string, AbortController>();
+  dockerCancel(id: string): void {
+    this.dockerRuns.get(id)?.abort();
+  }
+
   /** The DoCatz .env the file's containers get on DoCatz (Docker tab, step 3). */
   dockerDocatzEnv(id: string, file: string) {
     const { p, project } = this.composeTarget(id, file);
@@ -4324,7 +4330,11 @@ export class Herd extends EventEmitter {
     };
     // A worktree (feat-login.shop.localhost) runs beside its main site: its own container names, no fixed ports.
     const worktree = p.worktreeOf ? slugify(p.domain.split('.')[0]) : undefined;
-    let code = await docker.compose(p.path, file, project, cmd, log, { worktree });
+    const abort = new AbortController();
+    this.dockerRuns.get(id)?.abort();
+    this.dockerRuns.set(id, abort);
+    const signal = abort.signal;
+    let code = await docker.compose(p.path, file, project, cmd, log, { worktree, signal });
     // A production file (Dokploy's dokploy-network …) joins networks of its server: made here, empty and local, then once more.
     if (code !== 0 && action === 'up' && missing.size) {
       const made: string[] = [];
@@ -4332,8 +4342,13 @@ export class Herd extends EventEmitter {
       if (made.length) {
         this.processes.log(id, 'sys', `Docker: created the network${made.length > 1 ? 's' : ''} ${made.join(', ')} here (the server already has ${made.length > 1 ? 'them' : 'it'}); trying again`);
         missing.clear();
-        code = await docker.compose(p.path, file, project, cmd, log, { worktree });
+        code = await docker.compose(p.path, file, project, cmd, log, { worktree, signal });
       }
+    }
+    if (this.dockerRuns.get(id) === abort) this.dockerRuns.delete(id);
+    if (signal.aborted) {
+      this.processes.log(id, 'sys', `Docker: ${action} cancelled (containers already made stay; Down removes them)`);
+      throw new Error('Cancelled');
     }
     this.processes.log(id, 'sys', code === 0 ? `Docker: ${action} done` : `Docker: ${action} failed (exit ${code})`);
     if (code !== 0) throw new Error(`docker compose ${action} failed (exit ${code}); see Logs`);
