@@ -81,10 +81,19 @@ const s3Status = computed(() => {
  * shows when the project already has compose files (its own, a database for development say, or generated earlier).
  */
 const desktopDocker = ref(false);
+/** Opened from the desktop card ("Services with Docker Compose…") before any compose file exists. */
+const desktopDockerAsked = ref(false);
+function openDocker() {
+  desktopDockerAsked.value = true;
+  void nextTick(() => (tab.value = 'docker'));
+}
+// A string, not an array: a new array every state update would re-run this (and hide the tab again).
 watch(
-  () => [p.value.id, isDesktopSite(p.value)] as const,
-  async ([id, desktop]) => {
+  () => `${p.value.id}|${isDesktopSite(p.value)}`,
+  async (key) => {
+    const [id, desktop] = [key.slice(0, key.lastIndexOf('|')), key.endsWith('|true')];
     desktopDocker.value = false;
+    desktopDockerAsked.value = false;
     if (desktop) desktopDocker.value = (await herd.dockerFiles(id).catch(() => [])).length > 0 && p.value.id === id;
   },
   { immediate: true },
@@ -100,7 +109,7 @@ const allTabs = computed<Tab[]>(() => [
   'git',
   ...(p.value.mailInfo ? (['mail'] as Tab[]) : []),
   ...(p.value.waInfo || p.value.gwInfo ? (['whatsapp'] as Tab[]) : []),
-  ...(!isDesktopSite(p.value) || desktopDocker.value ? (['docker'] as Tab[]) : []),
+  ...(!isDesktopSite(p.value) || desktopDocker.value || desktopDockerAsked.value ? (['docker'] as Tab[]) : []),
   'logs',
   'settings',
 ]);
@@ -618,6 +627,11 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
             Start opens its window, the way <code>{{ command ?? 'npm start' }}</code> does in a terminal. It has no web address, so there is nothing to
             preview or share here; its output is in Logs.
           </p>
+          <p class="text-xs opacity-70">
+            <template v-if="p.composeWithApp">Its services in <code>{{ p.composeWithApp }}</code> start and stop with it.</template>
+            <template v-else>A database or Redis for it: from DevCatz (Database tab), or in Docker.</template>
+            {{ ' ' }}<a class="link link-primary" @click="openDocker">{{ p.composeWithApp || desktopDocker ? 'Docker tab' : 'Services with Docker Compose…' }}</a>
+          </p>
         </div>
       </div>
       <SitePreview v-else :project="p" :url="url(p.domain)" />
@@ -820,7 +834,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
 
   <!-- Docker -->
   <section v-else-if="tab === 'docker'" class="site-tab">
-    <DockerTab :key="p.id" :project="p" @logs="tab = 'logs'" />
+    <DockerTab :key="p.id" :project="p" :desktop="desktopApp" @logs="tab = 'logs'" @files="(n) => desktopApp && (desktopDocker = n > 0)" />
   </section>
 
   <!-- Database -->

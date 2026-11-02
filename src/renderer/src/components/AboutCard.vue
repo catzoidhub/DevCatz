@@ -38,11 +38,12 @@ const links = computed(() => {
     { label: 'Third-party licences', url: 'app:licenses' }, // the list shipped inside the app; also on <site>/legal/licences
   ];
 });
-const FAMILY: { name: string; logo: string; what: string; soon?: boolean }[] = [
+/** Each card opens the app's page on the Catzoid site (<site>/devcatz …). */
+const FAMILY: { name: string; logo: string; what: string }[] = [
   { name: 'DevCatz', logo: devcatzLogo, what: 'local dev environment' },
   { name: 'DBCatz', logo: dbcatzLogo, what: 'database viewer' },
   { name: 'DialCatz', logo: dialcatzLogo, what: 'API client' },
-  { name: 'DoCatz', logo: docatzLogo, what: 'container manager', soon: true },
+  { name: 'DoCatz', logo: docatzLogo, what: 'container manager' },
 ];
 
 const u = computed(() => state.value?.appUpdate ?? null);
@@ -103,13 +104,20 @@ function copyDetails() {
         <span class="flex-1" />
         <button v-if="info" class="btn btn-ghost btn-xs" @click="herd.openUrl(info.site)">{{ host }}</button>
       </div>
-      <ul class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <li v-for="f in FAMILY" :key="f.name" class="flex items-center gap-2.5 rounded-box border border-base-300/60 bg-base-200/40 px-3 py-2">
-          <img :src="f.logo" alt="" class="size-8 shrink-0" draggable="false" />
-          <span class="min-w-0">
-            <span class="flex items-center gap-1.5 text-sm font-medium leading-tight">{{ f.name }}<span v-if="f.soon" class="badge badge-ghost badge-xs">soon</span></span>
-            <span class="block text-[11px] leading-tight opacity-55">{{ f.what }}</span>
-          </span>
+      <ul class="grid grid-cols-4 gap-2">
+        <li v-for="f in FAMILY" :key="f.name">
+          <button
+            class="flex h-full w-full items-center gap-2.5 rounded-box border border-base-300/60 bg-base-200/40 px-3 py-2 text-left transition-colors hover:border-primary/50 hover:bg-base-200 disabled:cursor-default"
+            :disabled="!info"
+            :title="info ? `${host}/${f.name.toLowerCase()}` : undefined"
+            @click="info && herd.openUrl(`${info.site}/${f.name.toLowerCase()}`)"
+          >
+            <img :src="f.logo" alt="" class="size-8 shrink-0" draggable="false" />
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-medium leading-tight">{{ f.name }}</span>
+              <span class="block text-[11px] leading-tight opacity-55">{{ f.what }}</span>
+            </span>
+          </button>
         </li>
       </ul>
       <p class="text-xs opacity-55">Links follow the Catzoid site address shared by the Catzoid apps ({{ host || '…' }}).</p>

@@ -6,7 +6,7 @@ import { isPhpFramework, isPythonFramework, type AppInfo, type DockerEngineId, t
 import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './detect';
 import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
-import { isWin } from './platform';
+import { exePath, isWin } from './platform';
 
 /**
  * Docker per site: generates a production-like Dockerfile + compose file for
@@ -56,11 +56,15 @@ let cli: { bin: string; compose: string[] } = { bin: 'docker', compose: ['compos
 export const dockerBin = () => cli.bin;
 /** The compose command of that CLI: e.g. ['docker', 'compose']. */
 export const dockerCompose = (): string[] => [cli.bin, ...cli.compose];
+/** The CLI's full path on Windows (a docker.exe inside a project folder never runs: compose runs with cwd there). */
+const bin = () => exePath(cli.bin, getShellEnv());
 /** OrbStack answers: containers get `<service>.<project>.orb.local`. */
 let orbLocal = false;
 
 function engineFromDocker(context: string, endpoint: string, os: string): DockerEngineId {
   const s = `${context} ${endpoint} ${os}`.toLowerCase();
+  // DoCatz's context (DoCatz TODO #7 / #23): the Catzoid engine.
+  if (s.includes('docatz')) return 'docatz';
   if (s.includes('orbstack')) return 'orbstack';
   if (s.includes('colima')) return 'colima';
   if (s.includes('rancher') || s.includes('.rd/')) return 'rancher';
@@ -1218,7 +1222,7 @@ export function writeFiles(root: string, files: { path: string; content: string 
 /** `docker compose ps` for the file, with OrbStack URLs. */
 export async function services(root: string, file: string, project: string | null): Promise<DockerService[]> {
   const args = [...cli.compose, '-f', file, ...(project ? ['-p', project] : []), 'ps', '-a', '--format', 'json'];
-  const r = await run(cli.bin, args, { cwd: root, timeout: 10_000 });
+  const r = await run(bin(), args, { cwd: root, timeout: 10_000 });
   if (r.code !== 0) return [];
   const rows = r.stdout
     .trim()
@@ -1259,10 +1263,11 @@ export function compose(
   onLine: (stream: 'out' | 'err', text: string) => void,
 ): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(cli.bin, [...cli.compose, '-f', file, ...(project ? ['-p', project] : []), ...args], {
+    const child = spawn(bin(), [...cli.compose, '-f', file, ...(project ? ['-p', project] : []), ...args], {
       cwd: root,
       env: { ...getShellEnv(), COMPOSE_PROGRESS: 'plain', BUILDKIT_PROGRESS: 'plain', COMPOSE_ANSI: 'never' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     const pipe = (stream: 'out' | 'err') => {
       let rest = '';
@@ -1281,4 +1286,152 @@ export function compose(
     });
     child.on('close', (code) => resolve(code ?? 1));
   });
+}
+
+// ---------------------------------------------------- development services
+
+/** A service of a compose file as `docker compose config` resolves it (variables filled in, ports normalised). */
+export interface ComposeServiceDef {
+  service: string;
+  image: string | null;
+  build: boolean;
+  ports: { host: number; container: number }[];
+  environment: Record<string, string>;
+}
+
+/** `docker compose config --format json`: the services with their images, published ports and environment. */
+export async function composeConfig(root: string, file: string, project: string | null): Promise<ComposeServiceDef[]> {
+  const r = await run(bin(), [...cli.compose, '-f', file, ...(project ? ['-p', project] : []), 'config', '--format', 'json'], { cwd: root, timeout: 15_000 });
+  if (r.code !== 0) return [];
+  let doc: { services?: Record<string, { image?: string; build?: unknown; ports?: { target?: number; published?: string | number }[]; environment?: Record<string, string | null> | string[] }> };
+  try {
+    doc = JSON.parse(r.stdout);
+  } catch {
+    return [];
+  }
+  return Object.entries(doc.services ?? {}).map(([service, s]) => {
+    const env: Record<string, string> = {};
+    if (Array.isArray(s.environment)) for (const l of s.environment) env[l.split('=')[0]] = l.slice(l.indexOf('=') + 1);
+    else for (const [k, v] of Object.entries(s.environment ?? {})) env[k] = v ?? '';
+    return {
+      service,
+      image: s.image ?? null,
+      build: Boolean(s.build),
+      ports: (s.ports ?? []).filter((x) => x.published && x.target).map((x) => ({ host: Number(x.published), container: Number(x.target) })),
+      environment: env,
+    };
+  });
+}
+
+export type DevServiceKind = 'postgres' | 'mysql' | 'mariadb' | 'redis' | 'mongo' | 'mailpit' | 'meilisearch';
+
+/** What a compose service is, from its image (postgis/timescale are Postgres, valkey/keydb/dragonfly speak Redis). */
+export function serviceKind(image: string | null): DevServiceKind | null {
+  const i = (image ?? '').toLowerCase().replace(/^.*\//, '');
+  if (/^(postgres|postgis|timescaledb)/.test(i)) return 'postgres';
+  if (/^mariadb/.test(i)) return 'mariadb';
+  if (/^(mysql|percona)/.test(i)) return 'mysql';
+  if (/^(redis|valkey|keydb|dragonfly)/.test(i)) return 'redis';
+  if (/^mongo/.test(i)) return 'mongo';
+  if (/^(mailpit|mailhog)/.test(i)) return 'mailpit';
+  if (/^meilisearch/.test(i)) return 'meilisearch';
+  return null;
+}
+
+/** The services the generator offers, with the port each listens on inside its container. */
+export const DEV_SERVICES: { kind: DevServiceKind; name: string; port: number }[] = [
+  { kind: 'postgres', name: 'PostgreSQL', port: 5432 },
+  { kind: 'mysql', name: 'MySQL', port: 3306 },
+  { kind: 'mariadb', name: 'MariaDB', port: 3306 },
+  { kind: 'redis', name: 'Redis', port: 6379 },
+  { kind: 'mongo', name: 'MongoDB', port: 27017 },
+  { kind: 'mailpit', name: 'Mailpit', port: 1025 },
+  { kind: 'meilisearch', name: 'Meilisearch', port: 7700 },
+];
+
+export const DEV_COMPOSE = 'compose.dev.yaml';
+
+/** The services a project seems to use: its database, Redis, MongoDB / mail / search libraries. */
+export function suggestedServices(stack: StackInfo, env: Record<string, string>, searchLibs: string[] = []): DevServiceKind[] {
+  const out = new Set<DevServiceKind>();
+  const db = stack.database?.engine;
+  if (db === 'postgres' || db === 'mysql' || db === 'mariadb') out.add(db);
+  if (stack.redis || /^rediss?:/.test(env.REDIS_URL ?? '')) out.add('redis');
+  const libs = new Set((stack.dataLibs ?? []).map((l) => l.id));
+  if (libs.has('mongoose') || libs.has('mongodb') || /^mongodb(\+srv)?:/.test(env.MONGODB_URI ?? env.MONGO_URL ?? env.DATABASE_URL ?? '')) out.add('mongo');
+  if (searchLibs.some((l) => /meili/i.test(l))) out.add('meilisearch');
+  return [...out];
+}
+
+export interface DevComposeInput {
+  root: string;
+  stack: StackInfo;
+  env: Record<string, string>;
+  services: DevServiceKind[];
+  /** Host port for a service: its usual one when free, else one from DevCatz's pool. */
+  hostPort: (kind: DevServiceKind, usual: number) => number;
+}
+
+/**
+ * compose.dev.yaml: only the services the app talks to while it is developed (database, Redis, mail, search), each
+ * published on 127.0.0.1 — no Dockerfile, the app itself keeps running on this computer (desktop apps, or any site).
+ */
+export function devCompose(o: DevComposeInput): { path: string; content: string; current: string | null } {
+  const url = o.env.DATABASE_URL?.match(/^\w+:\/\/([^:@/]*)(?::([^@/]*))?@[^/]+\/([^?]+)/);
+  const user = url?.[1] || o.env.DB_USERNAME || 'app';
+  const pass = url?.[2] || o.env.DB_PASSWORD || 'secret';
+  const name = url?.[3] || o.env.DB_DATABASE || o.stack.database?.database || 'app';
+  const q = JSON.stringify;
+  const blocks: string[] = [];
+  const volumes: string[] = [];
+  const port = (kind: DevServiceKind, inside: number) => `      - "127.0.0.1:${o.hostPort(kind, inside)}:${inside}"`;
+  for (const kind of DEV_SERVICES.filter((s) => o.services.includes(s.kind)).map((s) => s.kind)) {
+    if (kind === 'postgres') {
+      volumes.push('postgres-data');
+      blocks.push(['  postgres:', '    image: postgres:17-alpine', '    environment:', `      POSTGRES_USER: ${q(user === 'root' ? 'postgres' : user)}`, `      POSTGRES_PASSWORD: ${q(pass)}`, `      POSTGRES_DB: ${q(name)}`, '    ports:', port(kind, 5432), '    volumes:', '      - postgres-data:/var/lib/postgresql/data', '    healthcheck:', '      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]', '      interval: 3s', '      retries: 20'].join('\n'));
+    } else if (kind === 'mysql' || kind === 'mariadb') {
+      const P = kind === 'mariadb' ? 'MARIADB' : 'MYSQL';
+      volumes.push(`${kind}-data`);
+      blocks.push(
+        [
+          `  ${kind}:`,
+          `    image: ${kind === 'mariadb' ? 'mariadb:11' : 'mysql:8.4'}`,
+          '    environment:',
+          `      ${P}_ROOT_PASSWORD: ${q(pass)}`,
+          `      ${P}_DATABASE: ${q(name)}`,
+          ...(user === 'root' ? [] : [`      ${P}_USER: ${q(user)}`, `      ${P}_PASSWORD: ${q(pass)}`]),
+          '    ports:',
+          port(kind, 3306),
+          '    volumes:',
+          `      - ${kind}-data:/var/lib/mysql`,
+          '    healthcheck:',
+          kind === 'mariadb' ? '      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]' : '      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p$$MYSQL_ROOT_PASSWORD"]',
+          '      interval: 3s',
+          '      retries: 30',
+        ].join('\n'),
+      );
+    } else if (kind === 'redis') {
+      volumes.push('redis-data');
+      blocks.push(['  redis:', '    image: redis:7-alpine', '    ports:', port(kind, 6379), '    volumes:', '      - redis-data:/data', '    healthcheck:', '      test: ["CMD", "redis-cli", "ping"]', '      interval: 3s', '      retries: 20'].join('\n'));
+    } else if (kind === 'mongo') {
+      volumes.push('mongo-data');
+      blocks.push(['  mongo:', '    image: mongo:8', '    ports:', port(kind, 27017), '    volumes:', '      - mongo-data:/data/db', '    healthcheck:', '      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand(\'ping\')"]', '      interval: 3s', '      retries: 20'].join('\n'));
+    } else if (kind === 'mailpit') {
+      blocks.push(['  mailpit:', '    image: axllent/mailpit:latest', '    ports:', port(kind, 1025), `      - "127.0.0.1:${o.hostPort('mailpit', 8025)}:8025"`].join('\n'));
+    } else if (kind === 'meilisearch') {
+      volumes.push('meili-data');
+      blocks.push(['  meilisearch:', '    image: getmeili/meilisearch:v1.15', '    environment:', `      MEILI_MASTER_KEY: ${q(o.env.MEILISEARCH_KEY || o.env.MEILI_MASTER_KEY || 'devcatz-master-key')}`, '      MEILI_NO_ANALYTICS: "true"', '    ports:', port(kind, 7700), '    volumes:', '      - meili-data:/meili_data'].join('\n'));
+    }
+  }
+  if (!blocks.length) throw new Error('Choose at least one service');
+  const content = [
+    `${GENERATED_MARK}: development services for this project (the app itself runs on this computer, not in a container).`,
+    '# Each service listens on 127.0.0.1 only. DevCatz can start them with the app (Docker tab → Start with the app).',
+    'services:',
+    blocks.join('\n\n'),
+    ...(volumes.length ? ['', 'volumes:', ...volumes.map((v) => `  ${v}:`)] : []),
+    '',
+  ].join('\n');
+  const abs = join(o.root, DEV_COMPOSE);
+  return { path: DEV_COMPOSE, content, current: existsSync(abs) ? readFileSync(abs, 'utf8') : null };
 }

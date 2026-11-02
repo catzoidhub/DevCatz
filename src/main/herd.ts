@@ -76,6 +76,7 @@ import { ENGINES, StorageManager, binaryDirOf as storageBinaryDirOf, s3Region, s
 import { DB_DOMAIN_LABEL, DbServiceManager, dbProcessId } from './dbservices';
 import { DbCatz } from './dbcatz';
 import { DialCatz } from './dialcatz';
+import { DoCatz } from './docatz';
 import { Reports } from './reports';
 import { AppUpdater } from './updater';
 import { browsersState, editorIcons, validBrowser } from './browsers';
@@ -122,6 +123,9 @@ import type {
   EnvFileInfo,
   DockerGenOptions,
   DockerComposeFile,
+  DevComposePreview,
+  DevServiceKind,
+  ComposeEnvPlan,
   DockerService,
   UpdatesState,
   LinkOptions,
@@ -324,6 +328,8 @@ export class Herd extends EventEmitter {
   readonly dbcatz = new DbCatz();
   /** DialCatz, the API client: opened at a site by dialcatz:// links, installed from its release when missing. */
   readonly dialcatz = new DialCatz();
+  /** DoCatz, the container manager: opened at a compose project by docatz:// links, installed from its release when missing. */
+  readonly docatz = new DoCatz();
   /** DevCatz's own updates (Catzoid #54). */
   readonly updater = new AppUpdater();
   /** Report a Bug / feedback / crash reports to the Catzoid site (Catzoid #65). */
@@ -424,10 +430,12 @@ export class Herd extends EventEmitter {
     this.dbcatz.onChange = () => this.changed();
     void this.dbcatz.locate();
     this.dialcatz.onChange = () => this.changed();
+    this.docatz.onChange = () => this.changed();
     this.updater.onChange = () => this.changed();
     this.updater.headers = () => this.reports.headers();
     this.reports.onChange = () => this.changed();
     void this.dialcatz.locate();
+    void this.docatz.locate();
     this.dbs.linkedSites = (sid) => this.projects.filter((p) => p.dbService === sid).map((p) => p.id);
     this.dbs.unlinkSites = (sid) => {
       const linked = store.projects.filter((p) => p.dbService === sid);
@@ -764,7 +772,7 @@ export class Herd extends EventEmitter {
     this.rescan();
   }
 
-  update(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion'>>): void {
+  update(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion' | 'composeWithApp' | 'composeOffered'>>): void {
     const current = this.find(id);
     if (!current) return;
     if (patch.domain !== undefined) {
@@ -792,6 +800,8 @@ export class Herd extends EventEmitter {
     if (patch.envLocked === true) patch.envLocked = undefined; // locked is the default
     if (patch.envDomainOverride === true) patch.envDomainOverride = undefined; // on by default
     if (patch.dbService !== undefined && !patch.dbService) patch.dbService = undefined;
+    if (patch.composeWithApp !== undefined && !patch.composeWithApp) patch.composeWithApp = undefined;
+    if (patch.composeWithApp && !docker.composeFiles(current.path).some((c) => c.file === patch.composeWithApp)) throw new Error(`${patch.composeWithApp} not found`);
     if (patch.dbService && !this.dbs.config(patch.dbService)) throw new Error('No such database service');
     // A negative index means "from .env".
     for (const k of ['redisDb', 'redisCacheDb'] as const) {
@@ -1168,7 +1178,10 @@ export class Herd extends EventEmitter {
     if (p.dbService && this.dbs.config(p.dbService) && !this.dbs.isActive(p.dbService)) {
       await this.dbs.action(p.dbService, 'start').catch((e: Error) => this.processes.log(id, 'sys', `Database service: ${e.message}`));
     }
-    if (stack.runtime === 'php') return this.launchPhp(p, stack);
+    if (stack.runtime === 'php') {
+      if (p.composeWithApp) await this.composeUp(p);
+      return this.launchPhp(p, stack);
+    }
     const command = p.devCommand || stack.devCommand;
     if (!command) {
       this.processes.log(id, 'sys', 'No dev command found. Set one in the project settings.');
@@ -1197,6 +1210,8 @@ export class Herd extends EventEmitter {
       this.processes.log(id, 'sys', msg);
       throw new Error(msg);
     }
+    // Its compose services once nothing else stands in the way (a database is ready when the app connects).
+    if (p.composeWithApp) await this.composeUp(p);
     // A managed port taken by some other program: move that app to a free one.
     if (await this.reassignBusyPorts(p, stack)) return this.launch(id);
     // Another process (a terminal, another copy of the project) already owns a
@@ -1676,6 +1691,8 @@ export class Herd extends EventEmitter {
     await this.processes.stop(id);
     this.removeHotFile(id);
     this.updateRoutes();
+    const p = this.find(id);
+    if (p?.composeWithApp) await this.composeStop(p).catch((e: Error) => this.processes.log(id, 'sys', `Docker: ${e.message}`));
   }
 
   async restart(id: string): Promise<void> {
@@ -1701,14 +1718,23 @@ export class Herd extends EventEmitter {
   }
 
   async stopAll(): Promise<void> {
+    const composed = this.runningWithCompose();
     await this.processes.stopAll();
     this.updateRoutes();
+    await Promise.all(composed.map((p) => this.composeStop(p).catch(() => undefined)));
+  }
+
+  /** Running sites whose compose services started with them (they stop with them, also when DevCatz quits). */
+  private runningWithCompose(): ProjectConfig[] {
+    return this.projects.filter((p) => p.composeWithApp && this.processes.isActive(p.id));
   }
 
   async shutdown(): Promise<void> {
     for (const t of this.timers) clearInterval(t);
     for (const w of this.watchers) w.close();
+    const composed = this.runningWithCompose();
     await this.processes.stopAll();
+    await Promise.all(composed.map((p) => this.composeStop(p).catch(() => undefined)));
     this.monitor.stop();
     await this.storage.stopAll();
     await this.ws.stopAll();
@@ -3916,6 +3942,14 @@ export class Herd extends EventEmitter {
     return p;
   }
 
+  /** A site's compose file as an absolute path for docatz:// links (only one of its own compose files). */
+  composePath(id: string, file?: string | null): string | null {
+    if (!file) return null;
+    const p = this.project(id);
+    if (!docker.composeFiles(p.path).some((c) => c.file === file)) throw new Error(`${file} not found`);
+    return join(p.path, file);
+  }
+
   dockerFiles(id: string): DockerComposeFile[] {
     const p = this.project(id);
     return docker.composeFiles(p.path).map((c) => ({ ...c, project: c.generated ? docker.projectName(p, c.file) : null }));
@@ -4232,6 +4266,152 @@ export class Herd extends EventEmitter {
     const code = await docker.compose(p.path, file, project, cmd, (stream, text) => this.processes.log(id, stream, text));
     this.processes.log(id, 'sys', code === 0 ? `Docker: ${action} done` : `Docker: ${action} failed (exit ${code})`);
     if (code !== 0) throw new Error(`docker compose ${action} failed (exit ${code}); see Logs`);
+  }
+
+  // ------------------------------------------------- development services (compose)
+
+  /** compose.dev.yaml: host ports the usual ones when free (5432, 6379 …), else from DevCatz's pool; kept per site. */
+  private async devHostPorts(id: string, kinds: DevServiceKind[]): Promise<Map<string, number>> {
+    const want: [string, number][] = [];
+    for (const k of kinds) {
+      const d = docker.DEV_SERVICES.find((x) => x.kind === k)!;
+      want.push([k, d.port]);
+      if (k === 'mailpit') want.push(['mailpit-web', 8025]);
+    }
+    const out = new Map<string, number>();
+    const used = new Set(Object.values(store.ports));
+    for (const [name, usual] of want) {
+      const key = `${id}:dev:${name}`;
+      let port = store.ports[key];
+      if (!port) {
+        port = !used.has(usual) && !(await isPortOpen(usual)) ? usual : this.dockerHostPort(id, `dev-${name}`);
+        store.setPort(key, port);
+        used.add(port);
+      }
+      out.set(name, port);
+    }
+    return out;
+  }
+
+  async dockerDevPreview(id: string, services?: DevServiceKind[]): Promise<DevComposePreview> {
+    const p = this.project(id);
+    const stack = this.stacks.get(id);
+    if (!stack) throw new Error('Unknown site');
+    const env = readEnvFiles(join(p.path, '.env'));
+    const suggested = docker.suggestedServices(stack, env, detectSearch(p.path).libs.map((l) => l.engine));
+    const picked = services ?? (suggested.length ? suggested : (['postgres', 'redis'] as DevServiceKind[]));
+    const ports = await this.devHostPorts(id, picked);
+    const f = docker.devCompose({ root: p.path, stack, env, services: picked, hostPort: (kind, usual) => ports.get(kind === 'mailpit' && usual === 8025 ? 'mailpit-web' : kind) ?? usual });
+    return { ...f, services: docker.DEV_SERVICES.map((d) => ({ kind: d.kind, name: d.name, picked: picked.includes(d.kind), suggested: suggested.includes(d.kind) })) };
+  }
+
+  async dockerDevWrite(id: string, services: DevServiceKind[], content?: string): Promise<string> {
+    const p = this.project(id);
+    const pv = await this.dockerDevPreview(id, services);
+    docker.writeFiles(p.path, [{ path: pv.path, content: content ?? pv.content }], [pv.path]);
+    this.processes.log(id, 'sys', `Docker: wrote ${pv.path} (${services.join(', ')})`);
+    this.update(id, { composeWithApp: pv.path, composeOffered: true });
+    return pv.path;
+  }
+
+  /** .env lines that point the app at the compose file's services through their published ports. */
+  async dockerComposeEnv(id: string, file: string, apply: boolean): Promise<ComposeEnvPlan> {
+    const { p, project } = this.composeTarget(id, file);
+    const stack = this.stacks.get(id);
+    const php = stack?.runtime === 'php';
+    const own = readEnvFiles(join(p.path, '.env'));
+    const has = (k: string) => k in own;
+    const enc = encodeURIComponent;
+    const entries: Record<string, string> = {};
+    const sources: ComposeEnvPlan['sources'] = [];
+    let dbDone = false;
+    for (const s of await docker.composeConfig(p.path, file, project)) {
+      const kind = docker.serviceKind(s.image);
+      if (!kind) continue;
+      const inside = docker.DEV_SERVICES.find((d) => d.kind === kind)!.port;
+      const port = s.ports.find((x) => x.container === inside)?.host;
+      if (!port) continue;
+      const e = s.environment;
+      if ((kind === 'postgres' || kind === 'mysql' || kind === 'mariadb') && !dbDone) {
+        dbDone = true;
+        const P = kind === 'mariadb' ? 'MARIADB' : 'MYSQL';
+        const user = kind === 'postgres' ? e.POSTGRES_USER || 'postgres' : e[`${P}_USER`] || e.MYSQL_USER || 'root';
+        const pass = kind === 'postgres' ? e.POSTGRES_PASSWORD || '' : user === 'root' ? e[`${P}_ROOT_PASSWORD`] || e.MYSQL_ROOT_PASSWORD || '' : e[`${P}_PASSWORD`] || e.MYSQL_PASSWORD || '';
+        const db = kind === 'postgres' ? e.POSTGRES_DB || user : e[`${P}_DATABASE`] || e.MYSQL_DATABASE || '';
+        if (has('DATABASE_URL') || (!has('DB_HOST') && !php)) {
+          const query = own.DATABASE_URL?.match(/\?.*$/)?.[0] ?? '';
+          entries.DATABASE_URL = `${kind === 'postgres' ? 'postgresql' : 'mysql'}://${enc(user)}:${enc(pass)}@127.0.0.1:${port}/${db}${query}`;
+        } else {
+          Object.assign(entries, { DB_CONNECTION: kind === 'postgres' ? 'pgsql' : kind, DB_HOST: '127.0.0.1', DB_PORT: String(port), DB_DATABASE: db, DB_USERNAME: user, DB_PASSWORD: pass });
+        }
+      } else if (kind === 'redis') {
+        if (has('REDIS_URL') || (!has('REDIS_HOST') && !php)) entries.REDIS_URL = `redis://127.0.0.1:${port}${own.REDIS_URL?.match(/\/\d+$/)?.[0] ?? ''}`;
+        else Object.assign(entries, { REDIS_HOST: '127.0.0.1', REDIS_PORT: String(port) });
+      } else if (kind === 'mongo') {
+        const key = ['MONGODB_URI', 'MONGO_URL', 'MONGODB_URL', 'MONGO_URI'].find(has) ?? 'MONGODB_URI';
+        const auth = e.MONGO_INITDB_ROOT_USERNAME ? `${enc(e.MONGO_INITDB_ROOT_USERNAME)}:${enc(e.MONGO_INITDB_ROOT_PASSWORD ?? '')}@` : '';
+        const db = own[key]?.match(/^mongodb:\/\/[^/]+\/([^?]+)/)?.[1] || e.MONGO_INITDB_DATABASE || 'app';
+        entries[key] = `mongodb://${auth}127.0.0.1:${port}/${db}${auth ? '?authSource=admin' : ''}`;
+      } else if (kind === 'mailpit') {
+        if (has('SMTP_HOST') || (!php && !has('MAIL_HOST'))) Object.assign(entries, { SMTP_HOST: '127.0.0.1', SMTP_PORT: String(port) });
+        else Object.assign(entries, { MAIL_MAILER: 'smtp', MAIL_HOST: '127.0.0.1', MAIL_PORT: String(port) });
+      } else if (kind === 'meilisearch') {
+        entries.MEILISEARCH_HOST = `http://127.0.0.1:${port}`;
+        if (e.MEILI_MASTER_KEY) entries.MEILISEARCH_KEY = e.MEILI_MASTER_KEY;
+      } else continue;
+      sources.push({ service: s.service, kind, port });
+    }
+    if (!sources.length) throw new Error(`No database, Redis, MongoDB, mail or search service with a published port in ${file}`);
+    const plan = this.envMerge(id, '.env', entries, `Docker services from ${file} (DevCatz)`, apply);
+    const mask = (v: string) => v.replace(/(\/\/[^:/@]*:)[^@]*@/, '$1•••@');
+    const secret = (k: string) => /PASSWORD|KEY|SECRET/.test(k);
+    return {
+      file: '.env',
+      ...plan,
+      changed: plan.changed.map((c) => ({ key: c.key, from: secret(c.key) ? '•••' : mask(c.from), to: secret(c.key) ? '•••' : mask(c.to) })),
+      sources,
+    };
+  }
+
+  /** The site's compose services before its apps (Start): `up -d --wait`, so a database is ready when the app connects. */
+  private async composeUp(p: ProjectConfig): Promise<void> {
+    const file = p.composeWithApp!;
+    if (!docker.composeFiles(p.path).some((c) => c.file === file)) {
+      this.processes.log(p.id, 'sys', `Docker: ${file} is gone; not starting its services (Docker tab → Start with the app)`);
+      return;
+    }
+    if (!(await docker.dockerStatus()).daemon) {
+      const msg = `${file}: no container engine is running. Start one (Docker tab), or turn off "Start with the app" there.`;
+      this.processes.log(p.id, 'sys', msg);
+      throw new Error(msg);
+    }
+    const project = this.dockerFiles(p.id).find((c) => c.file === file)?.project ?? null;
+    const ls = this.launchState.get(p.id);
+    if (ls) {
+      ls.building = 'Docker services';
+      this.changed();
+    }
+    this.processes.log(p.id, 'sys', `$ docker compose -f ${file}${project ? ` -p ${project}` : ''} up -d --wait`);
+    const lines: string[] = [];
+    const log = (stream: 'out' | 'err', text: string) => {
+      lines.push(text);
+      this.processes.log(p.id, stream, text);
+    };
+    let code = await docker.compose(p.path, file, project, ['up', '-d', '--wait'], log);
+    // Podman / older compose know no --wait: start them, the app retries its connection anyway.
+    if (code !== 0 && lines.some((l) => /unknown flag.*wait/i.test(l))) code = await docker.compose(p.path, file, project, ['up', '-d'], log);
+    if (ls) ls.building = null;
+    if (code !== 0) throw new Error(`docker compose up failed (exit ${code}); see Logs`);
+  }
+
+  /** Stop: the site's compose services stop too (`stop`, not `down`: containers and data stay). */
+  private async composeStop(p: ProjectConfig): Promise<void> {
+    const file = p.composeWithApp!;
+    if (!docker.composeFiles(p.path).some((c) => c.file === file)) return;
+    const project = this.dockerFiles(p.id).find((c) => c.file === file)?.project ?? null;
+    this.processes.log(p.id, 'sys', `$ docker compose -f ${file}${project ? ` -p ${project}` : ''} stop`);
+    const code = await docker.compose(p.path, file, project, ['stop'], (stream, text) => this.processes.log(p.id, stream, text));
+    if (code !== 0) this.processes.log(p.id, 'sys', `Docker: stop failed (exit ${code})`);
   }
 
   // ------------------------------------------------------- sidebar organisation
@@ -4702,6 +4882,7 @@ export class Herd extends EventEmitter {
       databases: this.dbs.state(),
       dbcatz: this.dbcatz.state(),
       dialcatz: this.dialcatz.state(),
+      docatz: this.docatz.state(),
       appUpdate: this.updater.state(),
       toolTask: this.toolTask,
       toolUpdates: this.toolUpdateList,

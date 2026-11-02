@@ -6,14 +6,16 @@ import { diff } from '../linediff';
 import AiDocker from './AiDocker.vue';
 import DockerFileDialog from './DockerFileDialog.vue';
 import DockerFilesCard from './DockerFilesCard.vue';
+import DoCatzButton from './DoCatzButton.vue';
 import { aiOn } from '../ai';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type { DockerAction, DockerEngineId, DockerGenOptions, DockerTarget, DockerComposeFile, DockerFile, DockerService, DockerStatus, ProjectState } from '@shared/types';
+import type { ComposeEnvPlan, DevComposePreview, DevServiceKind, DockerAction, DockerEngineId, DockerGenOptions, DockerTarget, DockerComposeFile, DockerFile, DockerService, DockerStatus, ProjectState } from '@shared/types';
 import { attempt, herd, notify } from '../store';
 const aiDockerOn = aiOn('docker');
 
-const props = defineProps<{ project: ProjectState }>();
-const emit = defineEmits<{ logs: [] }>();
+/** `desktop`: an Electron / Tauri app — it ships as an installer, so only its development services run here (no deploy files). */
+const props = defineProps<{ project: ProjectState; desktop?: boolean }>();
+const emit = defineEmits<{ logs: []; files: [count: number] }>();
 
 const status = ref<DockerStatus | null>(null);
 const files = ref<DockerComposeFile[]>([]);
@@ -34,7 +36,7 @@ const ENGINES: EngineCard[] = ([
   { id: 'podman', name: 'Podman', start: 'Start Podman', download: 'https://podman-desktop.io/downloads' },
   { id: 'finch', name: 'Finch', start: 'finch vm start', download: 'https://github.com/runfinch/finch/releases', macOnly: true },
 ] as EngineCard[]).filter((e) => !(isWin && e.macOnly));
-const engineName = (id: DockerEngineId | null) => ENGINES.find((e) => e.id === id)?.name ?? 'Container engine';
+const engineName = (id: DockerEngineId | null) => (id === 'docatz' ? 'DoCatz' : (ENGINES.find((e) => e.id === id)?.name ?? 'Container engine'));
 const installedEngines = computed(() => ENGINES.filter((e) => status.value?.installed.includes(e.id)));
 const starting = ref<DockerEngineId | null>(null);
 async function start(id: DockerEngineId) {
@@ -50,6 +52,7 @@ const existingSetup = computed(() => files.value.some((f) => f.build && !f.gener
 async function refresh() {
   status.value = await herd.dockerStatus().catch(() => null);
   files.value = await herd.dockerFiles(props.project.id).catch(() => []);
+  emit('files', files.value.length);
   if (!files.value.some((f) => f.file === file.value)) file.value = files.value.find((f) => f.build)?.file ?? files.value[0]?.file ?? '';
   services.value = ready.value && file.value ? await herd.dockerServices(props.project.id, file.value).catch(() => []) : [];
 }
@@ -121,6 +124,56 @@ async function write() {
 }
 
 
+// ------------------------------------------------- start with the app, .env
+/** The compose file whose services start and stop with the site. */
+const withApp = computed(() => props.project.composeWithApp ?? null);
+async function setWithApp(on: boolean) {
+  await attempt(() => herd.updateProject(props.project.id, { composeWithApp: on ? file.value : '', composeOffered: true }));
+}
+/** Asked once per site: its compose file is there, nothing starts with it yet. */
+const offerWithApp = computed(() => !!files.value.length && !withApp.value && !props.project.composeOffered);
+const dismissOffer = () => attempt(() => herd.updateProject(props.project.id, { composeOffered: true }));
+
+const envPlan = ref<ComposeEnvPlan | null>(null);
+async function previewEnv() {
+  envPlan.value = (await attempt(() => herd.dockerComposeEnv(props.project.id, file.value, false))) ?? null;
+}
+async function writeEnv() {
+  const done = await attempt(() => herd.dockerComposeEnv(props.project.id, file.value, true));
+  envPlan.value = null;
+  if (done) notify('success', `Services written to ${done.file}`);
+}
+
+// ---------------------------------------------------- development services
+const dev = ref<DevComposePreview | null>(null);
+const devContent = ref('');
+const devOpen = ref(false);
+async function devPreview(services?: DevServiceKind[]) {
+  const r = await attempt(() => herd.dockerDevPreview(props.project.id, services));
+  if (!r) return;
+  dev.value = r;
+  devContent.value = r.content;
+}
+const toggleDev = (kind: DevServiceKind, on: boolean) => {
+  const picked = (dev.value?.services ?? []).filter((x) => (x.kind === kind ? on : x.picked)).map((x) => x.kind);
+  // MySQL and MariaDB share port 3306 inside: one of them.
+  void devPreview(on && (kind === 'mysql' || kind === 'mariadb') ? picked.filter((k) => k !== (kind === 'mysql' ? 'mariadb' : 'mysql')) : picked);
+};
+async function devWrite() {
+  const pv = dev.value;
+  if (!pv) return;
+  if (pv.current !== null && pv.current !== devContent.value && !(await confirmOverwrite([pv.path]))) return;
+  const picked = pv.services.filter((x) => x.picked).map((x) => x.kind);
+  const path = await attempt(() => herd.dockerDevWrite(props.project.id, picked, devContent.value !== pv.content ? devContent.value : undefined));
+  if (!path) return;
+  dev.value = null;
+  notify('success', `Wrote ${path}; its services now start with the ${props.desktop ? 'app' : 'site'}.`);
+  await refresh();
+  file.value = path;
+  filesVersion.value++;
+  void previewEnv();
+}
+
 const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'exited' || s === 'dead' ? 'badge-error' : 'badge-ghost');
 </script>
 
@@ -135,27 +188,22 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
         <div class="font-medium">{{ installedEngines.length ? 'No container engine is running' : 'No container engine installed' }}</div>
         <div class="text-xs opacity-70">
           <template v-if="installedEngines.length">
-            Start one of them; this tab re-checks every few seconds.
+            Start one of them, or use <b>DoCatz</b>; this tab re-checks every few seconds.
             <span v-if="status.error" class="block font-mono opacity-60">{{ status.error }}</span>
           </template>
-          <template v-else-if="isWin">
-            Any Docker-compatible engine works. <b>Docker Desktop</b> is recommended (it runs on WSL 2); containers are published on <code>127.0.0.1</code> ports.
-          </template>
           <template v-else>
-            Any Docker-compatible engine works. <b>OrbStack</b> is recommended: light, and every container gets an
-            <code>https://*.orb.local</code> domain; with the others containers are published on <code>127.0.0.1</code> ports.
+            <b>DoCatz</b>, the Catzoid container manager, is recommended: a light engine for Docker and Compose, and every container, image and volume
+            in one window. Any other Docker-compatible engine works too; containers are published on <code>127.0.0.1</code> ports.
           </template>
         </div>
-        <div class="flex flex-wrap gap-1.5 pt-1">
-          <template v-if="installedEngines.length">
-            <button v-for="(e, i) in installedEngines" :key="e.id" class="btn btn-sm" :class="{ 'btn-primary': i === 0 }" :disabled="!!starting" @click="start(e.id)">
-              <span v-if="starting === e.id" class="loading loading-spinner loading-xs" />{{ e.start }}
-            </button>
-          </template>
-          <template v-else>
-            <button v-for="(e, i) in ENGINES" :key="e.id" class="btn btn-sm" :class="{ 'btn-primary': i === 0 }" @click="herd.openUrl(e.download)">
-              Download {{ e.name }}<span v-if="i === 0" class="text-xs opacity-70">(recommended)</span>
-            </button>
+        <div class="flex flex-wrap items-center gap-1.5 pt-1">
+          <DoCatzButton :site-id="project.id" :file="file || null" primary />
+          <button v-for="e in installedEngines" :key="e.id" class="btn btn-sm" :disabled="!!starting" @click="start(e.id)">
+            <span v-if="starting === e.id" class="loading loading-spinner loading-xs" />{{ e.start }}
+          </button>
+          <template v-if="!installedEngines.length">
+            <span class="ml-1 text-xs opacity-60">or</span>
+            <a v-for="e in ENGINES" :key="e.id" class="link link-hover text-xs opacity-70" @click="herd.openUrl(e.download)">{{ e.name }}</a>
           </template>
         </div>
       </div>
@@ -164,7 +212,11 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
       <span class="status status-success" /> {{ engineName(status.engine) }} running
       <template v-if="status.context">· context <code>{{ status.context }}</code></template>
       <template v-if="!status.orbLocal && isWin">· containers on <code>127.0.0.1</code> ports</template>
-      <template v-else-if="!status.orbLocal">· containers on <code>127.0.0.1</code> ports (OrbStack would give them <code>*.orb.local</code> domains)</template>
+      <template v-else-if="!status.orbLocal">· containers on <code>127.0.0.1</code> ports</template>
+      <template v-if="!files.length">
+        <span class="flex-1" />
+        <DoCatzButton :site-id="project.id" />
+      </template>
     </div>
 
     <!-- Compose -->
@@ -172,13 +224,14 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
       <div class="card-body">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="flex-1 font-semibold">Containers</h2>
+          <DoCatzButton v-if="file" :site-id="project.id" :file="file" />
           <select v-model="file" class="select select-sm w-auto">
             <option v-for="f in files" :key="f.file" :value="f.file">{{ f.file }}{{ f.generated ? ' (generated)' : f.build ? '' : ' (no app build)' }}</option>
           </select>
         </div>
         <div class="flex flex-wrap gap-1.5">
           <button class="btn btn-primary btn-sm" :disabled="!ready || !!busy" @click="compose('up')">
-            <span v-if="busy === 'up:'" class="loading loading-spinner loading-xs" />Build &amp; Up
+            <span v-if="busy === 'up:'" class="loading loading-spinner loading-xs" />{{ current?.build ? 'Build & Up' : 'Up' }}
           </button>
           <button class="btn btn-sm" :disabled="!ready || !!busy" @click="compose('down')"><span v-if="busy === 'down:'" class="loading loading-spinner loading-xs" />Down</button>
           <button class="btn btn-sm" :disabled="!ready || !!busy || !services.length" @click="compose('restart')">Restart</button>
@@ -188,6 +241,37 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
         <p class="text-xs opacity-60">
           <code>docker compose -f {{ file }}{{ current?.project ? ` -p ${current.project}` : '' }}</code>; output goes to the Logs tab.
         </p>
+        <div v-if="offerWithApp" role="alert" class="alert alert-info alert-soft items-start py-2 text-xs">
+          <div class="flex-1">
+            Start the services of <code>{{ file }}</code> when you start this {{ desktop ? 'app' : 'site' }}, and stop them with it?
+            The {{ desktop ? 'app' : 'site' }} then finds its database ready.
+          </div>
+          <button class="btn btn-primary btn-xs" @click="setWithApp(true)">Yes</button>
+          <button class="btn btn-ghost btn-xs" @click="dismissOffer">No thanks</button>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          <label class="flex cursor-pointer items-center gap-2" :title="`Start: docker compose up -d --wait before the ${desktop ? 'app' : 'site'}. Stop: docker compose stop (containers and data stay).`">
+            <input type="checkbox" class="toggle toggle-sm toggle-primary" :checked="withApp === file" @change="setWithApp(($event.target as HTMLInputElement).checked)" />
+            Start with the {{ desktop ? 'app' : 'site' }}
+          </label>
+          <span v-if="withApp && withApp !== file" class="text-xs opacity-60"><code>{{ withApp }}</code> starts with it now</span>
+          <button class="btn btn-ghost btn-xs" title="Point .env at these services: 127.0.0.1 and their published ports" @click="previewEnv">Use in .env…</button>
+        </div>
+        <div v-if="envPlan" class="space-y-2 rounded-lg border border-base-300/70 bg-base-100 p-2.5 text-xs">
+          <div class="font-medium">
+            Changes to {{ envPlan.file }}
+            <span class="font-normal opacity-60">from {{ envPlan.sources.map((s) => `${s.service} (:${s.port})`).join(', ') }}</span>
+          </div>
+          <ul class="space-y-0.5 font-mono">
+            <li v-for="k in envPlan.added" :key="k" class="text-success">+ {{ k }}</li>
+            <li v-for="c in envPlan.changed" :key="c.key">~ {{ c.key }}: <span class="opacity-60">{{ c.from }}</span> → <span class="text-primary">{{ c.to }}</span></li>
+            <li v-if="!envPlan.added.length && !envPlan.changed.length" class="opacity-60">Already set; nothing to change.</li>
+          </ul>
+          <div class="flex justify-end gap-1.5">
+            <button class="btn btn-ghost btn-xs" @click="envPlan = null">Cancel</button>
+            <button class="btn btn-primary btn-xs" :disabled="!envPlan.added.length && !envPlan.changed.length" @click="writeEnv">Write</button>
+          </div>
+        </div>
         <div v-if="services.length" class="overflow-x-auto rounded-box border border-base-300/60">
           <table class="table table-sm">
             <thead><tr><th>Service</th><th>State</th><th>URL</th><th class="text-right"></th></tr></thead>
@@ -212,15 +296,61 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             </tbody>
           </table>
         </div>
-        <p v-else-if="ready" class="text-xs opacity-60">No containers yet. <b>Build &amp; Up</b> builds the images and starts them.</p>
+        <p v-else-if="ready" class="text-xs opacity-60">No containers yet. <template v-if="current?.build"><b>Build &amp; Up</b> builds the images and starts them.</template><template v-else><b>Up</b> starts them{{ withApp === file ? `, and so does Start` : '' }}.</template></p>
       </div>
     </div>
 
     <!-- The site's own Docker files: code editor, ⌘S saves. -->
     <DockerFilesCard :site-id="project.id" :version="filesVersion" />
 
-    <!-- Generator -->
+    <!-- Development services: compose.dev.yaml, the app keeps running on this computer. -->
     <div class="card">
+      <div class="card-body">
+        <h2 class="font-semibold">Development services</h2>
+        <p class="text-xs opacity-70">
+          The database, Redis, mail or search this {{ desktop ? 'app' : 'site' }} talks to, in containers: <code>compose.dev.yaml</code>, each service on
+          <code>127.0.0.1</code>. The {{ desktop ? 'app' : 'site' }} itself keeps running here (no Dockerfile); the services start and stop with it, and
+          <b>Use in .env</b> points it at them. DevCatz can also run these services without Docker ({{ desktop ? 'Database tab' : 'Database and Settings' }}).
+        </p>
+        <div v-if="!dev" class="flex flex-wrap gap-1.5">
+          <button class="btn btn-sm" @click="devPreview()">{{ files.some((f) => f.file === 'compose.dev.yaml') ? 'Change compose.dev.yaml…' : 'Create compose.dev.yaml…' }}</button>
+        </div>
+        <div v-else class="space-y-2">
+          <div class="flex flex-wrap gap-x-5 gap-y-2 rounded-box bg-base-200/50 px-4 py-3 text-sm">
+            <label v-for="x in dev.services" :key="x.kind" class="flex cursor-pointer items-center gap-2">
+              <input type="checkbox" class="checkbox checkbox-sm" :checked="x.picked" @change="toggleDev(x.kind, ($event.target as HTMLInputElement).checked)" />
+              {{ x.name }}<span v-if="x.suggested" class="badge badge-ghost badge-xs" title="This project seems to use it">used</span>
+            </label>
+          </div>
+          <div class="rounded-box border border-base-300/60">
+            <div class="flex items-center gap-2 px-3 py-2">
+              <code class="flex-1 text-xs">{{ dev.path }}</code>
+              <span v-if="dev.current === null" class="badge badge-success badge-xs">new</span>
+              <span v-else-if="dev.current === devContent" class="badge badge-ghost badge-xs">unchanged</span>
+              <span v-else class="badge badge-warning badge-xs">exists · differs</span>
+              <span v-if="devContent !== dev.content" class="badge badge-primary badge-soft badge-xs">edited</span>
+              <button class="btn btn-ghost btn-xs" @click="devOpen = true">Open</button>
+            </div>
+          </div>
+          <DockerFileDialog v-if="devOpen" v-model="devContent" :file="dev.path" :site-id="project.id" :original="dev.current" @save="devOpen = false" @close="devOpen = false">
+            <template #note><span class="text-xs opacity-60">Passwords come from your .env (DATABASE_URL / DB_*), else defaults for development.</span></template>
+            <template #save-hint>keeps your changes (written with Write)</template>
+            <template #actions>
+              <button v-if="devContent !== dev.content" class="btn btn-ghost btn-sm" @click="devContent = dev.content">Reset</button>
+              <button class="btn btn-primary btn-sm" @click="devOpen = false">Done</button>
+            </template>
+          </DockerFileDialog>
+          <div class="flex items-center gap-2">
+            <button class="btn btn-primary btn-sm" :disabled="dev.current === devContent" @click="devWrite">Write</button>
+            <button class="btn btn-ghost btn-sm" @click="dev = null">Cancel</button>
+            <span class="text-xs opacity-60">then it starts with the {{ desktop ? 'app' : 'site' }}, and .env is offered</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generator (deploy files): not for desktop apps, which ship as installers. -->
+    <div v-if="!desktop" class="card">
       <div class="card-body">
         <h2 class="font-semibold">{{ files.some((f) => f.generated) ? 'Regenerate Docker files' : 'Generate Docker files' }}</h2>
         <p v-if="existingSetup" class="text-xs opacity-70">
