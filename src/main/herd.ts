@@ -76,7 +76,7 @@ import { ENGINES, StorageManager, binaryDirOf as storageBinaryDirOf, s3Region, s
 import { DB_DOMAIN_LABEL, DbServiceManager, dbProcessId } from './dbservices';
 import { DbCatz } from './dbcatz';
 import { DialCatz } from './dialcatz';
-import { DoCatz } from './docatz';
+import { DoCatz, docatzProxyPort } from './docatz';
 import { onSharedChange, sharedDomains, writeShared, type SharedDomains } from './shared';
 import { Reports } from './reports';
 import { AppUpdater } from './updater';
@@ -431,7 +431,10 @@ export class Herd extends EventEmitter {
     this.dbcatz.onChange = () => this.changed();
     void this.dbcatz.locate();
     this.dialcatz.onChange = () => this.changed();
-    this.docatz.onChange = () => this.changed();
+    this.docatz.onChange = () => {
+      this.updateRoutes();
+      this.changed();
+    };
     this.updater.onChange = () => this.changed();
     this.updater.headers = () => this.reports.headers();
     this.reports.onChange = () => this.changed();
@@ -479,6 +482,17 @@ export class Herd extends EventEmitter {
     this.domainsReady = true;
     this.publishDomains();
     onSharedChange((sh) => void this.followSharedDomains(sh.domains ?? {}));
+    // DoCatz started or stopped (its proxy port in its bridge.json): its names follow (docatzRoute).
+    let docatzPort = docatzProxyPort();
+    this.timers.push(
+      setInterval(() => {
+        const port = docatzProxyPort();
+        if (port !== docatzPort) {
+          docatzPort = port;
+          this.updateRoutes();
+        }
+      }, 10_000),
+    );
     this.timers.push(setInterval(() => void this.pollPorts(), 1500));
     void this.pollPorts();
     this.timers.push(setInterval(() => void this.pollDatabases(), 5000));
@@ -3862,7 +3876,17 @@ export class Herd extends EventEmitter {
       .filter((p) => p.reverb && this.stacks.get(p.id)?.apps.some((a) => a.framework === 'laravel'))
       .map((p) => ({ domain: this.reverbDomain(p), port: this.reverbPort(p), projectName: `${p.name} Reverb`, running: this.processes.isActive(p.id), secure: true }));
     // Object storage domains (minio.localhost, console.minio.localhost …) and WebSocket servers (ws.localhost …).
-    this.proxy.setRoutes([...routes, ...reverb, ...this.storage.routes(), ...this.ws.routes(), ...this.search.routes(), ...this.mail.routes(), ...this.whatsapp.routes(), ...this.gateways.routes()]);
+    this.proxy.setRoutes([...routes, ...reverb, ...this.storage.routes(), ...this.ws.routes(), ...this.search.routes(), ...this.mail.routes(), ...this.whatsapp.routes(), ...this.gateways.routes(), ...this.docatzRoute()]);
+  }
+
+  /**
+   * DoCatz's names (<service>.<project>.docatz.<tld>, DoCatz TODO #62): with the :443 / :80 forwarding DevCatz's,
+   * every host under docatz.<tld> goes on to DoCatz's own proxy (its HTTP port from DoCatz's bridge.json, Host kept,
+   * X-Forwarded-Proto set), so those names work without a port too. Only while DoCatz has published its ports.
+   */
+  private docatzRoute(): Route[] {
+    const port = docatzProxyPort();
+    return port ? [{ domain: `docatz.${tld()}`, port, projectName: 'DoCatz', running: true, secure: true, keepHost: true }] : [];
   }
 
   /**
@@ -3883,6 +3907,7 @@ export class Herd extends EventEmitter {
     const svc = services.find((r) => r.domain === d);
     if (svc) return `the DevCatz service ${svc.projectName}`;
     if (store.settings.dbDomain && `${store.settings.dbDomain}.${tld()}` === d) return 'the DB domain (Settings → Database)';
+    if (d === `docatz.${tld()}` || d.endsWith(`.docatz.${tld()}`)) return 'DoCatz (its containers)';
     return null;
   }
 

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { app, shell } from 'electron';
@@ -15,6 +15,26 @@ import { run } from './env';
  */
 
 export const DOCATZ_REPO = 'catzoidhub/DoCatz';
+
+/**
+ * DoCatz's proxy HTTP port from its bridge.json (`proxy: { httpsPort, httpPort }`, in DoCatz's data folder), or null
+ * when DoCatz has not published one. Read at most every few seconds (route updates are frequent). DOCATZ_BRIDGE points
+ * elsewhere, for tests.
+ */
+let portCache: { at: number; port: number | null } = { at: 0, port: null };
+export function docatzProxyPort(): number | null {
+  if (Date.now() - portCache.at < 5000) return portCache.port;
+  let port: number | null = null;
+  try {
+    const b = JSON.parse(readFileSync(process.env.DOCATZ_BRIDGE || join(app.getPath('appData'), 'DoCatz', 'bridge.json'), 'utf8').replace(/^\uFEFF/, '')) as { proxy?: { httpPort?: number } };
+    const p = Number(b.proxy?.httpPort);
+    port = Number.isInteger(p) && p > 0 && p < 65536 ? p : null;
+  } catch {
+    /* DoCatz not installed, or not started yet */
+  }
+  portCache = { at: Date.now(), port };
+  return port;
+}
 const APP_PATHS = catzoidAppPaths('DoCatz');
 const BUNDLE_ID = 'com.mrcatz.docatz';
 
