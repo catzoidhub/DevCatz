@@ -644,7 +644,7 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
                   </div>
                   <div v-if="selected.engine === 'waha'"><span class="label-caps block">Dashboard / Swagger user</span><code class="selectable">{{ selected.config.apiUser || 'devcatz' }}</code></div>
                   <div><span class="label-caps block">Default session</span><code class="selectable">{{ selected.sessions[0]?.name ?? 'default' }}</code></div>
-                  <div><span class="label-caps block">Data folder</span><code class="selectable text-xs">{{ selected.config.dataDir }}</code></div>
+                  <div><span class="label-caps block">Data folder</span><code class="selectable text-xs break-all">{{ selected.config.dataDir }}</code></div>
                   <div><span class="label-caps block">Autostart</span>{{ selected.config.autoStart ? 'with DevCatz' : 'off' }}</div>
                 </div>
                 <div class="flex flex-wrap gap-2">
