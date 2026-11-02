@@ -1420,10 +1420,59 @@ export function docatzEnvInfo(root: string, file: string, project: string | null
   return { project: name, path, exists, projectEnv, same, updatedAt: exists ? statSync(path!).mtimeMs : null };
 }
 
+const DEFAULT_PORTS: Record<string, number> = { mysql: 3306, mariadb: 3306, postgres: 5432, postgresql: 5432, pgsql: 5432, redis: 6379, rediss: 6379, mongodb: 27017, amqp: 5672, smtp: 25, nats: 4222, memcached: 11211, memcache: 11211 };
+
+/**
+ * Windows, on DoCatz: whether the services on this PC that containers reach through host.docker.internal (the env's
+ * `*_HOST` / service URLs pointed there, with their port) can be reached — in plain words when not. Containers come
+ * in over WSL's network, so a service listening on 127.0.0.1 only is out of reach, and Windows Firewall (WSL's network
+ * is a Public one) can block one that listens everywhere: probed from DoCatz's WSL distro, as a container would.
+ * Keys a service's own `environment:` sets elsewhere (DB_HOST: db) are left out.
+ */
+async function hostReachNotes(env: Record<string, string>, services: Record<string, string | null>[]): Promise<string[]> {
+  const targets = new Map<number, string>();
+  for (const [k, v] of Object.entries(env)) {
+    if (services.length && services.every((s) => s[k] != null && !/host\.docker\.internal|127\.0\.0\.1|localhost|::1/i.test(s[k]!))) continue;
+    let port: number | null = null;
+    if (/HOST$/.test(k) && v.trim() === 'host.docker.internal') {
+      const base = k.replace(/_?HOST$/, '');
+      port = Number(env[`${base}_PORT`]) || DEFAULT_PORTS[(base === 'DB' ? env.DB_CONNECTION ?? '' : base).toLowerCase()] || null;
+    } else if (/(URL|URI|DSN)$/.test(k)) {
+      const m = /^([a-z+]+):\/\/(?:[^@/]*@)?host\.docker\.internal(?::(\d+))?/i.exec(v);
+      if (m) port = Number(m[2]) || DEFAULT_PORTS[m[1].toLowerCase().replace(/\+srv$/, '')] || null;
+    }
+    if (port && port < 65536 && !targets.has(port)) targets.set(port, k);
+  }
+  if (!targets.size) return [];
+  // Who listens on each port: `TCP  127.0.0.1:3306  0.0.0.0:0  LISTENING  1234`.
+  const listen = new Map<number, { addrs: string[]; pid: string }>();
+  for (const line of (await run('netstat', ['-ano', '-p', 'TCP'], { timeout: 10_000 })).stdout.split(/\r?\n/).concat((await run('netstat', ['-ano', '-p', 'TCPv6'], { timeout: 10_000 })).stdout.split(/\r?\n/))) {
+    const m = /^\s*TCP\s+(\S+):(\d+)\s+\S+\s+LISTENING\s+(\d+)/i.exec(line);
+    if (!m || !targets.has(Number(m[2]))) continue;
+    const l = listen.get(Number(m[2])) ?? { addrs: [], pid: m[3] };
+    l.addrs.push(m[1]);
+    listen.set(Number(m[2]), l);
+  }
+  const gw = /default via (\S+)/.exec((await run('wsl.exe', ['-d', 'docatz', '-e', '/sbin/ip', 'route', 'show', 'default'], { timeout: 15_000 })).stdout)?.[1];
+  const notes: string[] = [];
+  for (const [port, key] of targets) {
+    const l = listen.get(port);
+    const prog = l ? (/^"([^"]+)"/.exec((await run('tasklist', ['/FI', `PID eq ${l.pid}`, '/FO', 'CSV', '/NH'], { timeout: 10_000 })).stdout.trim())?.[1] ?? `process ${l.pid}`) : '';
+    if (!l) notes.push(`${key}: nothing on this PC listens on port ${port} yet, so containers will not reach it until it runs`);
+    else if (l.addrs.every((a) => /^(127\.|\[::1\])/.test(a)))
+      notes.push(`${key}: ${prog} listens on port ${port} on 127.0.0.1 only, so containers cannot reach it through host.docker.internal. Make it listen on 0.0.0.0 too (MySQL bind-address, Postgres listen_addresses, Redis bind)`);
+    else if (gw && (await run('wsl.exe', ['-d', 'docatz', '-e', 'nc', '-z', '-w', '3', gw, String(port)], { timeout: 15_000 })).code !== 0)
+      notes.push(`${key}: Windows Firewall blocks port ${port} (${prog}) for containers. Allow ${prog} on Public networks — WSL's network is one — in Windows Security → Firewall → Allow an app`);
+  }
+  return notes;
+}
+
 /**
  * What every service of the file also gets when it runs here, through one override (`env_file:` per service, written
  * to DevCatz's data, 0600): the .env's local hosts pointed at host.docker.internal, then — on DoCatz — the project's
  * DoCatz .env (set in DoCatz, Dokploy-style), which wins. The compose file's own `environment:` still wins over both.
+ * On DoCatz on Windows (a plain dockerd in WSL, with no host.docker.internal of its own) every service also gets
+ * `host.docker.internal:host-gateway`, which DoCatz's engine points at Windows — as DoCatz itself runs compose there.
  */
 async function envOverride(root: string, file: string, project: string | null, worktree?: string): Promise<{ files: string[]; globals: string[]; notes: string[] }> {
   const none = { files: [], globals: [], notes: [] };
@@ -1441,10 +1490,11 @@ async function envOverride(root: string, file: string, project: string | null, w
       local = {};
     }
   }
-  if (!docatz && !Object.keys(local).length && !worktree) return none;
+  const gateway = isWin && onDocatzEngine;
+  if (!docatz && !Object.keys(local).length && !worktree && !gateway) return none;
   // The services as compose resolves them: names, and (for a worktree) their fixed container names and published ports.
   const r = await run(bin(), [...cli.compose, '-f', file, '-p', name, 'config', '--format', 'json'], { cwd: root, timeout: 30_000 });
-  let doc: { services?: Record<string, { container_name?: string; ports?: { published?: string | number }[] }> } = {};
+  let doc: { services?: Record<string, { container_name?: string; ports?: { published?: string | number }[]; extra_hosts?: string[] | Record<string, unknown>; environment?: Record<string, string | null> }> } = {};
   try {
     doc = r.code === 0 ? JSON.parse(r.stdout) : {};
   } catch {
@@ -1469,6 +1519,7 @@ async function envOverride(root: string, file: string, project: string | null, w
     envFiles.push(f);
     notes.push(`Containers reach this computer's ${Object.keys(local).join(', ')} through host.docker.internal (for this test only; .env${docatz ? ' and the DoCatz .env stay' : ' stays'} unchanged)`);
   }
+  if (gateway) notes.push(...(await hostReachNotes({ ...readEnvFiles(join(root, '.env')), ...(docatz ? readEnvFiles(docatz) : {}), ...local }, services.map(([, d]) => d.environment ?? {}))));
   // A worktree runs next to its main site: a fixed container_name gets the worktree's name, and published ports are
   // left out (both would clash with the main site's containers); its containers are reached by their engine names.
   const renamed: string[] = [];
@@ -1476,6 +1527,9 @@ async function envOverride(root: string, file: string, project: string | null, w
   const blocks = services.map(([svc, def]) => {
     const lines = [`  ${JSON.stringify(svc)}:`];
     if (envFiles.length) lines.push('    env_file:', ...envFiles.map((f) => `      - ${JSON.stringify(f)}`));
+    // Compose reports them as `name=ip`; a service that sets host.docker.internal itself keeps its own.
+    const hosts = Array.isArray(def.extra_hosts) ? def.extra_hosts.map((h) => h.split(/[=:]/)[0]) : Object.keys(def.extra_hosts ?? {});
+    if (gateway && !hosts.includes('host.docker.internal')) lines.push('    extra_hosts:', '      - "host.docker.internal:host-gateway"');
     if (worktree && def.container_name) {
       lines.push(`    container_name: ${JSON.stringify(`${def.container_name}-${worktree}`)}`);
       renamed.push(def.container_name);

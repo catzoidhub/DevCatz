@@ -30,7 +30,9 @@ export async function loadShellEnv(): Promise<NodeJS.ProcessEnv> {
     const env: NodeJS.ProcessEnv = { ...process.env };
     const key = pathKey(env);
     const home = env.USERPROFILE ?? '';
-    const extra = [`${home}\\.bun\\bin`, `${env.ProgramFiles ?? 'C:\\Program Files'}\\nodejs`, `${env.ProgramFiles ?? 'C:\\Program Files'}\\Git\\cmd`];
+    // Last: DoCatz's docker / compose (~/.docatz/bin, on the Path only when the user chose so in DoCatz), so compose
+    // runs on DoCatz alone too; a docker found earlier on the Path (Docker Desktop's) still comes first.
+    const extra = [`${home}\\.bun\\bin`, `${env.ProgramFiles ?? 'C:\\Program Files'}\\nodejs`, `${env.ProgramFiles ?? 'C:\\Program Files'}\\Git\\cmd`, `${home}\\.docatz\\bin`];
     const parts = splitPath(env[key]);
     for (const p of extra) if (!parts.some((x) => x.toLowerCase() === p.toLowerCase())) parts.push(p);
     env[key] = joinPath(parts);
@@ -59,7 +61,7 @@ export async function loadShellEnv(): Promise<NodeJS.ProcessEnv> {
     }
   }
   // Common install locations, in case the shell profile could not be read.
-  const extra = [`${env.HOME}/.bun/bin`, '/opt/homebrew/bin', '/usr/local/bin', '/opt/orbstack/bin'];
+  const extra = [`${env.HOME}/.bun/bin`, '/opt/homebrew/bin', '/usr/local/bin', '/opt/orbstack/bin', `${env.HOME}/.docatz/bin`];
   const parts = (env.PATH ?? '').split(':').filter(Boolean);
   for (const p of extra) if (!parts.includes(p)) parts.push(p);
   env.PATH = parts.join(':');
