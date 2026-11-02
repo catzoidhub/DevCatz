@@ -1358,8 +1358,14 @@ export async function createNetwork(name: string): Promise<boolean> {
   return (await run(bin(), [...globals, 'network', 'create', name], { timeout: 30_000 })).code === 0;
 }
 
-/** Compose's own project name for a compose file (what `docker compose` uses without -p): its folder's name. */
-const projectNameOf = (root: string, file: string) => basename(dirname(join(root, file))).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+/**
+ * Compose's own project name for a compose file (what `docker compose` uses without -p): its top-level `name:`, else
+ * its folder's name — the rule DoCatz names its per-project .env by.
+ */
+const projectNameOf = (root: string, file: string) => {
+  const own = /^name:\s*["']?([A-Za-z0-9][\w.-]*)["']?\s*(?:#.*)?$/m.exec(readText(join(root, file)) ?? '')?.[1];
+  return (own ?? basename(dirname(join(root, file)))).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+};
 
 /**
  * The project's .env values that point at this computer (DB_HOST=127.0.0.1, REDIS_URL=redis://localhost …), turned to
@@ -1381,7 +1387,7 @@ export function loopbackToHost(env: Record<string, string>): Record<string, stri
   return out;
 }
 
-/** Compose's project name for a file: the -p DevCatz passes (generated files), else compose's own (its folder's name). */
+/** Compose's project name for a file: the -p DevCatz passes (generated files), else compose's own (`name:`, else its folder's). */
 export const composeProjectName = (root: string, file: string, project: string | null) => project ?? projectNameOf(root, file);
 
 /** Writes the project's .env as DoCatz's .env of `name` (local hosts → host.docker.internal, 0600); its path, or null. */
