@@ -531,7 +531,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
               ? 'Install dependencies (composer install)'
               : p.stack.runtime === 'python'
                 ? `Install dependencies (${pythonInstallLabel(p.stack)})`
-                : `Install dependencies (${p.stack.packageManager} install)`
+                : (p.stack.packageManager ? `Install dependencies (${p.stack.packageManager} install)` : 'Install dependencies')
         }}
       </button>
     </div>
@@ -558,7 +558,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
         <span v-if="p.dbTask" class="loading loading-spinner loading-xs" />{{ p.dbTask ? `${p.dbTask}…` : 'Repair Electron' }}
       </button>
       <button v-else class="btn btn-sm" :disabled="!!p.dbTask" @click="installDeps">
-        <span v-if="p.dbTask" class="loading loading-spinner loading-xs" />{{ p.dbTask ? `${p.dbTask}…` : `Install dependencies (${p.stack.packageManager} install)` }}
+        <span v-if="p.dbTask" class="loading loading-spinner loading-xs" />{{ p.dbTask ? `${p.dbTask}…` : (p.stack.packageManager ? `Install dependencies (${p.stack.packageManager} install)` : 'Install dependencies') }}
       </button>
     </div>
     <div v-if="p.stack.runtime === 'php' && !p.stack.depsMissing && p.stack.jsDepsMissing" role="alert" class="alert text-sm">
@@ -622,12 +622,23 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
           <!-- Framework: the same mark and name as the site list, then any other framework its apps use -->
           <div>
             <div class="label-caps mb-2.5">{{ frameworks.length > 1 ? 'Frameworks' : 'Framework' }}</div>
-            <ul class="flex flex-wrap gap-2">
-              <li v-for="f in frameworks" :key="f.label" class="flex items-center gap-2.5 rounded-xl border border-base-300/60 bg-base-200/40 py-1.5 pr-3.5 pl-1.5">
-                <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-base-100 ring-1 ring-base-content/10">
-                  <StackMark :icon="f.icon" :label="f.label" class="size-5" />
+            <!-- More than two (a polyglot site): smaller chips, so Stack below still fits next to the preview. -->
+            <ul :class="frameworks.length > 2 ? 'grid grid-cols-2 gap-1.5' : 'flex flex-wrap gap-2'">
+              <li
+                v-for="f in frameworks"
+                :key="f.label"
+                class="flex min-w-0 items-center border border-base-300/60 bg-base-200/40"
+                :class="frameworks.length > 2 ? 'gap-2 rounded-lg py-1 pr-2.5 pl-1' : 'gap-2.5 rounded-xl py-1.5 pr-3.5 pl-1.5'"
+                :title="f.main ? `${f.label}: main framework` : `${f.label}: ${f.apps.join(', ')}`"
+              >
+                <span class="grid shrink-0 place-items-center bg-base-100 ring-1 ring-base-content/10" :class="frameworks.length > 2 ? 'size-6 rounded-md' : 'size-8 rounded-lg'">
+                  <StackMark :icon="f.icon" :label="f.label" :class="frameworks.length > 2 ? 'size-4' : 'size-5'" />
                 </span>
-                <span class="min-w-0">
+                <span v-if="frameworks.length > 2" class="min-w-0 truncate text-xs leading-tight">
+                  <span class="font-medium">{{ f.label }}</span>
+                  <span class="opacity-55"> · {{ f.main ? 'main' : f.apps.join(', ') }}</span>
+                </span>
+                <span v-else class="min-w-0">
                   <span class="block text-sm font-medium leading-tight">{{ f.label }}</span>
                   <span class="block text-[11px] leading-tight opacity-55">{{ f.main ? 'main framework' : f.apps.join(', ') }}</span>
                 </span>
