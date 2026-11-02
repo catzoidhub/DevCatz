@@ -140,7 +140,11 @@ export class Proxy {
    * subdomain of a site (portal.shop.localhost, a.b.shop.localhost) reaches it.
    */
   private route(req: IncomingMessage): Route | undefined {
-    const host = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/\.$/, '').toLowerCase();
+    return this.routeFor(req.headers.host ?? '');
+  }
+
+  private routeFor(hostHeader: string): Route | undefined {
+    const host = hostHeader.replace(/:\d+$/, '').replace(/\.$/, '').toLowerCase();
     const exact = this.routes.get(host);
     if (exact) return exact;
     const labels = host.split('.');
@@ -151,6 +155,7 @@ export class Proxy {
     }
     return undefined;
   }
+
 
   private handle = (req: IncomingMessage, res: ServerResponse, secure: boolean) => {
     if (req.url === PING_PATH) {
@@ -434,14 +439,29 @@ ${detail ? `<code class="detail">${esc(detail)}</code>` : ''}
     const fallback = this.certs.defaultPem();
     const errors: string[] = [];
 
-    const bind = (server: Server, port: number, host: string) =>
-      new Promise<boolean>((resolve) => {
-        server.once('error', (err: NodeJS.ErrnoException) => {
-          errors.push(`${host}:${port} ${err.code ?? err.message}`);
-          resolve(false);
+    // A port in use is tried again for ~8 s: DoCatz stands in on these ports while DevCatz is closed and lets go
+    // within ~2 s of DevCatz starting (DoCatz #62).
+    const bindOnce = (server: Server, port: number, host: string) =>
+      new Promise<NodeJS.ErrnoException | null>((resolve) => {
+        const onError = (err: NodeJS.ErrnoException) => resolve(err);
+        server.once('error', onError);
+        server.listen(port, host, () => {
+          server.off('error', onError);
+          resolve(null);
         });
-        server.listen(port, host, () => resolve(true));
       });
+    const until = Date.now() + 8000; // one budget for all four listeners, not 8 s each
+    const bind = async (server: Server, port: number, host: string) => {
+      for (;;) {
+        const err = await bindOnce(server, port, host);
+        if (!err) return true;
+        if (err.code !== 'EADDRINUSE' || Date.now() >= until) {
+          errors.push(`${host}:${port} ${err.code ?? err.message}`);
+          return false;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    };
 
     const results: boolean[][] = [[], []];
     for (const host of ['127.0.0.1', '::1']) {
@@ -451,9 +471,10 @@ ${detail ? `<code class="detail">${esc(detail)}</code>` : ''}
           key: fallback.key,
           SNICallback: (name, cb) => {
             try {
-              // Only mint certificates for linked domains.
+              // Only mint certificates for hosts a route answers: a linked domain or one under it (portal.shop.localhost,
+              // web.shop.docatz.localhost going on to DoCatz).
               const host = name.toLowerCase();
-              cb(null, this.certs.contextFor(this.routes.has(host) ? host : 'localhost'));
+              cb(null, this.certs.contextFor(this.routeFor(host) ? host : 'localhost'));
             } catch (err) {
               cb(err as Error);
             }
