@@ -199,17 +199,28 @@ async function clear() {
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col">
-    <div class="flex items-center gap-2 border-b border-base-300/60 px-4 py-2">
-      <div v-if="laravel" class="join">
-        <button class="btn btn-xs join-item" :class="{ 'btn-active': source === 'dev' }" @click="source = 'dev'">Dev servers</button>
-        <button class="btn btn-xs join-item" :class="{ 'btn-active': source === 'laravel' }" @click="source = 'laravel'">laravel.log</button>
+    <!-- Two rows: what to show and what to do with it, then the app / service chips (one sideways-scrolling row). -->
+    <div class="space-y-2 border-b border-base-300/60 px-4 py-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <div v-if="laravel" class="join shrink-0">
+          <button class="btn btn-xs join-item" :class="{ 'btn-active': source === 'dev' }" @click="source = 'dev'">Dev servers</button>
+          <button class="btn btn-xs join-item" :class="{ 'btn-active': source === 'laravel' }" @click="source = 'laravel'">laravel.log</button>
+        </div>
+        <input v-model="filter" class="input input-xs w-full min-w-40 max-w-72 flex-1" placeholder="Filter…" />
+        <span v-if="source === 'dev'" class="shrink-0 text-xs opacity-50">{{ lines.length }} lines</span>
+        <span v-else class="truncate text-xs opacity-50" :title="laravelFile ?? ''">{{ laravelFile ? laravelFile.split('/').slice(-2).join('/') : 'no laravel.log yet' }}</span>
+        <div class="flex-1" />
+        <div class="flex shrink-0 items-center gap-1">
+          <label class="label cursor-pointer gap-1 pr-1 text-xs"><input v-model="follow" type="checkbox" class="toggle toggle-xs toggle-primary" /> follow</label>
+          <button class="btn btn-ghost btn-xs" title="Copy the selected text, or every line shown (filter and chip apply)" @click="copy">Copy</button>
+          <button v-if="source === 'dev'" class="btn btn-ghost btn-xs" @click="clear">Clear</button>
+          <button v-if="canAi" class="btn btn-xs" title="Explain the selected lines (or the last ones) and suggest fixes" @click="explain">✦ Explain with AI</button>
+        </div>
       </div>
-      <input v-model="filter" class="input input-xs w-56 shrink-0" placeholder="Filter…" />
-      <!-- Many apps / compose services: one row that scrolls sideways (wheel or trackpad), faded where more is hidden. -->
       <div
         v-if="source === 'dev' && tags.length > 1"
         ref="chips"
-        class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        class="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         :style="chipFade"
         role="tablist"
         aria-label="Show one app or service"
@@ -221,13 +232,6 @@ async function clear() {
           <span class="log-chip-dot" />{{ t }}
         </button>
       </div>
-      <span v-if="source === 'dev'" class="shrink-0 text-xs opacity-50">{{ lines.length }} lines</span>
-      <span v-else class="truncate text-xs opacity-50" :title="laravelFile ?? ''">{{ laravelFile ? laravelFile.split('/').slice(-2).join('/') : 'no laravel.log yet' }}</span>
-      <div v-if="!(source === 'dev' && tags.length > 1)" class="flex-1" />
-      <label class="label shrink-0 cursor-pointer gap-1 text-xs"><input v-model="follow" type="checkbox" class="toggle toggle-xs toggle-primary" /> follow</label>
-      <button class="btn btn-ghost btn-xs shrink-0" title="Copy the selected text, or every line shown (filter and chip apply)" @click="copy">Copy</button>
-      <button v-if="source === 'dev'" class="btn btn-ghost btn-xs shrink-0" @click="clear">Clear</button>
-      <button v-if="canAi" class="btn btn-xs shrink-0" title="Explain the selected lines (or the last ones) and suggest fixes" @click="explain">✦ Explain with AI</button>
     </div>
     <div v-if="explaining" class="max-h-[50%] shrink-0 overflow-y-auto border-b border-base-300/60 p-3">
       <AiExplain :key="explaining.join('\n').length" :site-id="projectId" source="logs" :lines="explaining" @close="explaining = null" />

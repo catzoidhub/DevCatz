@@ -11,7 +11,7 @@ import docatzLogo from '../assets/logos/docatz.png';
 import { aiOn } from '../ai';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComposeEnvPlan, DevComposePreview, DevServiceKind, DockerAction, DockerEngineId, DockerGenOptions, DockerTarget, DockerComposeFile, DockerFile, DockerService, DockerStatus, ProjectState } from '@shared/types';
-import { attempt, herd, notify } from '../store';
+import { attempt, herd, loadLogs, logs, notify } from '../store';
 const aiDockerOn = aiOn('docker');
 
 /** `desktop`: an Electron / Tauri app — it ships as an installer, so only its development services run here (no deploy files). */
@@ -66,16 +66,59 @@ onMounted(() => {
 onBeforeUnmount(() => clearInterval(timer));
 watch(file, () => void refresh());
 
+// ---- Progress of Build & Up / Build / Down: read from the compose output as it streams into the site's log.
+const run = ref<{ action: DockerAction; from: number; at: number } | null>(null);
+const now = ref(Date.now());
+let tick: ReturnType<typeof setInterval> | undefined;
+const elapsed = computed(() => {
+  const s = run.value ? Math.max(0, Math.round((now.value - run.value.at) / 1000)) : 0;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+});
+/** Per service: the BuildKit step it is at ("3/5"), then what the containers are doing; the last line as it came. */
+const progress = computed(() => {
+  const r = run.value;
+  if (!r) return null;
+  const lines = (logs.get(props.project.id) ?? []).slice(r.from).filter((l) => l.stream === 'docker' || l.stream === 'err');
+  const steps = new Map<string, string>();
+  const containers = new Map<string, string>();
+  let phase = r.action === 'down' ? 'Stopping containers' : r.action === 'build' ? 'Building images' : 'Preparing';
+  let last = '';
+  for (const { text } of lines) {
+    const step = /^#\d+ \[([\w.-]+) [^\]]*?(\d+)\/(\d+)\]/.exec(text);
+    if (step) {
+      steps.set(step[1], `${step[2]}/${step[3]}`);
+      phase = 'Building images';
+    }
+    const c = /^\s*Container (\S+)\s+(Creating|Created|Starting|Started|Waiting|Healthy|Running|Stopping|Stopped|Removing|Removed|Error)/.exec(text);
+    if (c) {
+      containers.set(c[1], c[2]);
+      phase = r.action === 'down' ? 'Stopping containers' : 'Starting containers';
+    }
+    if (/^\s*Image \S+ Building/.test(text)) phase = 'Building images';
+    if (text.trim()) last = text.trim();
+  }
+  return { phase, steps: [...steps], containers: [...containers], last };
+});
+
 async function compose(action: DockerAction, service?: string) {
   if (!file.value) return;
   busy.value = `${action}:${service ?? ''}`;
   if (action === 'logs') emit('logs');
-  else if (action === 'up' || action === 'build') notify('info', 'Building… the output streams into the Logs tab.');
+  else {
+    await loadLogs(props.project.id).catch(() => undefined);
+    run.value = { action, from: logs.get(props.project.id)?.length ?? 0, at: Date.now() };
+    now.value = Date.now();
+    tick = setInterval(() => (now.value = Date.now()), 1000);
+  }
   const ok = await attempt(() => herd.dockerCompose(props.project.id, file.value, action, service).then(() => true));
   busy.value = null;
+  clearInterval(tick);
+  run.value = null;
   if (ok && action === 'up') notify('success', status.value?.orbLocal || status.value?.docatzNames ? `Containers are up. ${status.value?.docatzNames ? 'DoCatz' : 'OrbStack'} serves them at the URLs below.` : 'Containers are up.');
+  if (ok === undefined && action !== 'logs') emit('logs');
   await refresh();
 }
+onBeforeUnmount(() => clearInterval(tick));
 
 // ---------------------------------------------------------------- generator
 type Preview = { files: (DockerFile & { pick: boolean; orig: string })[]; composeFile: string; project: string; options: DockerGenOptions; mrcatzDetected: boolean };
@@ -445,6 +488,21 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
           <button class="btn btn-sm" :disabled="!ready || !!busy || !services.length" @click="compose('restart')">Restart</button>
           <button class="btn btn-sm" :disabled="!ready || !!busy" @click="compose('build')"><span v-if="busy === 'build:'" class="loading loading-spinner loading-xs" />Build only</button>
           <button class="btn btn-sm btn-ghost" :disabled="!ready || !services.length" @click="compose('logs')">Logs</button>
+        </div>
+        <!-- While it runs: phase, time, each service's build step and each container's state, the latest line. -->
+        <div v-if="run && progress" class="space-y-2 rounded-box border border-primary/30 bg-primary/5 px-3 py-2.5" aria-live="polite">
+          <div class="flex items-center gap-2 text-sm">
+            <span class="loading loading-spinner loading-sm text-primary" />
+            <span class="font-medium">{{ progress.phase }}…</span>
+            <span class="font-mono text-xs opacity-60">{{ elapsed }}</span>
+            <span class="flex-1" />
+            <button class="btn btn-ghost btn-xs" @click="emit('logs')">Open Logs</button>
+          </div>
+          <div v-if="progress.steps.length || progress.containers.length" class="flex flex-wrap gap-1.5 text-xs">
+            <span v-for="[svc, step] in progress.steps" :key="'s' + svc" class="badge badge-ghost badge-sm font-mono">{{ svc }} · step {{ step }}</span>
+            <span v-for="[name, state] in progress.containers" :key="'c' + name" class="badge badge-sm" :class="/Started|Healthy|Running/.test(state) ? 'badge-success badge-soft' : state === 'Error' ? 'badge-error badge-soft' : 'badge-ghost'">{{ name }} · {{ state.toLowerCase() }}</span>
+          </div>
+          <div v-if="progress.last" class="truncate font-mono text-[11px] opacity-60" :title="progress.last">{{ progress.last }}</div>
         </div>
         <p v-if="files.length" class="text-xs opacity-60">
           <code>docker compose -f {{ file }}{{ current?.project ? ` -p ${current.project}` : '' }}</code>; output goes to the Logs tab.

@@ -8,7 +8,7 @@ import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './d
 import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
 import { exePath, isWin } from './platform';
-import { docatzEngine, docatzEnvFile } from './docatz';
+import { docatzEngine, docatzEnvFile, docatzEnvPath } from './docatz';
 import { store } from './store';
 
 /**
@@ -1362,22 +1362,74 @@ export async function createNetwork(name: string): Promise<boolean> {
 const projectNameOf = (root: string, file: string) => basename(dirname(join(root, file))).toLowerCase().replace(/[^a-z0-9_-]/g, '');
 
 /**
- * On DoCatz, the project's DoCatz .env (set in DoCatz, Dokploy-style) as DoCatz itself applies it: `--env-file` for
- * the file's own ${…} and an override giving every service `env_file:` — written to DevCatz's data, 0600.
+ * The project's .env values that point at this computer (DB_HOST=127.0.0.1, REDIS_URL=redis://localhost …), turned to
+ * host.docker.internal: inside a container 127.0.0.1 is the container itself. Only hosts and service URLs (database,
+ * Redis, mail, queue …), never the app's own URL.
  */
-async function docatzEnvArgs(root: string, file: string, project: string | null): Promise<string[]> {
-  if (!onDocatzEngine) return [];
+const LOOP = /^(127\.0\.0\.1|localhost|\[?::1\]?)$/i;
+const SERVICE_URL = /^(mysql|mariadb|postgres(ql)?|redis|rediss|mongodb(\+srv)?|amqp|smtp|nats|memcached?):\/\//i;
+export function loopbackToHost(env: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (/^(APP|ASSET|VITE)_/.test(k)) continue;
+    if (/HOST$/.test(k) && LOOP.test(v.trim())) out[k] = 'host.docker.internal';
+    else if (/(URL|URI|DSN)$/.test(k) && SERVICE_URL.test(v)) {
+      const r = v.replace(/(:\/\/(?:[^@/]*@)?)(127\.0\.0\.1|localhost|\[::1\])(?=[:/?]|$)/i, '$1host.docker.internal');
+      if (r !== v) out[k] = r;
+    }
+  }
+  return out;
+}
+
+/**
+ * What every service of the file also gets when it runs here, through one override (`env_file:` per service, written
+ * to DevCatz's data, 0600): the .env's local hosts pointed at host.docker.internal, then — on DoCatz — the project's
+ * DoCatz .env (set in DoCatz, Dokploy-style), which wins. The compose file's own `environment:` still wins over both.
+ */
+async function envOverride(root: string, file: string, project: string | null): Promise<{ files: string[]; globals: string[]; notes: string[] }> {
+  const none = { files: [], globals: [], notes: [] };
   const name = project ?? projectNameOf(root, file);
-  const env = docatzEnvFile(name);
-  if (!env) return [];
+  let docatz = onDocatzEngine ? docatzEnvFile(name) : null;
+  let local = loopbackToHost(readEnvFiles(join(root, '.env')));
+  const copyNote: string[] = [];
+  // On DoCatz with no DoCatz .env for this project yet: the project's .env becomes it (local hosts already pointed at
+  // host.docker.internal), DoCatz's place for a project's environment, to change there like Dokploy's Environment tab.
+  if (onDocatzEngine && !docatz && existsSync(join(root, '.env'))) {
+    const target = docatzEnvPath(name);
+    if (target) {
+      mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+      const lines = readFileSync(join(root, '.env'), 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/);
+      const out = lines.map((l) => {
+        const m = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$/.exec(l);
+        return m && m[2] in local ? `${m[1]}${m[2]}${m[3]}${local[m[2]]}` : l;
+      });
+      writeFileSync(target, `# Copied by DevCatz from ${name}'s .env (local hosts → host.docker.internal); change it in DoCatz.\n${out.join('\n')}`, { mode: 0o600 });
+      docatz = target;
+      copyNote.push(`DevCatz copied .env to DoCatz's .env of ${name}${Object.keys(local).length ? ` (${Object.keys(local).join(', ')} → host.docker.internal)` : ''}: change it in DoCatz`);
+      local = {};
+    }
+  }
+  if (!docatz && !Object.keys(local).length) return none;
   const r = await run(bin(), [...cli.compose, '-f', file, '-p', name, 'config', '--services'], { cwd: root, timeout: 30_000 });
   const services = r.code === 0 ? r.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
-  if (!services.length) return ['--env-file', env];
+  if (!services.length) return docatz ? { files: [], globals: ['--env-file', docatz], notes: [`DoCatz .env of this project: ${docatz}`] } : none;
   const dir = join(app.getPath('userData'), 'docker');
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const override = join(dir, `${name}.docatz-env.yaml`);
-  writeFileSync(override, `# Written by DevCatz before each run: every service gets ${name}'s DoCatz .env.\nservices:\n${services.map((s) => `  ${JSON.stringify(s)}:\n    env_file:\n      - ${JSON.stringify(env)}`).join('\n')}\n`, { mode: 0o600 });
-  return ['--env-file', env, '-f', override];
+  const envFiles: string[] = [];
+  const notes: string[] = [...copyNote];
+  if (Object.keys(local).length) {
+    const f = join(dir, `${name}.local-hosts.env`);
+    writeFileSync(f, `# Written by DevCatz before each run here: .env hosts on this computer, as containers reach them.\n${Object.entries(local).map(([k, v]) => `${k}=${v}`).join('\n')}\n`, { mode: 0o600 });
+    envFiles.push(f);
+    notes.push(`Containers reach this computer's ${Object.keys(local).join(', ')} through host.docker.internal (for this test only; .env is unchanged)`);
+  }
+  if (docatz) {
+    envFiles.push(docatz);
+    notes.push(`DoCatz .env of this project: ${docatz}`);
+  }
+  const override = join(dir, `${name}.env-override.yaml`);
+  writeFileSync(override, `# Written by DevCatz before each run.\nservices:\n${services.map((s) => `  ${JSON.stringify(s)}:\n    env_file:\n${envFiles.map((f) => `      - ${JSON.stringify(f)}`).join('\n')}`).join('\n')}\n`, { mode: 0o600 });
+  return { files: ['-f', override], globals: docatz ? ['--env-file', docatz] : [], notes };
 }
 
 /** Runs a compose command, streaming its output line by line. */
@@ -1388,10 +1440,11 @@ export async function compose(
   args: string[],
   onLine: (stream: 'out' | 'err', text: string) => void,
 ): Promise<number> {
-  const envArgs = await docatzEnvArgs(root, file, project);
-  if (envArgs.length) onLine('out', `DoCatz .env of this project: ${envArgs[1]}`);
+  // Only when containers are made or built: logs, ps, down need no environment.
+  const env = ['up', 'build', 'create', 'run', 'restart'].includes(args[0]) ? await envOverride(root, file, project) : { files: [], globals: [], notes: [] };
+  for (const n of env.notes) onLine('out', n);
   return new Promise((resolve) => {
-    const child = spawn(bin(), [...cli.compose, '-f', file, ...envArgs.slice(2), ...(project ? ['-p', project] : []), ...envArgs.slice(0, 2), ...args], {
+    const child = spawn(bin(), [...cli.compose, '-f', file, ...env.files, ...(project ? ['-p', project] : []), ...env.globals, ...args], {
       cwd: root,
       env: { ...getShellEnv(), COMPOSE_PROGRESS: 'plain', BUILDKIT_PROGRESS: 'plain', COMPOSE_ANSI: 'never' },
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -51,9 +51,14 @@ export function docatzContainerUrl(project: string, service: string): string | n
  * when it runs the project; null when there is none. DOCATZ_DATA points elsewhere, for tests.
  */
 export function docatzEnvFile(project: string): string | null {
+  const file = docatzEnvPath(project);
+  return file && existsSync(file) ? file : null;
+}
+
+/** Where DoCatz keeps a compose project's .env (whether or not it exists yet); null for a name DoCatz would refuse. */
+export function docatzEnvPath(project: string): string | null {
   if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(project)) return null;
-  const file = join(process.env.DOCATZ_DATA || join(app.getPath('appData'), 'DoCatz'), 'env', `${project}.env`);
-  return existsSync(file) ? file : null;
+  return join(process.env.DOCATZ_DATA || join(app.getPath('appData'), 'DoCatz'), 'env', `${project}.env`);
 }
 
 /** DoCatz's own HTTPS port (its names answer there when :443 is not forwarded), default 8743. */
