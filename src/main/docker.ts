@@ -36,6 +36,8 @@ interface EngineDef {
 
 /** Most recommended first (the "not installed" card offers them in this order). */
 export const ENGINES: EngineDef[] = ([
+  // The Catzoid engine (DoCatz TODO #23): recommended first. Its context is "docatz".
+  { id: 'docatz', name: 'DoCatz', app: 'DoCatz.app', win: '%LOCALAPPDATA%\\Programs\\DoCatz\\DoCatz.exe', download: 'https://catzoid.com/docatz/download' },
   { id: 'orbstack', name: 'OrbStack', app: 'OrbStack.app', macOnly: true, download: 'https://orbstack.dev/download' },
   { id: 'docker-desktop', name: 'Docker Desktop', app: 'Docker.app', win: '%ProgramFiles%\\Docker\\Docker\\Docker Desktop.exe', download: 'https://www.docker.com/products/docker-desktop/' },
   { id: 'colima', name: 'Colima', bin: 'colima', macOnly: true, download: 'https://github.com/abiosoft/colima#installation' },
@@ -80,24 +82,31 @@ export async function dockerStatus(): Promise<DockerStatus> {
     await Promise.all(ENGINES.map(async (e) => (engineAppInstalled(e) || (e.bin && (await onPath(e.bin))) ? e : null)))
   ).filter((e): e is EngineDef => !!e);
   const docatz = docatzEngine();
-  const base = { installed: installed.map((e) => e.id), cliFound: false, context: null, engine: null, orbLocal: false, docatz, system: null };
+  const base = { installed: installed.map((e) => e.id), cliFound: false, context: null, engine: null, orbLocal: false, docatz, system: null, engines: [] as DockerStatus['engines'] };
 
   let dockerError: string | null = null;
   if (await onPath('docker')) {
     const ctx = (await run('docker', ['context', 'show'], { timeout: 5000 })).stdout.trim();
     const endpoint = (await run('docker', ['context', 'inspect', ctx, '--format', '{{.Endpoints.docker.Host}}'], { timeout: 5000 })).stdout.trim();
     const info = await run('docker', ['info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 });
-    // DoCatz's engine runs (its bridge.json) but the current context is another engine's: compose runs on DoCatz
-    // (`docker --context docatz compose …`) unless Settings say the system's context. DoCatz never switches the
-    // current context by itself.
-    if (docatz === 'running' && ctx !== 'docatz' && store.settings.dockerEngine !== 'system') {
-      const d = await run('docker', ['--context', 'docatz', 'info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 });
-      if (d.code === 0) {
-        cli = { bin: 'docker', compose: ['--context', 'docatz', 'compose'] };
-        orbLocal = false;
-        const system = ctx ? { context: ctx, engine: engineFromDocker(ctx, endpoint, info.stdout.trim()), running: info.code === 0 } : null;
-        return { ...base, cliFound: true, daemon: true, context: 'docatz', engine: 'docatz', orbLocal: false, error: null, system };
-      }
+    const sysEngine = engineFromDocker(ctx, endpoint, info.stdout.trim());
+    // DoCatz's own context, whether or not it is the current one (DoCatz never switches the current context itself).
+    const docatzUp = ctx !== 'docatz' && (docatz === 'running' || (await run('docker', ['context', 'inspect', 'docatz'], { timeout: 5000 })).code === 0)
+      ? (await run('docker', ['--context', 'docatz', 'info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 })).code === 0
+      : false;
+    const onDocatz = docatzUp && store.settings.dockerEngine !== 'system';
+    const engines: DockerStatus['engines'] = [
+      ...(ctx !== 'docatz' && (docatzUp || docatz) ? [{ id: 'docatz' as const, context: 'docatz', running: docatzUp, used: onDocatz }] : []),
+      ...(ctx ? [{ id: sysEngine, context: ctx, running: info.code === 0, used: !onDocatz && info.code === 0 }] : []),
+    ];
+    Object.assign(base, { engines });
+    // DoCatz runs but the current context is another engine's: compose runs on DoCatz (`docker --context docatz
+    // compose …`) unless Settings say the system's context.
+    if (onDocatz) {
+      cli = { bin: 'docker', compose: ['--context', 'docatz', 'compose'] };
+      orbLocal = false;
+      const system = ctx ? { context: ctx, engine: sysEngine, running: info.code === 0 } : null;
+      return { ...base, cliFound: true, daemon: true, context: 'docatz', engine: 'docatz', orbLocal: false, error: null, system, docatz: 'running' };
     }
     if (info.code === 0) {
       cli = { bin: 'docker', compose: ['compose'] };

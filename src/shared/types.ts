@@ -897,6 +897,8 @@ export interface DockerStatus {
   docatz: 'running' | 'stopped' | null;
   /** The system's current docker context and its engine when DevCatz runs on DoCatz instead (to offer switching back). */
   system: { context: string; engine: DockerEngineId; running: boolean } | null;
+  /** Every engine DevCatz can use, DoCatz first, then the system's current context: which runs, which one is used. */
+  engines: { id: DockerEngineId; context: string; running: boolean; used: boolean }[];
 }
 
 export interface DockerFile {

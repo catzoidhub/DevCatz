@@ -10,7 +10,7 @@ import DoCatzButton from './DoCatzButton.vue';
 import { aiOn } from '../ai';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComposeEnvPlan, DevComposePreview, DevServiceKind, DockerAction, DockerEngineId, DockerGenOptions, DockerTarget, DockerComposeFile, DockerFile, DockerService, DockerStatus, ProjectState } from '@shared/types';
-import { attempt, herd, notify, state } from '../store';
+import { attempt, herd, notify } from '../store';
 const aiDockerOn = aiOn('docker');
 
 /** `desktop`: an Electron / Tauri app — it ships as an installer, so only its development services run here (no deploy files). */
@@ -29,6 +29,7 @@ const ready = computed(() => Boolean(status.value?.daemon));
 // Windows: OrbStack, Colima and Finch are macOS-only.
 type EngineCard = { id: DockerEngineId; name: string; start: string; download: string; macOnly?: boolean };
 const ENGINES: EngineCard[] = ([
+  { id: 'docatz', name: 'DoCatz', start: 'Open DoCatz', download: 'https://catzoid.com/docatz/download' },
   { id: 'orbstack', name: 'OrbStack', start: 'Open OrbStack', download: 'https://orbstack.dev/download', macOnly: true },
   { id: 'docker-desktop', name: 'Docker Desktop', start: 'Open Docker Desktop', download: 'https://www.docker.com/products/docker-desktop/' },
   { id: 'colima', name: 'Colima', start: 'colima start', download: 'https://github.com/abiosoft/colima#installation', macOnly: true },
@@ -36,8 +37,9 @@ const ENGINES: EngineCard[] = ([
   { id: 'podman', name: 'Podman', start: 'Start Podman', download: 'https://podman-desktop.io/downloads' },
   { id: 'finch', name: 'Finch', start: 'finch vm start', download: 'https://github.com/runfinch/finch/releases', macOnly: true },
 ] as EngineCard[]).filter((e) => !(isWin && e.macOnly));
-const engineName = (id: DockerEngineId | null) => (id === 'docatz' ? 'DoCatz' : (ENGINES.find((e) => e.id === id)?.name ?? 'Container engine'));
-const installedEngines = computed(() => ENGINES.filter((e) => status.value?.installed.includes(e.id)));
+const engineName = (id: DockerEngineId | null) => ENGINES.find((e) => e.id === id)?.name ?? 'Container engine';
+// DoCatz has its own button (Open in DoCatz / Download & Install) in the alert: not a second one here.
+const installedEngines = computed(() => ENGINES.filter((e) => e.id !== 'docatz' && status.value?.installed.includes(e.id)));
 const starting = ref<DockerEngineId | null>(null);
 async function start(id: DockerEngineId) {
   starting.value = id;
@@ -131,7 +133,6 @@ async function useEngine(which: 'docatz' | 'system') {
   const now: DockerStatus | null = status.value;
   notify('success', which === 'docatz' ? 'Containers now run on DoCatz' : `Containers now run on ${engineName(now?.engine ?? null)}`);
 }
-const preferSystem = computed(() => state.value?.settings.dockerEngine === 'system');
 
 // ------------------------------------------------- start with the app, .env
 /** The compose file whose services start and stop with the site. */
@@ -212,29 +213,28 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
           </button>
           <template v-if="!installedEngines.length">
             <span class="ml-1 text-xs opacity-60">or</span>
-            <a v-for="e in ENGINES" :key="e.id" class="link link-hover text-xs opacity-70" @click="herd.openUrl(e.download)">{{ e.name }}</a>
+            <a v-for="e in ENGINES.filter((x) => x.id !== 'docatz')" :key="e.id" class="link link-hover text-xs opacity-70" @click="herd.openUrl(e.download)">{{ e.name }}</a>
           </template>
         </div>
       </div>
     </div>
-    <div v-else class="flex flex-wrap items-center gap-2 text-xs opacity-70">
-      <span class="status status-success" /> {{ engineName(status.engine) }} running
-      <template v-if="status.context">· context <code>{{ status.context }}</code></template>
-      <template v-if="!status.orbLocal && isWin">· containers on <code>127.0.0.1</code> ports</template>
-      <template v-else-if="!status.orbLocal">· containers on <code>127.0.0.1</code> ports</template>
-      <template v-if="status.engine === 'docatz' && status.system?.running">
-        · <a class="link link-hover" :title="`Run on the current docker context (${status.system.context}) instead`" @click="useEngine('system')">use {{ engineName(status.system.engine) }} instead</a>
-      </template>
-      <template v-else-if="status.engine !== 'docatz' && status.docatz === 'running' && preferSystem">
-        · <a class="link link-primary" @click="useEngine('docatz')">use DoCatz</a>
-      </template>
-      <template v-else-if="status.engine !== 'docatz' && status.docatz === 'stopped'">
-        · DoCatz is installed, its engine is stopped (start it in DoCatz to run containers there)
-      </template>
-      <template v-if="!files.length">
-        <span class="flex-1" />
-        <DoCatzButton :site-id="project.id" />
-      </template>
+    <!-- Engines: DoCatz first, then the system's current context; the one in use is marked, another one is a click away. -->
+    <div v-else class="flex items-start gap-3">
+      <ul class="min-w-0 flex-1 space-y-1 text-xs">
+        <li v-for="e in status.engines.length ? status.engines : [{ id: status.engine ?? 'other', context: status.context ?? '', running: true, used: true }]" :key="e.id + e.context" class="flex flex-wrap items-center gap-x-2 gap-y-0.5" :class="{ 'opacity-60': !e.used }">
+          <span class="status" :class="e.running ? 'status-success' : 'status-neutral'" />
+          <span :class="{ 'font-medium': e.used }">{{ engineName(e.id) }} {{ e.running ? 'running' : 'stopped' }}</span>
+          <template v-if="e.context">· context <code>{{ e.context }}</code></template>
+          <template v-if="e.used">
+            <span class="badge badge-primary badge-soft badge-xs">in use</span>
+            <template v-if="!status.orbLocal">· containers on <code>127.0.0.1</code> ports</template>
+          </template>
+          <template v-else-if="e.running">·</template>
+          <a v-if="!e.used && e.running" class="link link-hover" :title="`Run this site's containers on ${engineName(e.id)}`" @click="useEngine(e.id === 'docatz' ? 'docatz' : 'system')">use {{ engineName(e.id) }}</a>
+          <span v-else-if="e.id === 'docatz'">· start its engine in DoCatz to run containers there</span>
+        </li>
+      </ul>
+      <DoCatzButton v-if="!files.length" :site-id="project.id" />
     </div>
 
     <!-- Compose -->
