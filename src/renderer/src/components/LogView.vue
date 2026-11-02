@@ -78,7 +78,38 @@ const tags = computed(() => {
 });
 watch(tags, (t) => {
   if (app.value && !t.includes(app.value)) app.value = null;
+  void nextTick(chipEdges);
 });
+// The chip row scrolls sideways: a vertical wheel moves it too, and a fade marks chips hidden at either end.
+const chips = ref<HTMLElement | null>(null);
+const chipLeft = ref(false);
+const chipRight = ref(false);
+function chipEdges() {
+  const el = chips.value;
+  if (!el) return;
+  chipLeft.value = el.scrollLeft > 2;
+  chipRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+}
+function chipWheel(e: WheelEvent) {
+  const el = chips.value;
+  if (!el || el.scrollWidth <= el.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+  el.scrollLeft += e.deltaY;
+  e.preventDefault();
+}
+const chipFade = computed(() => {
+  const m = `linear-gradient(to right, ${chipLeft.value ? 'transparent, black 1.5rem' : 'black'}, ${chipRight.value ? 'black calc(100% - 1.5rem), transparent' : 'black'})`;
+  return { maskImage: m, WebkitMaskImage: m };
+});
+let chipRo: ResizeObserver | null = null;
+watch(chips, (el) => {
+  chipRo?.disconnect();
+  if (!el) return;
+  chipRo = new ResizeObserver(chipEdges);
+  chipRo.observe(el);
+  void nextTick(chipEdges);
+});
+onBeforeUnmount(() => chipRo?.disconnect());
+
 const TAG_COLOURS = ['#7dd3fc', '#f0abfc', '#86efac', '#fcd34d', '#fda4af', '#a5b4fc', '#5eead4', '#fdba74'];
 const tagColour = (t: string) => TAG_COLOURS[tags.value.indexOf(t) % TAG_COLOURS.length] ?? TAG_COLOURS[0];
 
@@ -155,19 +186,29 @@ async function clear() {
         <button class="btn btn-xs join-item" :class="{ 'btn-active': source === 'dev' }" @click="source = 'dev'">Dev servers</button>
         <button class="btn btn-xs join-item" :class="{ 'btn-active': source === 'laravel' }" @click="source = 'laravel'">laravel.log</button>
       </div>
-      <input v-model="filter" class="input input-xs w-56" placeholder="Filter…" />
-      <div v-if="source === 'dev' && tags.length > 1" class="flex flex-wrap items-center gap-1" role="tablist" aria-label="Show one app">
-        <button class="log-chip" :class="{ 'is-on': !app }" @click="app = null">All</button>
-        <button v-for="t in tags" :key="t" class="log-chip" :class="{ 'is-on': app === t }" :style="{ '--tag': tagColour(t) }" @click="app = app === t ? null : t">
+      <input v-model="filter" class="input input-xs w-56 shrink-0" placeholder="Filter…" />
+      <!-- Many apps / compose services: one row that scrolls sideways (wheel or trackpad), faded where more is hidden. -->
+      <div
+        v-if="source === 'dev' && tags.length > 1"
+        ref="chips"
+        class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        :style="chipFade"
+        role="tablist"
+        aria-label="Show one app or service"
+        @wheel="chipWheel"
+        @scroll.passive="chipEdges"
+      >
+        <button class="log-chip shrink-0" :class="{ 'is-on': !app }" @click="app = null">All</button>
+        <button v-for="t in tags" :key="t" class="log-chip shrink-0" :class="{ 'is-on': app === t }" :style="{ '--tag': tagColour(t) }" @click="app = app === t ? null : t">
           <span class="log-chip-dot" />{{ t }}
         </button>
       </div>
-      <span v-if="source === 'dev'" class="text-xs opacity-50">{{ lines.length }} lines</span>
+      <span v-if="source === 'dev'" class="shrink-0 text-xs opacity-50">{{ lines.length }} lines</span>
       <span v-else class="truncate text-xs opacity-50" :title="laravelFile ?? ''">{{ laravelFile ? laravelFile.split('/').slice(-2).join('/') : 'no laravel.log yet' }}</span>
-      <div class="flex-1" />
-      <label class="label cursor-pointer gap-1 text-xs"><input v-model="follow" type="checkbox" class="toggle toggle-xs toggle-primary" /> follow</label>
-      <button v-if="source === 'dev'" class="btn btn-ghost btn-xs" @click="clear">Clear</button>
-      <button v-if="canAi" class="btn btn-xs" title="Explain the selected lines (or the last ones) and suggest fixes" @click="explain">✦ Explain with AI</button>
+      <div v-if="!(source === 'dev' && tags.length > 1)" class="flex-1" />
+      <label class="label shrink-0 cursor-pointer gap-1 text-xs"><input v-model="follow" type="checkbox" class="toggle toggle-xs toggle-primary" /> follow</label>
+      <button v-if="source === 'dev'" class="btn btn-ghost btn-xs shrink-0" @click="clear">Clear</button>
+      <button v-if="canAi" class="btn btn-xs shrink-0" title="Explain the selected lines (or the last ones) and suggest fixes" @click="explain">✦ Explain with AI</button>
     </div>
     <div v-if="explaining" class="max-h-[50%] shrink-0 overflow-y-auto border-b border-base-300/60 p-3">
       <AiExplain :key="explaining.join('\n').length" :site-id="projectId" source="logs" :lines="explaining" @close="explaining = null" />
