@@ -403,10 +403,11 @@ async function installSolana(detail: (line: string) => void): Promise<void> {
     // and only downloaded the new one. --no-modify-path: DevCatz puts Solana's folder on the PATH itself.
     const version = rel.tag.replace(/^v/, '');
     const code = await streamLines(init, ['--no-modify-path', version], detail);
-    if (code !== 0) throw new Error(`The Solana installer failed (exit ${code})`);
-    // Seen twice on a Mac pinned to 4.1.2: the installer unpacked 4.4.0 but pointed active_release back at the pinned
-    // release. Then DevCatz finishes it as the installer would: the pin (config.yml) and the link to the new release.
+    // Seen three times on a Mac pinned to 4.1.2: the installer unpacked 4.4.0 but pointed active_release back at the
+    // pinned release (and may exit with an error after that). With the new release unpacked, DevCatz finishes it as the
+    // installer would: the pin (config.yml) and the link to the new release.
     if ((await activeSolana()) !== version && activateSolana(version)) detail(`Switched the active Solana release to ${version}`);
+    else if (code !== 0) throw new Error(`The Solana installer failed (exit ${code})`);
     const active = await activeSolana();
     if (active !== version) throw new Error(`The Solana installer finished, but the active release is ${active ?? 'missing'}, not ${version}`);
   } finally {
