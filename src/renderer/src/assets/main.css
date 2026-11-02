@@ -1965,3 +1965,17 @@ button.dv-card-head:hover {
 html.is-win .win-top {
   padding-top: 3rem;
 }
+
+/* Docker tab: the number of each step (1 engine · 2 files · 3 test). */
+.step-num {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: color-mix(in oklch, var(--color-primary) 14%, transparent);
+}

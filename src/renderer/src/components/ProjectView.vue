@@ -859,7 +859,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
 
   <!-- Docker -->
   <section v-else-if="tab === 'docker'" class="site-tab">
-    <DockerTab :key="p.id" :project="p" :desktop="desktopApp" @logs="tab = 'logs'" />
+    <DockerTab :key="p.id" :project="p" :desktop="desktopApp" @logs="tab = 'logs'" @git="tab = 'git'" />
   </section>
 
   <!-- Database -->
