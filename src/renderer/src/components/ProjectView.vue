@@ -247,12 +247,11 @@ const composeFiles = ref<DockerComposeFile[]>([]);
 const loadCompose = async () => (composeFiles.value = (await herd.dockerFiles(p.value.id).catch(() => [])) ?? []);
 watch(() => `${p.value.id}|${tab.value}`, () => void loadCompose(), { immediate: true });
 const dockerBusy = ref(false);
-async function dockerAction(file: string, action: 'up' | 'down') {
-  dockerBusy.value = true;
-  tab.value = 'logs';
-  const ok = await attempt(() => herd.dockerCompose(p.value.id, file, action).then(() => true));
-  dockerBusy.value = false;
-  if (ok) notify('success', action === 'up' ? `${file}: containers are up` : `${file}: containers removed`);
+/** Build ▾ → Docker Compose: run in the Docker tab (its step 3 shows the progress), the request handed over there. */
+const dockerRequest = ref<{ file: string; action: 'up' | 'down'; n: number } | null>(null);
+function dockerAction(file: string, action: 'up' | 'down') {
+  tab.value = 'docker';
+  dockerRequest.value = { file, action, n: (dockerRequest.value?.n ?? 0) + 1 };
 }
 // Only when the site has a compose file: no Docker group (and no Build ▾ just for it) otherwise.
 const dockerItems = computed<MenuItem[]>(() => !composeFiles.value.length ? [] : [
@@ -859,7 +858,7 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
 
   <!-- Docker -->
   <section v-else-if="tab === 'docker'" class="site-tab">
-    <DockerTab :key="p.id" :project="p" :desktop="desktopApp" @logs="tab = 'logs'" @git="tab = 'git'" />
+    <DockerTab :key="p.id" :project="p" :desktop="desktopApp" :request="dockerRequest" @logs="tab = 'logs'" @git="tab = 'git'" @busy="(b) => (dockerBusy = b)" @handled="dockerRequest = null" />
   </section>
 
   <!-- Database -->
