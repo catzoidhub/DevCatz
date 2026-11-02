@@ -94,7 +94,9 @@ async function generate(options: Partial<DockerGenOptions> = {}) {
   const r = await attempt(() => herd.dockerGenerate(props.project.id, options));
   if (!r) return;
   // New files are picked; existing ones only when the user ticks them (never overwritten silently).
-  preview.value = { ...r, files: r.files.map((f) => ({ ...f, pick: f.current === null, orig: f.content })) };
+  // New files are ticked — unless the project has its own Docker setup: then nothing is (a second compose file next
+  // to the one Dokploy uses, Dockerfiles nothing builds); the user ticks what they want after comparing.
+  preview.value = { ...r, files: r.files.map((f) => ({ ...f, pick: f.current === null && !existingSetup.value, orig: f.content })) };
 }
 /** Target switch resets the other options to that target's defaults. */
 const setTarget = (target: DockerTarget) => generate({ target });
@@ -288,17 +290,33 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
     <div v-if="!desktop" class="card">
       <div class="card-body">
         <h2 class="flex items-center gap-2 font-semibold"><span class="step-num">2</span>Docker files <span class="text-xs font-normal opacity-60">the same ones Dokploy deploys later</span></h2>
-        <p v-if="existingSetup" class="text-xs opacity-70">
-          This project already has its own Docker setup:
-          <template v-for="(f, i) in files.filter((x) => x.build && !x.generated)" :key="f.file">{{ i ? ', ' : '' }}<code>{{ f.file }}</code>{{ f.coversAll ? ' (one compose file for every app of the monorepo)' : f.covers.length ? ` (builds ${f.covers.join(', ')})` : '' }}</template>.
-          Test it in step 3 as it is. Generating is still possible and never overwrites without asking.
-        </p>
+        <!-- The project's own setup comes first: generated files are a standard template for the stack, not a copy of it. -->
+        <div v-if="existingSetup" class="space-y-2">
+          <div class="rounded-box border border-success/40 bg-success/5 px-3 py-2.5 text-sm">
+            <div class="font-medium">This project has its own Docker setup</div>
+            <ul class="mt-1 space-y-0.5 text-xs">
+              <li v-for="f in files.filter((x) => x.build && !x.generated)" :key="f.file" class="flex flex-wrap items-center gap-x-2">
+                <code>{{ f.file }}</code>
+                <span class="opacity-60">{{ f.coversAll ? 'one compose file for every app of the monorepo' : f.covers.length ? `builds ${f.covers.join(', ')}` : 'builds the app' }}</span>
+                <a class="link link-primary" @click="file = f.file">test it in step 3</a>
+              </li>
+            </ul>
+            <p class="mt-1.5 text-xs opacity-70">Use these: they are the files Dokploy already deploys. Change them in the editor below.</p>
+          </div>
+        </div>
         <p v-else class="text-xs opacity-70">
           For the detected stack: a multi-stage <code>Dockerfile</code> per app, <code>docker-compose.yml</code> (the file Dokploy and Coolify read),
           <code>.dockerignore</code>. Preview first; existing files are only replaced when you tick them. Change them any time below.
         </p>
-        <div v-if="!preview" class="flex flex-wrap gap-1.5">
-          <button class="btn btn-sm" :class="{ 'btn-primary': !deployFiles.length }" @click="setTarget('production')">{{ deployFiles.some((f) => f.generated) ? 'Regenerate Docker files…' : 'Generate Docker files…' }}</button>
+        <div v-if="!preview" class="flex flex-wrap items-center gap-1.5">
+          <button v-if="existingSetup" class="btn btn-ghost btn-sm" title="A standard template for the detected stack, not a copy of your files: compare before writing anything" @click="setTarget('production')">Generate new files anyway…</button>
+          <button v-else class="btn btn-sm" :class="{ 'btn-primary': !deployFiles.length }" @click="setTarget('production')">{{ deployFiles.some((f) => f.generated) ? 'Regenerate Docker files…' : 'Generate Docker files…' }}</button>
+        </div>
+        <div v-if="preview && existingSetup" role="alert" class="alert alert-warning alert-soft items-start py-2 text-xs">
+          <span>
+            These are DevCatz's standard files for this stack, not your own: your Dockerfiles may do more (workspaces, shared packages, smaller
+            runtime images). Nothing is ticked: tick only what you really want, after comparing with <b>Open</b>.
+          </span>
         </div>
 
         <div v-if="preview" class="space-y-2">
