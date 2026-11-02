@@ -1419,7 +1419,7 @@ export function docatzEnvInfo(root: string, file: string, project: string | null
  * to DevCatz's data, 0600): the .env's local hosts pointed at host.docker.internal, then — on DoCatz — the project's
  * DoCatz .env (set in DoCatz, Dokploy-style), which wins. The compose file's own `environment:` still wins over both.
  */
-async function envOverride(root: string, file: string, project: string | null): Promise<{ files: string[]; globals: string[]; notes: string[] }> {
+async function envOverride(root: string, file: string, project: string | null, worktree?: string): Promise<{ files: string[]; globals: string[]; notes: string[] }> {
   const none = { files: [], globals: [], notes: [] };
   const name = project ?? projectNameOf(root, file);
   let docatz = onDocatzEngine ? docatzEnvFile(name) : null;
@@ -1435,9 +1435,16 @@ async function envOverride(root: string, file: string, project: string | null): 
       local = {};
     }
   }
-  if (!docatz && !Object.keys(local).length) return none;
-  const r = await run(bin(), [...cli.compose, '-f', file, '-p', name, 'config', '--services'], { cwd: root, timeout: 30_000 });
-  const services = r.code === 0 ? r.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+  if (!docatz && !Object.keys(local).length && !worktree) return none;
+  // The services as compose resolves them: names, and (for a worktree) their fixed container names and published ports.
+  const r = await run(bin(), [...cli.compose, '-f', file, '-p', name, 'config', '--format', 'json'], { cwd: root, timeout: 30_000 });
+  let doc: { services?: Record<string, { container_name?: string; ports?: { published?: string | number }[] }> } = {};
+  try {
+    doc = r.code === 0 ? JSON.parse(r.stdout) : {};
+  } catch {
+    /* compose could not read it: run it as it is */
+  }
+  const services = Object.entries(doc.services ?? {});
   if (!services.length) return docatz ? { files: [], globals: ['--env-file', docatz], notes: [`DoCatz .env of this project: ${docatz}`] } : none;
   const dir = join(app.getPath('userData'), 'docker');
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -1456,8 +1463,28 @@ async function envOverride(root: string, file: string, project: string | null): 
     envFiles.push(f);
     notes.push(`Containers reach this computer's ${Object.keys(local).join(', ')} through host.docker.internal (for this test only; .env${docatz ? ' and the DoCatz .env stay' : ' stays'} unchanged)`);
   }
+  // A worktree runs next to its main site: a fixed container_name gets the worktree's name, and published ports are
+  // left out (both would clash with the main site's containers); its containers are reached by their engine names.
+  const renamed: string[] = [];
+  let unpublished = 0;
+  const blocks = services.map(([svc, def]) => {
+    const lines = [`  ${JSON.stringify(svc)}:`];
+    if (envFiles.length) lines.push('    env_file:', ...envFiles.map((f) => `      - ${JSON.stringify(f)}`));
+    if (worktree && def.container_name) {
+      lines.push(`    container_name: ${JSON.stringify(`${def.container_name}-${worktree}`)}`);
+      renamed.push(def.container_name);
+    }
+    if (worktree && (def.ports ?? []).some((x) => x.published)) {
+      lines.push('    ports: !reset []');
+      unpublished++;
+    }
+    return lines.length > 1 ? lines.join('\n') : null;
+  }).filter((x): x is string => !!x);
+  if (!blocks.length) return { files: [], globals: docatz ? ['--env-file', docatz] : [], notes };
+  if (renamed.length) notes.push(`Worktree ${worktree}: containers ${renamed.map((c) => `${c}-${worktree}`).join(', ')}, so the main site's keep their names`);
+  if (unpublished) notes.push(`Worktree ${worktree}: fixed ports of ${unpublished} service${unpublished === 1 ? '' : 's'} left out (the main site has them); reach them by their names in the Docker tab`);
   const override = join(dir, `${name}.env-override.yaml`);
-  writeFileSync(override, `# Written by DevCatz before each run.\nservices:\n${services.map((s) => `  ${JSON.stringify(s)}:\n    env_file:\n${envFiles.map((f) => `      - ${JSON.stringify(f)}`).join('\n')}`).join('\n')}\n`, { mode: 0o600 });
+  writeFileSync(override, `# Written by DevCatz before each run.\nservices:\n${blocks.join('\n')}\n`, { mode: 0o600 });
   return { files: ['-f', override], globals: docatz ? ['--env-file', docatz] : [], notes };
 }
 
@@ -1468,9 +1495,10 @@ export async function compose(
   project: string | null,
   args: string[],
   onLine: (stream: 'out' | 'err', text: string) => void,
+  opts: { worktree?: string } = {},
 ): Promise<number> {
   // Only when containers are made or built: logs, ps, down need no environment.
-  const env = ['up', 'build', 'create', 'run', 'restart'].includes(args[0]) ? await envOverride(root, file, project) : { files: [], globals: [], notes: [] };
+  const env = ['up', 'build', 'create', 'run', 'restart'].includes(args[0]) ? await envOverride(root, file, project, opts.worktree) : { files: [], globals: [], notes: [] };
   for (const n of env.notes) onLine('out', n);
   return new Promise((resolve) => {
     const child = spawn(bin(), [...cli.compose, '-f', file, ...env.files, ...(project ? ['-p', project] : []), ...env.globals, ...args], {

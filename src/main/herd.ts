@@ -3984,7 +3984,8 @@ export class Herd extends EventEmitter {
       const covers = apps
         .filter((a) => dirs.some((d) => d === a.dir || (d === '.' && apps.length === 1) || a.dir.startsWith(`${d}/`) || d.startsWith(`${a.dir}/`)) || names.includes(basename(a.dir === '.' ? a.name : a.dir).toLowerCase()))
         .map((a) => (a.dir === '.' ? a.name : basename(a.dir)));
-      return { ...c, project: c.generated ? docker.projectName(p, c.file) : null, covers, coversAll: apps.length > 1 && covers.length === apps.length };
+      // A worktree always gets a compose project of its own (feat-login-shop), also for the project's own files.
+      return { ...c, project: c.generated || p.worktreeOf ? docker.projectName(p, c.file) : null, covers, coversAll: apps.length > 1 && covers.length === apps.length };
     });
   }
 
@@ -4321,7 +4322,9 @@ export class Herd extends EventEmitter {
       if (m) missing.add(m[1]);
       this.processes.log(id, stream === 'err' ? 'err' : 'docker', text);
     };
-    let code = await docker.compose(p.path, file, project, cmd, log);
+    // A worktree (feat-login.shop.localhost) runs beside its main site: its own container names, no fixed ports.
+    const worktree = p.worktreeOf ? slugify(p.domain.split('.')[0]) : undefined;
+    let code = await docker.compose(p.path, file, project, cmd, log, { worktree });
     // A production file (Dokploy's dokploy-network …) joins networks of its server: made here, empty and local, then once more.
     if (code !== 0 && action === 'up' && missing.size) {
       const made: string[] = [];
@@ -4329,7 +4332,7 @@ export class Herd extends EventEmitter {
       if (made.length) {
         this.processes.log(id, 'sys', `Docker: created the network${made.length > 1 ? 's' : ''} ${made.join(', ')} here (the server already has ${made.length > 1 ? 'them' : 'it'}); trying again`);
         missing.clear();
-        code = await docker.compose(p.path, file, project, cmd, log);
+        code = await docker.compose(p.path, file, project, cmd, log, { worktree });
       }
     }
     this.processes.log(id, 'sys', code === 0 ? `Docker: ${action} done` : `Docker: ${action} failed (exit ${code})`);
