@@ -358,10 +358,6 @@ export interface ProjectConfig {
   redisDb?: number;
   /** Laravel: REDIS_CACHE_DB (the cache connection; `cache:clear` flushes it, so keep it apart from queues/sessions). */
   redisCacheDb?: number;
-  /** Docker tab: the compose file whose services start with the site and stop with it (`docker compose up -d` / `stop`). */
-  composeWithApp?: string;
-  /** Docker tab: the one-time "start these with the app?" offer was answered. */
-  composeOffered?: boolean;
   /** Laravel: index per custom Redis/Valkey connection, keyed by its env var (REDIS_VISIT_DB → 3); unset = from .env. */
   redisConnDbs?: Record<string, number>;
 }
@@ -2695,7 +2691,7 @@ export interface HerdApi {
   appPortEnv(siteId: string, dir: string): Promise<{ files: string[]; keys: string[]; locked: boolean } | null>;
   /** A free port for an app (not another site's, nothing listening). */
   freePortFor(siteId: string, dir: string): Promise<number>;
-  updateProject(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion' | 'composeWithApp' | 'composeOffered'>>): Promise<void>;
+  updateProject(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion'>>): Promise<void>;
   envFiles(id: string): Promise<EnvFileInfo[]>;
   envRead(id: string, path: string): Promise<{ content: string; mtime: number }>;
   /** `mtime` from the read: refuses if the file changed on disk meanwhile. Returns the new mtime. */
@@ -3162,7 +3158,7 @@ export interface HerdApi {
   dockerListFiles(id: string): Promise<string[]>;
   /** compose.dev.yaml for the chosen services (default: the ones the project seems to use). */
   dockerDevPreview(id: string, services?: DevServiceKind[]): Promise<DevComposePreview>;
-  /** Writes compose.dev.yaml (`content` as edited in the preview) and starts it with the site. */
+  /** Writes compose.dev.yaml (`content` as edited in the preview). */
   dockerDevWrite(id: string, services: DevServiceKind[], content?: string): Promise<string>;
   /** .env lines pointing at the compose file's published services; `apply` writes them. */
   dockerComposeEnv(id: string, file: string, apply: boolean): Promise<ComposeEnvPlan>;

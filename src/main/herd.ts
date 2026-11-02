@@ -795,7 +795,7 @@ export class Herd extends EventEmitter {
     this.rescan();
   }
 
-  update(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion' | 'composeWithApp' | 'composeOffered'>>): void {
+  update(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion'>>): void {
     const current = this.find(id);
     if (!current) return;
     if (patch.domain !== undefined) {
@@ -823,8 +823,6 @@ export class Herd extends EventEmitter {
     if (patch.envLocked === true) patch.envLocked = undefined; // locked is the default
     if (patch.envDomainOverride === true) patch.envDomainOverride = undefined; // on by default
     if (patch.dbService !== undefined && !patch.dbService) patch.dbService = undefined;
-    if (patch.composeWithApp !== undefined && !patch.composeWithApp) patch.composeWithApp = undefined;
-    if (patch.composeWithApp && !docker.composeFiles(current.path).some((c) => c.file === patch.composeWithApp)) throw new Error(`${patch.composeWithApp} not found`);
     if (patch.dbService && !this.dbs.config(patch.dbService)) throw new Error('No such database service');
     // A negative index means "from .env".
     for (const k of ['redisDb', 'redisCacheDb'] as const) {
@@ -1201,10 +1199,7 @@ export class Herd extends EventEmitter {
     if (p.dbService && this.dbs.config(p.dbService) && !this.dbs.isActive(p.dbService)) {
       await this.dbs.action(p.dbService, 'start').catch((e: Error) => this.processes.log(id, 'sys', `Database service: ${e.message}`));
     }
-    if (stack.runtime === 'php') {
-      if (p.composeWithApp) await this.composeUp(p);
-      return this.launchPhp(p, stack);
-    }
+    if (stack.runtime === 'php') return this.launchPhp(p, stack);
     const command = p.devCommand || stack.devCommand;
     if (!command) {
       this.processes.log(id, 'sys', 'No dev command found. Set one in the project settings.');
@@ -1233,8 +1228,6 @@ export class Herd extends EventEmitter {
       this.processes.log(id, 'sys', msg);
       throw new Error(msg);
     }
-    // Its compose services once nothing else stands in the way (a database is ready when the app connects).
-    if (p.composeWithApp) await this.composeUp(p);
     // A managed port taken by some other program: move that app to a free one.
     if (await this.reassignBusyPorts(p, stack)) return this.launch(id);
     // Another process (a terminal, another copy of the project) already owns a
@@ -1714,8 +1707,6 @@ export class Herd extends EventEmitter {
     await this.processes.stop(id);
     this.removeHotFile(id);
     this.updateRoutes();
-    const p = this.find(id);
-    if (p?.composeWithApp) await this.composeStop(p).catch((e: Error) => this.processes.log(id, 'sys', `Docker: ${e.message}`));
   }
 
   async restart(id: string): Promise<void> {
@@ -1741,23 +1732,14 @@ export class Herd extends EventEmitter {
   }
 
   async stopAll(): Promise<void> {
-    const composed = this.runningWithCompose();
     await this.processes.stopAll();
     this.updateRoutes();
-    await Promise.all(composed.map((p) => this.composeStop(p).catch(() => undefined)));
-  }
-
-  /** Running sites whose compose services started with them (they stop with them, also when DevCatz quits). */
-  private runningWithCompose(): ProjectConfig[] {
-    return this.projects.filter((p) => p.composeWithApp && this.processes.isActive(p.id));
   }
 
   async shutdown(): Promise<void> {
     for (const t of this.timers) clearInterval(t);
     for (const w of this.watchers) w.close();
-    const composed = this.runningWithCompose();
     await this.processes.stopAll();
-    await Promise.all(composed.map((p) => this.composeStop(p).catch(() => undefined)));
     this.monitor.stop();
     await this.storage.stopAll();
     await this.ws.stopAll();
@@ -4290,6 +4272,8 @@ export class Herd extends EventEmitter {
 
   async dockerCompose(id: string, file: string, action: DockerAction, service?: string): Promise<void> {
     const { p, project } = this.composeTarget(id, file);
+    // The engine to use (DoCatz while it runs …) is decided by the status check: also from the header's Docker menu.
+    if (!(await docker.dockerStatus()).daemon) throw new Error('No container engine is running: start one (Docker tab)');
     const args: Record<DockerAction, string[]> = {
       up: ['up', '-d', '--build', '--remove-orphans'],
       down: ['down'],
@@ -4362,7 +4346,6 @@ export class Herd extends EventEmitter {
     const pv = await this.dockerDevPreview(id, services);
     docker.writeFiles(p.path, [{ path: pv.path, content: content ?? pv.content }], [pv.path]);
     this.processes.log(id, 'sys', `Docker: wrote ${pv.path} (${services.join(', ')})`);
-    this.update(id, { composeWithApp: pv.path, composeOffered: true });
     return pv.path;
   }
 
@@ -4423,47 +4406,6 @@ export class Herd extends EventEmitter {
       changed: plan.changed.map((c) => ({ key: c.key, from: secret(c.key) ? '•••' : mask(c.from), to: secret(c.key) ? '•••' : mask(c.to) })),
       sources,
     };
-  }
-
-  /** The site's compose services before its apps (Start): `up -d --wait`, so a database is ready when the app connects. */
-  private async composeUp(p: ProjectConfig): Promise<void> {
-    const file = p.composeWithApp!;
-    if (!docker.composeFiles(p.path).some((c) => c.file === file)) {
-      this.processes.log(p.id, 'sys', `Docker: ${file} is gone; not starting its services (Docker tab → Start with the app)`);
-      return;
-    }
-    if (!(await docker.dockerStatus()).daemon) {
-      const msg = `${file}: no container engine is running. Start one (Docker tab), or turn off "Start with the app" there.`;
-      this.processes.log(p.id, 'sys', msg);
-      throw new Error(msg);
-    }
-    const project = this.dockerFiles(p.id).find((c) => c.file === file)?.project ?? null;
-    const ls = this.launchState.get(p.id);
-    if (ls) {
-      ls.building = 'Docker services';
-      this.changed();
-    }
-    this.processes.log(p.id, 'sys', `$ docker compose -f ${file}${project ? ` -p ${project}` : ''} up -d --wait`);
-    const lines: string[] = [];
-    const log = (stream: 'out' | 'err', text: string) => {
-      lines.push(text);
-      this.processes.log(p.id, stream === 'err' ? 'err' : 'docker', text);
-    };
-    let code = await docker.compose(p.path, file, project, ['up', '-d', '--wait'], log);
-    // Podman / older compose know no --wait: start them, the app retries its connection anyway.
-    if (code !== 0 && lines.some((l) => /unknown flag.*wait/i.test(l))) code = await docker.compose(p.path, file, project, ['up', '-d'], log);
-    if (ls) ls.building = null;
-    if (code !== 0) throw new Error(`docker compose up failed (exit ${code}); see Logs`);
-  }
-
-  /** Stop: the site's compose services stop too (`stop`, not `down`: containers and data stay). */
-  private async composeStop(p: ProjectConfig): Promise<void> {
-    const file = p.composeWithApp!;
-    if (!docker.composeFiles(p.path).some((c) => c.file === file)) return;
-    const project = this.dockerFiles(p.id).find((c) => c.file === file)?.project ?? null;
-    this.processes.log(p.id, 'sys', `$ docker compose -f ${file}${project ? ` -p ${project}` : ''} stop`);
-    const code = await docker.compose(p.path, file, project, ['stop'], (stream, text) => this.processes.log(p.id, stream === 'err' ? 'err' : 'docker', text));
-    if (code !== 0) this.processes.log(p.id, 'sys', `Docker: stop failed (exit ${code})`);
   }
 
   // ------------------------------------------------------- sidebar organisation

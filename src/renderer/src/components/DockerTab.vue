@@ -147,14 +147,6 @@ async function useEngine(which: 'docatz' | 'system') {
 }
 
 // ------------------------------------------------- start with the app, .env
-/** The compose file whose services start and stop with the site. */
-const withApp = computed(() => props.project.composeWithApp ?? null);
-async function setWithApp(on: boolean) {
-  await attempt(() => herd.updateProject(props.project.id, { composeWithApp: on ? file.value : '', composeOffered: true }));
-}
-/** Asked once per site: its compose file is there, nothing starts with it yet. */
-const offerWithApp = computed(() => !!files.value.length && !withApp.value && !props.project.composeOffered);
-const dismissOffer = () => attempt(() => herd.updateProject(props.project.id, { composeOffered: true }));
 
 const envPlan = ref<ComposeEnvPlan | null>(null);
 async function previewEnv() {
@@ -189,7 +181,7 @@ async function devWrite() {
   const path = await attempt(() => herd.dockerDevWrite(props.project.id, picked, devContent.value !== pv.content ? devContent.value : undefined));
   if (!path) return;
   dev.value = null;
-  notify('success', `Wrote ${path}; its services now start with the ${props.desktop ? 'app' : 'site'}.`);
+  notify('success', `Wrote ${path}: Up starts its services.`);
   await refresh();
   file.value = path;
   filesVersion.value++;
@@ -301,20 +293,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
         <p class="text-xs opacity-60">
           <code>docker compose -f {{ file }}{{ current?.project ? ` -p ${current.project}` : '' }}</code>; output goes to the Logs tab.
         </p>
-        <div v-if="offerWithApp" role="alert" class="alert alert-info alert-soft items-start py-2 text-xs">
-          <div class="flex-1">
-            Start the services of <code>{{ file }}</code> when you start this {{ desktop ? 'app' : 'site' }}, and stop them with it?
-            The {{ desktop ? 'app' : 'site' }} then finds its database ready.
-          </div>
-          <button class="btn btn-primary btn-xs" @click="setWithApp(true)">Yes</button>
-          <button class="btn btn-ghost btn-xs" @click="dismissOffer">No thanks</button>
-        </div>
         <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          <label class="flex cursor-pointer items-center gap-2" :title="`Start: docker compose up -d --wait before the ${desktop ? 'app' : 'site'}. Stop: docker compose stop (containers and data stay).`">
-            <input type="checkbox" class="toggle toggle-sm toggle-primary" :checked="withApp === file" @change="setWithApp(($event.target as HTMLInputElement).checked)" />
-            Start with the {{ desktop ? 'app' : 'site' }}
-          </label>
-          <span v-if="withApp && withApp !== file" class="text-xs opacity-60"><code>{{ withApp }}</code> starts with it now</span>
           <button class="btn btn-ghost btn-xs" title="Point .env at these services: 127.0.0.1 and their published ports" @click="previewEnv">Use in .env…</button>
         </div>
         <div v-if="envPlan" class="space-y-2 rounded-lg border border-base-300/70 bg-base-100 p-2.5 text-xs">
@@ -356,7 +335,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             </tbody>
           </table>
         </div>
-        <p v-else-if="ready" class="text-xs opacity-60">No containers yet. <template v-if="current?.build"><b>Build &amp; Up</b> builds the images and starts them.</template><template v-else><b>Up</b> starts them{{ withApp === file ? `, and so does Start` : '' }}.</template></p>
+        <p v-else-if="ready" class="text-xs opacity-60">No containers yet. <template v-if="current?.build"><b>Build &amp; Up</b> builds the images and starts them.</template><template v-else><b>Up</b> starts them (also from Build ▾ at the top).</template></p>
       </div>
     </div>
 
@@ -366,7 +345,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
         <h2 class="font-semibold">Development services</h2>
         <p class="text-xs opacity-70">
           The database, Redis, mail or search this {{ desktop ? 'app' : 'site' }} talks to, in containers: <code>compose.dev.yaml</code>, each service on
-          <code>127.0.0.1</code>. The {{ desktop ? 'app' : 'site' }} itself keeps running here (no Dockerfile); the services start and stop with it, and
+          <code>127.0.0.1</code>. The {{ desktop ? 'app' : 'site' }} itself keeps running here (no Dockerfile); <b>Up</b> starts the services (Start stays for the {{ desktop ? 'app' : 'site' }} itself), and
           <b>Use in .env</b> points it at them. DevCatz can also run these services without Docker ({{ desktop ? 'Database tab' : 'Database and Settings' }}).
         </p>
         <div v-if="!dev" class="flex flex-wrap gap-1.5">
@@ -400,7 +379,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
           <div class="flex items-center gap-2">
             <button class="btn btn-primary btn-sm" :disabled="dev.current === devContent" @click="devWrite">Write</button>
             <button class="btn btn-ghost btn-sm" @click="dev = null">Cancel</button>
-            <span class="text-xs opacity-60">then it starts with the {{ desktop ? 'app' : 'site' }}, and .env is offered</span>
+            <span class="text-xs opacity-60">then Up starts the services, and .env is offered</span>
           </div>
         </div>
       </div>

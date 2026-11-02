@@ -1470,7 +1470,7 @@ export function devCompose(o: DevComposeInput): { path: string; content: string;
   if (!blocks.length) throw new Error('Choose at least one service');
   const content = [
     `${GENERATED_MARK}: development services for this project (the app itself runs on this computer, not in a container).`,
-    '# Each service listens on 127.0.0.1 only. DevCatz can start them with the app (Docker tab → Start with the app).',
+    '# Each service listens on 127.0.0.1 only. Start them in DevCatz with Up (Docker tab, or Build ▾ at the top).',
     'services:',
     blocks.join('\n\n'),
     ...(volumes.length ? ['', 'volumes:', ...volumes.map((v) => `  ${v}:`)] : []),

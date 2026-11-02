@@ -15,6 +15,8 @@ export interface MenuItem {
   checked?: boolean;
   /** A rule above this item. */
   separator?: boolean;
+  /** A small heading above this item that names the group it starts (e.g. "Build", "Docker Compose"). */
+  group?: string;
   action: () => void;
 }
 
@@ -81,7 +83,9 @@ defineExpose({ toggle });
       class="menu no-drag fixed z-50 rounded-box border border-base-300 bg-base-100 p-1.5 text-sm shadow-xl"
       :style="{ top: `${pos.top}px`, left: `${pos.left}px`, width: `${width}px` }"
     >
-      <li v-for="item in items" :key="item.label" :class="{ 'mt-1 border-t border-base-300/60 pt-1': item.separator }">
+      <template v-for="item in items" :key="item.label">
+      <li v-if="item.group" class="menu-title px-3 pt-2 pb-0.5 text-[11px] font-semibold tracking-wide uppercase opacity-50" :class="{ 'mt-1 border-t border-base-300/60': item.separator }">{{ item.group }}</li>
+      <li :class="{ 'mt-1 border-t border-base-300/60 pt-1': item.separator && !item.group }">
         <a role="menuitem" class="items-start gap-2.5" @click="run(item)">
           <span v-if="item.checked !== undefined" class="w-3 shrink-0 text-center text-xs" :class="item.checked ? 'opacity-100' : 'opacity-0'">✓</span>
           <svg v-if="item.icon" class="mt-0.5 size-4 shrink-0 opacity-70" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="item.icon" /></svg>
@@ -91,6 +95,7 @@ defineExpose({ toggle });
           </span>
         </a>
       </li>
+      </template>
     </ul>
   </Teleport>
 </template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type { BuildTarget, DbAction, PackageManager, ProjectState, RustToolId } from '@shared/types';
+import type { BuildTarget, DbAction, DockerComposeFile, PackageManager, ProjectState, RustToolId } from '@shared/types';
 import { attempt, herd, navRequest, notify, siteTabRequest, state } from '../store';
 import { navVisit } from '../nav';
 import AiExplain from './AiExplain.vue';
@@ -242,6 +242,39 @@ const buildItems = computed<MenuItem[]>(() =>
   }),
 );
 
+// ---- Docker (header): Up / Down per compose file of the site, apart from Start (which only runs the site itself).
+const composeFiles = ref<DockerComposeFile[]>([]);
+const loadCompose = async () => (composeFiles.value = (await herd.dockerFiles(p.value.id).catch(() => [])) ?? []);
+watch(() => `${p.value.id}|${tab.value}`, () => void loadCompose(), { immediate: true });
+const dockerBusy = ref(false);
+async function dockerAction(file: string, action: 'up' | 'down') {
+  dockerBusy.value = true;
+  tab.value = 'logs';
+  const ok = await attempt(() => herd.dockerCompose(p.value.id, file, action).then(() => true));
+  dockerBusy.value = false;
+  if (ok) notify('success', action === 'up' ? `${file}: containers are up` : `${file}: containers removed`);
+}
+// Only when the site has a compose file: no Docker group (and no Build ▾ just for it) otherwise.
+const dockerItems = computed<MenuItem[]>(() => !composeFiles.value.length ? [] : [
+  ...composeFiles.value.flatMap((f, i): MenuItem[] => [
+    { label: `Up · ${f.file}`, hint: f.build ? 'build the images, then start the containers' : 'start the containers', separator: i > 0, action: () => void dockerAction(f.file, 'up') },
+    { label: `Down · ${f.file}`, hint: 'stop and remove its containers (volumes stay)', action: () => void dockerAction(f.file, 'down') },
+  ]),
+  {
+    label: 'Docker tab',
+    hint: 'engine, containers, compose files',
+    separator: true,
+    action: () => {
+      tab.value = 'docker';
+    },
+  },
+]);
+/** Build ▾ holds the builds, then Docker Compose (Up / Down), each group under its own rule. */
+const buildMenu = computed<MenuItem[]>(() => [
+  ...buildItems.value.map((it, i) => (i === 0 ? { ...it, group: 'Build the project' } : it)),
+  ...dockerItems.value.map((it, i) => (i === 0 ? { ...it, group: 'Docker Compose', separator: buildItems.value.length > 0 } : it)),
+]);
+
 /** Worktrees of this site (sites of their own, each on its own ports). */
 const worktrees = computed(() => (state.value?.projects ?? []).filter((x) => x.worktreeOf === p.value.id));
 /** Start ▾ → Start all: this site and every worktree of it that is not running yet. */
@@ -451,10 +484,10 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
         <button v-else class="btn btn-sm" @click="stop">Stop</button>
         <button class="btn btn-sm" :disabled="!active || starting" @click="restart">Restart</button>
         </template>
-        <template v-if="buildTargets.length">
-          <PopMenu v-if="buildTargets.length > 1" :items="buildItems" align="end" :width="300">
-            <button class="btn btn-sm" :disabled="!!p.dbTask" title="Build the project, or one of its apps">
-              <span v-if="building" class="loading loading-spinner loading-xs" />Build ▾
+        <template v-if="buildTargets.length || composeFiles.length">
+          <PopMenu v-if="buildTargets.length > 1 || composeFiles.length" :items="buildMenu" align="end" :width="320">
+            <button class="btn btn-sm" :disabled="!!p.dbTask && !composeFiles.length" title="Build the project or one of its apps; Docker Compose Up / Down (Start only runs the site itself)">
+              <span v-if="building || dockerBusy" class="loading loading-spinner loading-xs" />Build ▾
             </button>
           </PopMenu>
           <button v-else class="btn btn-sm" :disabled="!!p.dbTask" :title="`${buildTargets[0].command}${buildTargets[0].cwd === '.' ? '' : ` (in ${buildTargets[0].cwd})`}`" @click="build(buildTargets[0])">
@@ -610,9 +643,8 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
             preview or share here; its output is in Logs.
           </p>
           <p class="text-xs opacity-70">
-            <template v-if="p.composeWithApp">Its services in <code>{{ p.composeWithApp }}</code> start and stop with it.</template>
-            <template v-else>A database or Redis for it: from DevCatz (Database tab), or in Docker.</template>
-            {{ ' ' }}<a class="link link-primary" @click="openDocker">{{ p.composeWithApp ? 'Docker tab' : 'Services with Docker Compose…' }}</a>
+            A database or Redis for it: from DevCatz (Database tab), or in Docker.
+            {{ ' ' }}<a class="link link-primary" @click="openDocker">Services with Docker Compose…</a>
           </p>
         </div>
       </div>
