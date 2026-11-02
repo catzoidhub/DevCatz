@@ -947,7 +947,7 @@ export interface DockerGenOptions {
   dokployNetwork: boolean;
 }
 
-/** Services compose.dev.yaml can hold: what an app talks to while it is developed. */
+/** Services docker-compose.dev.yml can hold: what an app talks to while it is developed. */
 export type DevServiceKind = 'postgres' | 'mysql' | 'mariadb' | 'redis' | 'mongo' | 'mailpit' | 'meilisearch';
 
 export interface DevComposePreview {
@@ -3156,9 +3156,9 @@ export interface HerdApi {
   dockerWrite(id: string, options: DockerGenOptions, paths: string[], overwrite: string[], edited?: Record<string, string>): Promise<string[]>;
   /** Docker files in the site (Dockerfile*, *compose*.yml, .dockerignore) for Adjust with AI. */
   dockerListFiles(id: string): Promise<string[]>;
-  /** compose.dev.yaml for the chosen services (default: the ones the project seems to use). */
+  /** docker-compose.dev.yml for the chosen services (default: the ones the project seems to use). */
   dockerDevPreview(id: string, services?: DevServiceKind[]): Promise<DevComposePreview>;
-  /** Writes compose.dev.yaml (`content` as edited in the preview). */
+  /** Writes docker-compose.dev.yml (`content` as edited in the preview). */
   dockerDevWrite(id: string, services: DevServiceKind[], content?: string): Promise<string>;
   /** .env lines pointing at the compose file's published services; `apply` writes them. */
   dockerComposeEnv(id: string, file: string, apply: boolean): Promise<ComposeEnvPlan>;

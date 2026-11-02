@@ -968,13 +968,9 @@ export function generate(
     nodeMajor: Number(input.nodeVersion?.replace(/^v/, '').split('.')[0]) || 22,
   };
   const local = opts.target === 'local';
-  // A compose file already in use (e.g. the dev database) is left alone.
-  const existingCompose = composeFiles(p.path).filter((c) => !c.generated);
-  const composeFile = !local
-    ? 'docker-compose.prod.yml'
-    : existingCompose.some((c) => c.file === 'docker-compose.yml' || c.file === 'compose.yaml')
-      ? 'docker-compose.local.yml'
-      : 'docker-compose.yml';
+  // Production is docker-compose.yml, the file Dokploy / Coolify read by default (no compose path to change there);
+  // a local test run is docker-compose.local.yml and development services docker-compose.dev.yml.
+  const composeFile = local ? 'docker-compose.local.yml' : 'docker-compose.yml';
   const project = projectName(p, composeFile);
   const apps = servedApps(stack);
   const files: { path: string; content: string }[] = [];
@@ -1393,7 +1389,7 @@ export const DEV_SERVICES: { kind: DevServiceKind; name: string; port: number }[
   { kind: 'meilisearch', name: 'Meilisearch', port: 7700 },
 ];
 
-export const DEV_COMPOSE = 'compose.dev.yaml';
+export const DEV_COMPOSE = 'docker-compose.dev.yml';
 
 /** The services a project seems to use: its database, Redis, MongoDB / mail / search libraries. */
 export function suggestedServices(stack: StackInfo, env: Record<string, string>, searchLibs: string[] = []): DevServiceKind[] {
@@ -1417,7 +1413,7 @@ export interface DevComposeInput {
 }
 
 /**
- * compose.dev.yaml: only the services the app talks to while it is developed (database, Redis, mail, search), each
+ * docker-compose.dev.yml: only the services the app talks to while it is developed (database, Redis, mail, search), each
  * published on 127.0.0.1 — no Dockerfile, the app itself keeps running on this computer (desktop apps, or any site).
  */
 export function devCompose(o: DevComposeInput): { path: string; content: string; current: string | null } {

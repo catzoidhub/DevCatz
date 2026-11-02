@@ -4306,7 +4306,7 @@ export class Herd extends EventEmitter {
 
   // ------------------------------------------------- development services (compose)
 
-  /** compose.dev.yaml: host ports the usual ones when free (5432, 6379 …), else from DevCatz's pool; kept per site. */
+  /** docker-compose.dev.yml: host ports the usual ones when free (5432, 6379 …), else from DevCatz's pool; kept per site. */
   private async devHostPorts(id: string, kinds: DevServiceKind[]): Promise<Map<string, number>> {
     const want: [string, number][] = [];
     for (const k of kinds) {

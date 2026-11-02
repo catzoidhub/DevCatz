@@ -339,17 +339,17 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
       </div>
     </div>
 
-    <!-- Development services: compose.dev.yaml, the app keeps running on this computer. -->
+    <!-- Development services: docker-compose.dev.yml, the app keeps running on this computer. -->
     <div class="card">
       <div class="card-body">
         <h2 class="font-semibold">Development services</h2>
         <p class="text-xs opacity-70">
-          The database, Redis, mail or search this {{ desktop ? 'app' : 'site' }} talks to, in containers: <code>compose.dev.yaml</code>, each service on
+          The database, Redis, mail or search this {{ desktop ? 'app' : 'site' }} talks to, in containers: <code>docker-compose.dev.yml</code>, each service on
           <code>127.0.0.1</code>. The {{ desktop ? 'app' : 'site' }} itself keeps running here (no Dockerfile); <b>Up</b> starts the services (Start stays for the {{ desktop ? 'app' : 'site' }} itself), and
           <b>Use in .env</b> points it at them. DevCatz can also run these services without Docker ({{ desktop ? 'Database tab' : 'Database and Settings' }}).
         </p>
         <div v-if="!dev" class="flex flex-wrap gap-1.5">
-          <button class="btn btn-sm" @click="devPreview()">{{ files.some((f) => f.file === 'compose.dev.yaml') ? 'Change compose.dev.yaml…' : 'Create compose.dev.yaml…' }}</button>
+          <button class="btn btn-sm" @click="devPreview()">{{ files.some((f) => f.file === 'docker-compose.dev.yml') ? 'Change docker-compose.dev.yml…' : 'Create docker-compose.dev.yml…' }}</button>
         </div>
         <div v-else class="space-y-2">
           <div class="flex flex-wrap gap-x-5 gap-y-2 rounded-box bg-base-200/50 px-4 py-3 text-sm">
@@ -462,8 +462,11 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             <template v-if="preview.options.target === 'production'">
               For Dokploy / Coolify: no published ports.
               <template v-if="preview.options.envFile === 'project'">The environment (DB_HOST, REDIS_HOST, APP_KEY, …) is read from <code>.env</code>, the file the platform writes from its Environment settings.</template>
-              <template v-else>The environment comes from the generated <code>.env.docker</code> (deploy it with the app; it holds secrets, keep it out of git).</template> Point the platform's compose path at
-              <code>{{ preview.composeFile }}</code> and attach the domain to the web service.
+              <template v-else>The environment comes from the generated <code>.env.docker</code> (deploy it with the app; it holds secrets, keep it out of git).</template> <template v-if="preview.composeFile === 'docker-compose.yml'">
+                <code>docker-compose.yml</code> is the file Dokploy and Coolify read by default: no compose path to change, just attach the domain to the
+                web service.
+              </template>
+              <template v-else>Point the platform's compose path at <code>{{ preview.composeFile }}</code> and attach the domain to the web service.</template>
             </template>
             <template v-else-if="preview.options.envFile === 'docker'">
               Runs here with your engine; <code>.env.docker</code> is your <code>.env</code> with hosts pointed at the containers.
