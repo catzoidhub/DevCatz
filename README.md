@@ -56,6 +56,16 @@ SmartScreen warns when you open it (*More info → Run anyway*). Signing is free
 issues, pull requests and write-ups all help us get there. macOS builds are signed with a Developer ID and notarized
 by Apple. Full policy: [catzoid.com/legal/code-signing](https://catzoid.com/legal/code-signing).
 
+## How it is made
+
+DevCatz is made by a small team of three developers, and its code is written together with
+[Claude by Anthropic](https://www.anthropic.com/claude), an AI assistant. The team decides what the cat does, designs
+it, tries every feature on a real computer and reviews every change before it ships — Claude writes and explains the
+code with them. Every commit Claude helped with says so (`Co-Authored-By: Claude`), so you can read, test or question
+any of it. Found something that looks wrong? Open an issue — a person reads every report.
+
+Catzoid is an independent project; it is not made, sponsored or endorsed by Anthropic.
+
 ## Licence
 
 DevCatz is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License
