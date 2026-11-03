@@ -663,7 +663,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
             </tbody>
           </table>
         </div>
-        <p v-else class="text-xs opacity-60">None yet: builds are installed when you create a service with a version that is not on this Mac.</p>
+        <p v-else class="text-xs opacity-60">None yet: builds are installed when you create a service with a version that is not on this {{ words.computer }}.</p>
       </div>
     </div>
 
@@ -786,7 +786,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
               @change="setS3({ wsAllowedOrigins: ($event.target as HTMLInputElement).value.trim() || '*' })"
             />
             <span class="mt-1 block text-xs opacity-60">
-              <code>*</code> = any page may connect (fine on this Mac), or a list like <code>https://*.{{ s.settings.tld }}</code>. Each server's own setting wins.
+              <code>*</code> = any page may connect (fine on this {{ words.computer }}), or a list like <code>https://*.{{ s.settings.tld }}</code>. Each server's own setting wins.
             </span>
           </label>
           <label class="block">
@@ -1012,7 +1012,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <label class="block sm:col-span-2">
             <span class="label-caps mb-1 block">Data folders of new installs</span>
             <div class="join w-full">
-              <input class="input input-sm join-item w-full font-mono text-xs" :value="s.settings.storageRoot" placeholder="DevCatz's data folder (~/Library/Application Support/DevCatz/storage/<engine>/data)" readonly />
+              <input class="input input-sm join-item w-full font-mono text-xs" :value="s.settings.storageRoot" :placeholder="`DevCatz's data folder (${appDataPath('storage', '<engine>', 'data')})`" readonly />
               <button class="btn btn-sm join-item" @click="pickStorageRoot">Choose…</button>
               <button v-if="s.settings.storageRoot" class="btn btn-sm join-item" @click="setS3({ storageRoot: '' })">Reset</button>
             </div>
@@ -1021,7 +1021,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <label class="block sm:col-span-2">
             <span class="label-caps mb-1 block">Binary folders of new installs</span>
             <div class="join w-full">
-              <input class="input input-sm join-item w-full font-mono text-xs" :value="s.settings.storageBinRoot" placeholder="DevCatz's data folder (~/Library/Application Support/DevCatz/storage/<engine>/bin)" readonly />
+              <input class="input input-sm join-item w-full font-mono text-xs" :value="s.settings.storageBinRoot" :placeholder="`DevCatz's data folder (${appDataPath('storage', '<engine>', 'bin')})`" readonly />
               <button class="btn btn-sm join-item" @click="pickStorageBinRoot">Choose…</button>
               <button v-if="s.settings.storageBinRoot" class="btn btn-sm join-item" @click="setS3({ storageBinRoot: '' })">Reset</button>
             </div>
@@ -1166,7 +1166,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
             </tbody>
           </table>
         </div>
-        <p class="text-xs opacity-60">Email gateways send into the DevCatz mail catcher and Jasmin into the SMS catcher, so nothing leaves this Mac. Details and installs are on the Gateways page.</p>
+        <p class="text-xs opacity-60">Email gateways send into the DevCatz mail catcher and Jasmin into the SMS catcher, so nothing leaves this {{ words.computer }}. Details and installs are on the Gateways page.</p>
       </div>
     </div>
     <div v-if="tab === 'whatsapp'" class="card">
