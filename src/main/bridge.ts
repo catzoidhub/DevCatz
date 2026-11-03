@@ -44,14 +44,19 @@ export interface BridgeGateway {
   link: string;
 }
 
+/**
+ * `services`: servers DevCatz runs that have no Windows build (Typesense, Sonic, Sockudo), in the gateways' shape —
+ * on Windows they run in DoCatz's engine (compose project devcatz-svc-<kind>), listed read-only on DoCatz's DevCatz
+ * Services page; `link` is devcatz://services/<kind> (?install=1, ?action=start|stop|restart). All three, installed or not.
+ */
 export const bridgeFile = () => join(app.getPath('userData'), 'bridge.json');
 
 let last = '';
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 /** Writes bridge.json (debounced, only when it changed). */
-export function writeBridge(sites: BridgeSite[], gateways: BridgeGateway[] = []): void {
-  const body = JSON.stringify([sites, gateways]);
+export function writeBridge(sites: BridgeSite[], gateways: BridgeGateway[] = [], services: BridgeGateway[] = []): void {
+  const body = JSON.stringify([sites, gateways, services]);
   if (body === last) return;
   last = body;
   if (timer) clearTimeout(timer);
@@ -62,7 +67,7 @@ export function writeBridge(sites: BridgeSite[], gateways: BridgeGateway[] = [])
       const dir = join(file, '..');
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
       const tmp = `${file}.tmp`;
-      writeFileSync(tmp, `${JSON.stringify({ schema: 1, app: 'DevCatz', written: new Date().toISOString(), sites, gateways }, null, 2)}\n`, { mode: 0o600 });
+      writeFileSync(tmp, `${JSON.stringify({ schema: 1, app: 'DevCatz', written: new Date().toISOString(), sites, gateways, services }, null, 2)}\n`, { mode: 0o600 });
       chmodSync(tmp, 0o600);
       renameSync(tmp, file);
     } catch (e) {

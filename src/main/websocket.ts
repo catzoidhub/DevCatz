@@ -10,9 +10,11 @@ import { getShellEnv, isPortOpen, portOwner, run } from './env';
 import { ProcessManager } from './processes';
 import type { Route } from './proxy';
 import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './storage';
-import { isNewer, packagistLatest, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
+import { githubLatest, isNewer, packagistLatest, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
 import { exe, isWin, killTree, shellCommand } from './platform';
+import { svcCompose, svcComposeFile, svcEngineReady, svcInDocker, svcPull, svcRemove, svcRemoveImage, svcUpCommand, vol, writeSvcCompose } from './svcdocker';
+import { forwardFromWsl } from './wslhost';
 
 /**
  * Real-time servers, one instance per kind, managed like Object Storage:
@@ -68,10 +70,42 @@ interface Engine {
   versionOf?(dir: string): Promise<string | null>;
   /** Writes the config file and returns the command + env (`hook`: DevCatz's webhook receiver, Sockudo). */
   spec(c: WsConfig, bin: string, hook: string | null): { command: string; env: Record<string, string>; cwd?: string };
-  /** No build for this platform: why, shown instead of Install (Sockudo ships Linux builds only for Windows users). */
+  /** No build for this platform: why, shown instead of Install. */
   unavailable?: string;
+  /** Windows (svcdocker.ts): the official image, its tag for a version, its newest version, the compose file. */
+  docker?: { image: string; tag(v: string): string; latest(): Promise<string>; compose(c: WsConfig, image: string, hook: string | null): string };
   /** Path of the admin UI below the main port, if any. */
   admin?: string;
+}
+
+/** Sockudo's config (one app from the settings); `inside`: in its container (every address, the image's own ports). */
+function sockudoConfig(c: WsConfig, hook: string | null, inside: boolean) {
+  return {
+    host: inside ? '0.0.0.0' : '127.0.0.1',
+    port: inside ? 6001 : c.port,
+    debug: false,
+    metrics: { enabled: true, host: inside ? '0.0.0.0' : '127.0.0.1', port: inside ? 9601 : c.extraPort },
+    cors: { origin: origins(c), credentials: false },
+    app_manager: {
+      driver: 'memory',
+      array: {
+        apps: [
+          {
+            id: c.appId,
+            key: c.key,
+            secret: c.secret,
+            enabled: true,
+            enable_client_messages: true,
+            max_connections: '10000',
+            max_client_events_per_second: '1000',
+            allowed_origins: origins(c),
+            // Channel occupied / vacated → DevCatz's inspector (the HTTP API's channel list is unreliable in 4.x).
+            ...(hook ? { webhooks: [{ url: hook, event_types: ['channel_occupied', 'channel_vacated'] }] } : {}),
+          },
+        ],
+      },
+    },
+  };
 }
 
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -184,7 +218,28 @@ const ENGINES: Record<WsKind, Engine> = {
   sockudo: {
     name: 'Sockudo',
     exe: 'sockudo',
-    unavailable: isWin ? 'Sockudo publishes no Windows build (Linux only). Laravel Reverb speaks the same Pusher protocol and runs on Windows.' : undefined,
+    // No Windows build (Linux only): there it runs from its official image in DoCatz.
+    docker: {
+      image: 'sockudo/sockudo',
+      tag: (v) => v,
+      latest: () => githubLatest('sockudo/sockudo'),
+      compose(c, image, hook) {
+        // Inside the container: every address, its own ports; DevCatz's webhook receiver through host.docker.internal.
+        // A folder, not the file itself: a file mount shows up as an empty folder on some engines.
+        const dir = join(c.dataDir, 'config');
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'config.json'), JSON.stringify(sockudoConfig(c, hook?.replace('127.0.0.1', 'host.docker.internal') ?? null, true), null, 2), { mode: 0o644 });
+        return `services:
+  sockudo:
+    image: ${image}
+    volumes: [ ${vol(dir, '/app/config', true)} ]
+    # A local development server: Sockudo 5 wants this said before it keeps push storage in memory.
+    environment: { PUSH_ALLOW_MEMORY_DRIVERS: "true" }
+    ports: [ "127.0.0.1:${c.port}:6001", "127.0.0.1:${c.extraPort}:9601" ]
+    extra_hosts: [ "host.docker.internal:host-gateway" ]
+`;
+      },
+    },
     protocol: 'pusher',
     description: 'Pusher-compatible server in Rust (successor of Soketi): laravel-echo, pusher-js and Laravel’s pusher broadcaster.',
     fields: { appId: 'App ID', key: 'App key', secret: 'App secret', extraPort: 'Metrics port' },
@@ -200,32 +255,7 @@ const ENGINES: Record<WsKind, Engine> = {
     versionRe: /sockudo\s+([\w.-]+)/,
     spec(c, bin, hook) {
       const file = join(c.dataDir, 'sockudo.json');
-      const conf = {
-        host: '127.0.0.1',
-        port: c.port,
-        debug: false,
-        metrics: { enabled: true, host: '127.0.0.1', port: c.extraPort },
-        cors: { origin: origins(c), credentials: false },
-        app_manager: {
-          driver: 'memory',
-          array: {
-            apps: [
-              {
-                id: c.appId,
-                key: c.key,
-                secret: c.secret,
-                enabled: true,
-                enable_client_messages: true,
-                max_connections: '10000',
-                max_client_events_per_second: '1000',
-                allowed_origins: origins(c),
-                // Channel occupied / vacated → DevCatz's inspector (the HTTP API's channel list is unreliable in 4.x).
-                ...(hook ? { webhooks: [{ url: hook, event_types: ['channel_occupied', 'channel_vacated'] }] } : {}),
-              },
-            ],
-          },
-        },
-      };
+      const conf = sockudoConfig(c, hook, false);
       writeFileSync(file, JSON.stringify(conf, null, 2));
       return { command: `${q(bin)} --config ${q(file)}`, env: {} };
     },
@@ -433,6 +463,11 @@ function promSum(text: string, re: RegExp): number | null {
 
 // ------------------------------------------------------------------ manager
 
+/** Windows: the server runs from its official image in DoCatz (svcdocker.ts); undefined = its own binary. */
+const dockerOf = (kind: WsKind) => (svcInDocker ? ENGINES[kind].docker : undefined);
+const imageOf = (kind: WsKind, v: string | null | undefined) => `${ENGINES[kind].docker!.image}:${ENGINES[kind].docker!.tag(v ?? '')}`;
+const DOCKER_STEPS = ["Starting DoCatz's engine", 'Finding the latest release', 'Pulling the image', 'Preparing the data folder', 'Saving settings'];
+
 export class WsManager {
   readonly processes = new ProcessManager('ws-pids.json');
   private tasks = new Map<WsKind, TaskProgress>();
@@ -584,13 +619,14 @@ export class WsManager {
     if (this.aborts.has(kind)) throw new Error(`${ENGINES[kind].name} is already being installed`);
     const c = { ...input, kind };
     this.validate(c);
-    const steps = [...INSTALL_STEPS, ...(c.autoStart ? ['Starting'] : [])];
+    const steps = [...(dockerOf(kind) ? DOCKER_STEPS : INSTALL_STEPS), ...(c.autoStart ? ['Starting'] : [])];
     const at = (name: string) => steps.indexOf(name);
     const t = this.task(kind, { kind: 'install', title: `Installing ${ENGINES[kind].name}`, steps, step: 0 });
     const abort = new AbortController();
     this.aborts.set(kind, abort);
     const placed = !existsSync(binaryOf(c));
     const dataExisted = existsSync(c.dataDir);
+    if (dockerOf(kind)) return this.installDocker(c, t, abort, dataExisted, at);
     try {
       await ENGINES[kind].install(binaryDirOf(c), t.report, abort.signal);
       check(abort.signal);
@@ -622,6 +658,43 @@ export class WsManager {
     }
   }
 
+  /** Windows: the image pulled into DoCatz's engine instead of a download. */
+  private async installDocker(c: WsConfig, t: ReturnType<WsManager['task']>, abort: AbortController, dataExisted: boolean, at: (name: string) => number): Promise<void> {
+    const kind = c.kind;
+    const d = ENGINES[kind].docker!;
+    const file = svcComposeFile(binaryDirOf(c));
+    try {
+      await svcEngineReady((detail) => t.report({ detail }));
+      check(abort.signal);
+      t.report({ step: at('Finding the latest release'), detail: d.image });
+      c.version = await d.latest();
+      t.report({ title: `Installing ${ENGINES[kind].name} ${c.version} in DoCatz`, step: at('Pulling the image'), detail: imageOf(kind, c.version) });
+      mkdirSync(c.dataDir, { recursive: true });
+      writeSvcCompose(file, d.compose(c, imageOf(kind, c.version), null));
+      await svcPull(file, 'sockudo', t.report, abort.signal);
+      t.report({ step: at('Preparing the data folder'), detail: c.dataDir });
+      this.aborts.delete(kind);
+      t.report({ step: at('Saving settings'), detail: `wss://${host(c.domain)}` });
+      store.setWebsocket(kind, c);
+      this.onChange();
+      if (c.autoStart) {
+        t.report({ step: at('Starting'), detail: `127.0.0.1:${c.port}` });
+        await this.action(kind, 'start');
+      }
+      t.finish();
+    } catch (err) {
+      if (err instanceof Cancelled || abort.signal.aborted) {
+        await rm(file, { force: true }).catch(() => undefined);
+        if (!dataExisted) await rm(c.dataDir, { recursive: true, force: true }).catch(() => undefined);
+        t.report({ cancelled: true, error: 'Install cancelled; nothing was kept.', received: undefined, total: undefined });
+        throw new Error('Install cancelled');
+      }
+      t.fail(err);
+    } finally {
+      this.aborts.delete(kind);
+    }
+  }
+
   /** Returns the names of the services that could not be checked (offline, GitHub rate limit …). */
   async checkUpdates(): Promise<string[]> {
     const failed: string[] = [];
@@ -629,7 +702,7 @@ export class WsManager {
       WS_KINDS.map(async (kind) => {
         const c = this.config(kind);
         if (!c) return void this.updates.delete(kind);
-        const v = await ENGINES[kind].latest().catch(() => null);
+        const v = await (dockerOf(kind)?.latest() ?? ENGINES[kind].latest()).catch(() => null);
         if (!v) failed.push(ENGINES[kind].name);
         else if (isNewer(v, c.version)) this.updates.set(kind, v);
         else this.updates.delete(kind);
@@ -644,6 +717,7 @@ export class WsManager {
     const c = this.config(kind);
     if (!c) throw new Error(`${ENGINES[kind].name} is not installed`);
     if (this.aborts.has(kind)) throw new Error(`${ENGINES[kind].name} is busy`);
+    if (dockerOf(kind)) return this.upgradeDocker(c);
     const steps = [...INSTALL_STEPS.slice(0, 5), ...UPDATE_TAIL];
     const t = this.task(kind, { kind: 'update', title: `Updating ${ENGINES[kind].name}`, steps, step: 0 });
     const abort = new AbortController();
@@ -674,11 +748,45 @@ export class WsManager {
     }
   }
 
+  /** Windows: the newer image pulled, the container recreated on it if it ran, the old image removed. */
+  private async upgradeDocker(c: WsConfig): Promise<void> {
+    const kind = c.kind;
+    const d = ENGINES[kind].docker!;
+    const t = this.task(kind, { kind: 'update', title: `Updating ${ENGINES[kind].name}`, steps: ["Starting DoCatz's engine", 'Finding the latest release', 'Pulling the image', 'Restarting'], step: 0 });
+    const abort = new AbortController();
+    this.aborts.set(kind, abort);
+    const file = svcComposeFile(binaryDirOf(c));
+    try {
+      await svcEngineReady((detail) => t.report({ detail }));
+      t.report({ step: 1, detail: d.image });
+      const v = await d.latest();
+      t.report({ step: 2, detail: imageOf(kind, v) });
+      const next = { ...c, version: v };
+      writeSvcCompose(file, d.compose(next, imageOf(kind, v), null));
+      await svcPull(file, 'sockudo', t.report, abort.signal);
+      const wasActive = this.isActive(kind);
+      store.setWebsocket(kind, next);
+      t.report({ step: 3 });
+      if (wasActive) await this.action(kind, 'restart');
+      if (v !== c.version) await svcRemoveImage(imageOf(kind, c.version));
+      this.updates.delete(kind);
+      this.processes.log(wsId(kind), 'sys', `Updated ${c.version ?? ''} → ${v}`);
+      t.report({ title: `Updated ${ENGINES[kind].name} to ${v}` });
+      t.finish();
+    } catch (err) {
+      t.fail(abort.signal.aborted ? new Error('Update cancelled; the current version was kept') : err);
+    } finally {
+      this.aborts.delete(kind);
+      this.onChange();
+    }
+  }
+
   cancelInstall(kind: WsKind): void {
     this.aborts.get(kind)?.abort();
   }
 
   private async version(c: WsConfig): Promise<string | null> {
+    if (dockerOf(c.kind)) return c.version ?? null;
     const bin = binaryOf(c);
     if (!existsSync(bin)) return null;
     const own = ENGINES[c.kind].versionOf;
@@ -707,6 +815,7 @@ export class WsManager {
     try {
       await this.processes.stop(wsId(kind));
       t.report({ step: 1, detail: binaryOf(c) });
+      if (dockerOf(kind)) await svcRemove(svcComposeFile(binaryDirOf(c)), 'sockudo', imageOf(kind, c.version));
       await rm(c.kind === 'reverb' ? join(binaryDirOf(c), 'app') : binaryOf(c), { recursive: true, force: true });
       if (deleteData) {
         t.report({ step: steps.indexOf('Deleting the data folder'), detail: c.dataDir });
@@ -729,8 +838,21 @@ export class WsManager {
     const id = wsId(kind);
     const c = this.config(kind);
     if (!c) throw new Error(`${ENGINES[kind].name} is not installed`);
-    if (action === 'stop' || action === 'restart') await this.processes.stop(id);
+    const d = dockerOf(kind);
+    const file = svcComposeFile(binaryDirOf(c));
+    if (action === 'stop' || action === 'restart') {
+      await this.processes.stop(id);
+      // Ending `compose up` (taskkill on Windows) can leave the container running: stopped for sure.
+      if (d && existsSync(file)) await svcCompose(file, 'sockudo', ['stop']).catch(() => undefined);
+    }
     if (action === 'stop') return;
+    if (d) {
+      // Already up (autostart, a second click): leave it — the leftover clean-up below would stop its container.
+      if (action === 'start' && this.isActive(kind)) return;
+      await svcEngineReady((detail) => this.processes.log(id, 'sys', detail));
+      // A container left running by a DevCatz that quit or crashed: stopped before `up` attaches again.
+      if (existsSync(file)) await svcCompose(file, 'sockudo', ['stop']).catch(() => undefined);
+    }
     for (let i = 0; i < 10 && (await isPortOpen(c.port)); i++) await new Promise((r) => setTimeout(r, 300));
     for (const port of portsOf(c)) {
       if (await isPortOpen(port)) {
@@ -743,6 +865,15 @@ export class WsManager {
       }
     }
     this.errors.delete(kind);
+    if (d) {
+      mkdirSync(c.dataDir, { recursive: true });
+      // The webhook receiver (channel inspector) is called from the container: open on WSL's network too (Windows).
+      const hook = kind === 'sockudo' ? await this.hookUrl() : null;
+      if (hook) await forwardFromWsl(Number(new URL(hook).port));
+      writeSvcCompose(file, d.compose(c, imageOf(kind, c.version), hook));
+      this.processes.startMany(id, [{ label: '', command: svcUpCommand(file, 'sockudo'), env: {}, cwd: binaryDirOf(c) }]);
+      return;
+    }
     const bin = binaryOf(c);
     if (!existsSync(bin)) throw new Error(`${bin} is missing; reinstall ${ENGINES[kind].name}`);
     mkdirSync(c.dataDir, { recursive: true });
@@ -795,13 +926,14 @@ export class WsManager {
         installed: Boolean(c),
         config: c,
         defaults: defaultsFor(kind),
-        binary: c ? binaryOf(c) : null,
+        binary: c ? (dockerOf(kind) ? imageOf(kind, c.version) : binaryOf(c)) : null,
         status: this.processes.getStatus(wsId(kind)).status,
         error: this.errors.get(kind) ?? null,
         task: this.tasks.get(kind) ?? null,
         update: c ? (this.updates.get(kind) ?? null) : null,
         urls: c ? this.urls(c) : null,
         unavailable: e.unavailable ?? null,
+        inDocatz: !!dockerOf(kind),
       };
     });
   }

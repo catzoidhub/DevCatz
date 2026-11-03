@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { app, shell } from 'electron';
 import type { DbCatzState, TaskProgress } from '@shared/types';
 import { installCatzoidApp, installSteps, catzoidAppPaths, findCatzoidApp, openCatzoidApp } from './companion';
+import { isSvcKind } from './svcdocker';
 import { run } from './env';
 
 /**
@@ -124,9 +125,10 @@ export class DoCatz {
     return true;
   }
 
+  /** docatz://gateways?kind= — or docatz://services?kind= for Typesense, Sonic, Sockudo (DoCatz's DevCatz Services). */
   private gatewayLink(kind: string): string {
     if (!/^[a-z]{2,20}$/.test(kind)) throw new Error('Invalid gateway');
-    return `docatz://gateways?${new URLSearchParams({ kind })}`;
+    return `docatz://${isSvcKind(kind) ? 'services' : 'gateways'}?${new URLSearchParams({ kind })}`;
   }
 
   /** Download & Install from a gateway's page (Windows: the Docker gateways run in DoCatz); DoCatz opens at it. */

@@ -58,6 +58,7 @@ import { branchLabel, cloneDeps, copyEnvFiles, copyLocalFile, copyLocalSqlite, c
 import { MailManager } from './mail/manager';
 import { WaManager } from './whatsapp';
 import { GatewayManager, gwProject } from './gateways/manager';
+import { isSvcKind, svcProject, type SvcKind } from './svcdocker';
 import { ExposeManager } from './expose';
 import { SearchManager, binaryDirOf as searchBinaryDirOf, searchId } from './search';
 import { detectSearch } from './searchdetect';
@@ -1639,7 +1640,25 @@ export class Herd extends EventEmitter {
         link: `devcatz://gateways/${g.kind}`,
       })),
     ];
-    writeBridge(sites, gateways);
+    const services: BridgeGateway[] = [
+      ...this.search.state().filter((s) => isSvcKind(s.kind)),
+      ...this.ws.state().filter((s) => isSvcKind(s.kind)),
+    ].map((s) => ({
+      kind: s.kind,
+      name: s.name,
+      category: 'protocol' in s ? 'websocket' : 'search',
+      docker: s.inDocatz,
+      installed: s.installed,
+      status: s.status,
+      version: s.config?.version ?? null,
+      url: s.urls?.http.startsWith('https:') ? s.urls.http : null,
+      api: s.urls?.httpLocal ?? null,
+      webUi: null,
+      project: s.inDocatz ? svcProject(s.kind as SvcKind) : null,
+      container: null,
+      link: `devcatz://services/${s.kind}`,
+    }));
+    writeBridge(sites, gateways, services);
   }
 
   /** A spec file DevCatz found for this site (Overview → API → Show in Finder only reveals those). */

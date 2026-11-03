@@ -23,6 +23,7 @@ import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3Upload
 import { uninstall, uninstallPlan, UNINSTALL_STEPS } from './uninstall';
 import { isMac, isWin } from './platform';
 import { openWeb, refreshBrowsers, refreshEditorIcons } from './browsers';
+import { isSvcKind } from './svcdocker';
 import { words } from '@shared/platform';
 
 app.setName('DevCatz');
@@ -1109,6 +1110,7 @@ async function quit(reason: string): Promise<void> {
  *   devcatz://db/<service id>   the Database page at that service
  *   devcatz://gateways/<kind>   a gateway (gowa, waha, postal, ntfy …); ?install=1 its install dialog,
  *                               ?action=start|stop|restart runs that (DoCatz's Gateways page, Windows)
+ *   devcatz://services/<kind>   Typesense, Sonic or Sockudo (Windows: they run in DoCatz); same options
  *   devcatz://<section>          a rail section (database, storage, …)
  */
 function handleLink(raw: string): void {
@@ -1128,6 +1130,17 @@ function handleLink(raw: string): void {
         return;
       }
       return showWindow(`gateways:${id}${u.searchParams.get('install') === '1' ? ':install' : ''}`);
+    }
+    // DoCatz's DevCatz Services page: devcatz://services/<typesense|sonic|sockudo>[?install=1 | ?action=…].
+    if (u.hostname === 'services') {
+      if (!isSvcKind(id)) return showWindow('search');
+      const action = u.searchParams.get('action');
+      if (action === 'start' || action === 'stop' || action === 'restart') {
+        const done = id === 'sockudo' ? herd.ws.action(id, action) : herd.search.action(id, action);
+        void done.catch((e: Error) => console.warn(`devcatz://services/${id}?action=${action}:`, e.message));
+        return;
+      }
+      return showWindow(`services:${id}${u.searchParams.get('install') === '1' ? ':install' : ''}`);
     }
     showWindow(u.hostname || undefined);
   } catch {

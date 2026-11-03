@@ -1117,8 +1117,10 @@ export interface WsState {
   urls: { ws: string; wsLocal: string; http: string; httpLocal: string; admin: string | null } | null;
   /** Newer release available (from the same source as the installer), or null. */
   update: string | null;
-  /** No build for this platform (Sockudo on Windows): why, instead of Install. */
+  /** No build for this platform: why, instead of Install. */
   unavailable: string | null;
+  /** Windows: runs from its official image in DoCatz's engine (Sockudo), controlled here; DoCatz lists it. */
+  inDocatz: boolean;
 }
 
 /** What a site uses for real-time messaging (detected from its manifests). */
@@ -1227,8 +1229,10 @@ export interface SearchState {
   urls: { http: string; httpLocal: string; admin: string | null } | null;
   /** Newer release available (from the same source as the installer), or null. */
   update: string | null;
-  /** No build for this platform (Typesense, Sonic on Windows): why, instead of Install. */
+  /** No build for this platform: why, instead of Install. */
   unavailable: string | null;
+  /** Windows: runs from its official image in DoCatz's engine (Typesense, Sonic), controlled here; DoCatz lists it. */
+  inDocatz: boolean;
 }
 
 export interface SearchIndex {

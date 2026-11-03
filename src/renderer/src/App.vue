@@ -2,7 +2,7 @@
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { attempt, cloneRequest, dbGroupRequest, gwInstallRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog, runtimeTabRequest, confirmRequest } from './store';
+import { attempt, cloneRequest, dbGroupRequest, gwInstallRequest, svcInstallRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog, runtimeTabRequest, confirmRequest } from './store';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ReportDialog from './components/ReportDialog.vue';
 import UninstallDialog from './components/UninstallDialog.vue';
@@ -513,6 +513,17 @@ function navigate(target: string) {
     waFocus.value = null;
     void nextTick(() => (waFocus.value = kind));
     gwInstallRequest.value = install ? kind : null;
+    return;
+  }
+  // devcatz://services/<kind>[?install=1] (DoCatz's DevCatz Services page): Typesense / Sonic (Search), Sockudo (WebSocket).
+  if (target.startsWith('services:')) {
+    const [, kind, install] = target.split(':');
+    const ws = kind === 'sockudo';
+    section.value = ws ? 'websocket' : 'search';
+    const focus = ws ? wsFocus : searchFocus;
+    focus.value = null;
+    void nextTick(() => (focus.value = kind));
+    svcInstallRequest.value = install ? kind : null;
     return;
   }
   if (!target.startsWith('new-group:') && !target.startsWith('rename-group:')) section.value = 'projects';

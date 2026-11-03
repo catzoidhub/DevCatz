@@ -15,7 +15,9 @@ import SearchKeys from './SearchKeys.vue';
 import SearchTasks from './SearchTasks.vue';
 import SearchBackups from './SearchBackups.vue';
 import PopMenu, { type MenuItem } from './PopMenu.vue';
-import { attempt, herd, notify, state, uninstallRequest } from '../store';
+import { attempt, herd, notify, state, svcInstallRequest, uninstallRequest } from '../store';
+import docatzLogo from '../assets/logos/docatz.png';
+import DoCatzInstallCard from './DoCatzInstallCard.vue';
 import CatMood from './CatMood.vue';
 
 /**
@@ -50,6 +52,7 @@ const moreItems = computed<MenuItem[]>(() => {
   const s = selected.value;
   if (!s?.installed) return [];
   return [
+    ...(s.inDocatz ? [{ label: 'Open in DoCatz', action: () => openInDocatz(s.kind) }] : []),
     { label: 'Open data folder', action: () => herd.searchOpenData(s.kind) },
     { label: 'Check for updates', action: checkUpdates },
     { label: 'Settings…', action: () => (form.value = { service: s, mode: 'edit' }) },
@@ -66,6 +69,22 @@ const tabs = computed<Tab[]>(() => {
 });
 watch(selectedKind, () => !tabs.value.includes(tab.value) && (tab.value = 'indexes'));
 const form = ref<{ service: SearchState; mode: 'install' | 'edit' } | null>(null);
+/** Windows: Typesense, Sonic and Sockudo run from their official images in DoCatz (no Windows builds); DoCatz lists them. */
+const needDocatz = computed(() => !!selected.value?.inDocatz && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task));
+async function openInDocatz(kind: string) {
+  if (!(await attempt(() => herd.docatzOpenGateway(kind)))) notify('error', 'DoCatz is not installed: install it to see this server there');
+}
+// DoCatz's DevCatz Services page → Install (devcatz://services/<kind>?install=1): the install dialog, nothing installed without it.
+watch(
+  [svcInstallRequest, selected],
+  ([k, s]) => {
+    if (!k || !s || s.kind !== k) return;
+    svcInstallRequest.value = null;
+    if (!s.installed && !needDocatz.value) form.value = { service: s, mode: 'install' };
+  },
+  { immediate: true },
+);
+
 const busy = ref<string | null>(null);
 const active = (s: SearchState) => s.status === 'running' || s.status === 'starting';
 /** Newer release: download, swap the binary, restart (data and settings stay). */
@@ -247,11 +266,13 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.searchUninstal
               <div class="min-w-48 flex-1">{{ selected.unavailable }}</div>
               <button v-if="selected.kind === 'typesense'" class="btn btn-sm" @click="selectedKind = 'meilisearch'">Meilisearch</button>
             </div>
+            <DoCatzInstallCard v-else-if="needDocatz" :kind="selected.kind" :name="selected.name" />
             <button v-else class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
-              <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" />Install {{ selected.name }}…
+              <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="selected.inDocatz" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ selected.inDocatz ? 'Install in DoCatz…' : `Install ${selected.name}…` }}
             </button>
-            <p class="text-xs opacity-60">
-              <template v-if="selected.kind === 'opensearch' && isWin">About 1 GB to download: OpenSearch's Windows build only comes as the full bundle (its own Java included); DevCatz drops its plugins after unpacking.</template>
+            <p v-if="!needDocatz" class="text-xs opacity-60">
+              <template v-if="selected.inDocatz">{{ selected.name }} publishes no {{ words.os }} build: here it runs from its official image in DoCatz's container engine (WSL 2). DevCatz pulls it there, starts and stops it and keeps its port, domain, key and .env lines as usual; DoCatz shows the container under DevCatz Services.</template>
+              <template v-else-if="selected.kind === 'opensearch' && isWin">About 1 GB to download: OpenSearch's Windows build only comes as the full bundle (its own Java included); DevCatz drops its plugins after unpacking.</template>
               <template v-else-if="selected.kind === 'opensearch'">About 300 MB: the core build runs on Eclipse Temurin 21 (no official macOS build).</template>
               <template v-else-if="selected.unavailable" />
               <template v-else-if="selected.kind === 'sonic'">Sonic has no macOS download of its own: DevCatz fetches Homebrew's build (checksum from formulae.brew.sh), no Homebrew needed.</template>
@@ -271,7 +292,7 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.searchUninstal
                 <StatusDot :status="selected.status" />
                 <span class="badge badge-soft badge-sm" :class="selected.status === 'running' ? 'badge-success' : selected.status === 'starting' ? 'badge-warning' : selected.status === 'crashed' ? 'badge-error' : 'badge-ghost'">{{ selected.status }}</span>
               </h2>
-              <div class="font-mono text-xs opacity-60">{{ selected.config.version }} · 127.0.0.1:{{ selected.config.port }}<template v-if="selected.config.autoStart"> · starts with DevCatz</template></div>
+              <div class="font-mono text-xs opacity-60">{{ selected.config.version }} · 127.0.0.1:{{ selected.config.port }}<template v-if="selected.inDocatz"> · in DoCatz</template><template v-if="selected.config.autoStart"> · starts with DevCatz</template></div>
             </div>
             <div class="flex shrink-0 flex-wrap items-center gap-2">
             <button v-if="selected.update" class="btn btn-warning btn-soft btn-sm" :disabled="!!busy || updating(selected)" :title="`${selected.config.version} → ${selected.update}: the data folder and settings stay`" @click="upgrade(selected)">

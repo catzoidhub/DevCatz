@@ -27,6 +27,7 @@ import { Cancelled, check, githubAsset } from './storage';
 import { brewLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
 import { exe, isWin, removeTemp, TAR } from './platform';
+import { svcCompose, svcComposeFile, svcEngineReady, svcInDocker, svcPull, svcRemove, svcRemoveImage, svcUpCommand, vol, writeSvcCompose, type SvcKind } from './svcdocker';
 
 /**
  * Search engines, one instance per kind (like Object Storage), installed into
@@ -72,8 +73,10 @@ interface Engine {
   version(dir: string): Promise<string | null>;
   spec(c: SearchConfig, dir: string): { command: string; env: Record<string, string> };
   admin?: string;
-  /** No build for this platform: why, shown instead of Install (Typesense, Sonic on Windows). */
+  /** No build for this platform: why, shown instead of Install. */
   unavailable?: string;
+  /** Windows (svcdocker.ts): the official image, its tag for a version, its newest version, the compose file. */
+  docker?: { image: string; tag(v: string): string; latest(): Promise<string>; compose(c: SearchConfig, image: string): string };
 }
 
 /** Program names per platform (.exe on Windows). */
@@ -188,9 +191,23 @@ const ENGINES: Record<SearchKind, Engine> = {
     name: 'Typesense',
     description: 'Typo-tolerant search with strict schemas, faceting, geo and vector search; Laravel Scout driver.',
     exe: 'typesense-server',
-    unavailable: isWin
-      ? 'Typesense publishes no Windows build (only Docker / WSL). Meilisearch is the closest on Windows: typo-tolerant, faceting, a Laravel Scout driver.'
-      : undefined,
+    // No Windows build: there it runs from its official image in DoCatz.
+    docker: {
+      image: 'typesense/typesense',
+      tag: (v) => v,
+      latest: async () => (await latestTag('typesense/typesense')).replace(/^v/, ''),
+      compose(c, image) {
+        const cors = c.allowedOrigins.trim() && c.allowedOrigins.trim() !== '*' ? ['--cors-domains', c.allowedOrigins.split(/[\s,]+/).filter(Boolean).join(',')] : [];
+        const args = ['--data-dir', '/data', '--api-key', c.key, '--api-port', '8108', '--enable-cors', ...cors];
+        return `services:
+  typesense:
+    image: ${image}
+    command: ${JSON.stringify(args)}
+    volumes: [ ${vol(c.dataDir, '/data')} ]
+    ports: [ "127.0.0.1:${c.port}:8108" ]
+`;
+      },
+    },
     fields: { key: 'Admin API key', extraPort: 'Peering port', memory: false },
     features: { keys: true, facets: true, editSettings: true, schemaOnCreate: false, tasks: false, backups: false, filters: true, http: true },
     defaults: { port: 8108, extraPort: 8107, domain: 'typesense' },
@@ -435,7 +452,25 @@ const ENGINES: Record<SearchKind, Engine> = {
     name: 'Sonic',
     description: 'Tiny schema-less search backend (Rust, a few MB of RAM): returns ids for words, typo-tolerant, suggestions; TCP protocol, no HTTP.',
     exe: 'sonic',
-    unavailable: isWin ? 'Sonic publishes no Windows build (its releases are Linux only; DevCatz takes the macOS one from Homebrew).' : undefined,
+    // No Windows build (Linux only): there it runs from its official image in DoCatz.
+    docker: {
+      image: 'valeriansaliou/sonic',
+      tag: (v) => `v${v}`,
+      latest: async () => (await latestTag('valeriansaliou/sonic')).replace(/^v/, ''),
+      compose(c, image) {
+        // Folders, not single files: a file mount shows up as an empty folder on some engines.
+        mkdirSync(join(c.dataDir, 'store'), { recursive: true });
+        mkdirSync(join(c.dataDir, 'config'), { recursive: true });
+        writeFileSync(join(c.dataDir, 'config', 'sonic.cfg'), sonicConfig(c, '0.0.0.0:1491', (p) => `/var/lib/sonic/store/${p}/`));
+        return `services:
+  sonic:
+    image: ${image}
+    command: ["sonic", "-c", "/etc/sonic/sonic.cfg"]
+    volumes: [ ${vol(join(c.dataDir, 'config'), '/etc/sonic', true)}, ${vol(join(c.dataDir, 'store'), '/var/lib/sonic/store')} ]
+    ports: [ "127.0.0.1:${c.port}:1491" ]
+`;
+      },
+    },
     fields: { key: 'Channel password', extraPort: null, memory: false },
     features: { keys: false, facets: false, editSettings: false, schemaOnCreate: false, tasks: false, backups: false, filters: false, http: false },
     defaults: { port: 1491, extraPort: 0, domain: 'sonic' },
@@ -477,57 +512,58 @@ const ENGINES: Record<SearchKind, Engine> = {
     },
     spec(c, dir) {
       const file = join(c.dataDir, 'sonic.cfg');
-      const store = (p: string) => JSON.stringify(join(c.dataDir, 'store', p) + '/');
-      writeFileSync(
-        file,
-        [
-          // Same layout as Sonic's own config.cfg (1.10).
-          '[server]',
-          'log_level = "info"',
-          '[channel]',
-          `inet = "127.0.0.1:${c.port}"`,
-          'tcp_timeout = 300',
-          `auth_password = ${JSON.stringify(c.key)}`,
-          '[normalization]',
-          'unicode_normalization = "none"',
-          'diacritic_folding_enabled = false',
-          'stemming_enabled = false',
-          '[tokenization]',
-          'detect_special_patterns = true',
-          'compat_split_special_patterns = true',
-          '[search]',
-          'query_limit_default = 20',
-          'query_limit_maximum = 200',
-          'query_alternates_try = 4',
-          'query_minimum_term_idf_default = 0.1',
-          'query_minimum_term_idf_minimum_object_count = 100',
-          'suggest_limit_default = 5',
-          'suggest_limit_maximum = 20',
-          'list_limit_default = 100',
-          'list_limit_maximum = 500',
-          '[store.kv]',
-          `path = ${store('kv')}`,
-          'retain_word_objects = 1000',
-          'pool.inactive_after = 1800',
-          'database.flush_after = 900',
-          'database.compression_type = "zstd"',
-          'database.parallelism = 2',
-          'database.max_files = 100',
-          'database.write_buffer_size = 16384',
-          'database.write_ahead_log = true',
-          '[store.fst]',
-          `path = ${store('fst')}`,
-          'pool.inactive_after = 300',
-          'graph.consolidate_after = 30',
-          'graph.max_size = 2048',
-          'graph.max_words = 250000',
-          '',
-        ].join('\n'),
-      );
+      writeFileSync(file, sonicConfig(c, `127.0.0.1:${c.port}`, (p) => join(c.dataDir, 'store', p) + '/'));
       return { command: `${q(join(dir, 'sonic'))} -c ${q(file)}`, env: {} };
     },
   },
 };
+
+/** Sonic's config file (same layout as its own config.cfg, 1.10): `inet` it listens on, `store` each store's folder. */
+function sonicConfig(c: SearchConfig, inet: string, store: (p: string) => string): string {
+  return [
+    // Same layout as Sonic's own config.cfg (1.10).
+    '[server]',
+    'log_level = "info"',
+    '[channel]',
+    `inet = "${inet}"`,
+    'tcp_timeout = 300',
+    `auth_password = ${JSON.stringify(c.key)}`,
+    '[normalization]',
+    'unicode_normalization = "none"',
+    'diacritic_folding_enabled = false',
+    'stemming_enabled = false',
+    '[tokenization]',
+    'detect_special_patterns = true',
+    'compat_split_special_patterns = true',
+    '[search]',
+    'query_limit_default = 20',
+    'query_limit_maximum = 200',
+    'query_alternates_try = 4',
+    'query_minimum_term_idf_default = 0.1',
+    'query_minimum_term_idf_minimum_object_count = 100',
+    'suggest_limit_default = 5',
+    'suggest_limit_maximum = 20',
+    'list_limit_default = 100',
+    'list_limit_maximum = 500',
+    '[store.kv]',
+    `path = ${JSON.stringify(store('kv'))}`,
+    'retain_word_objects = 1000',
+    'pool.inactive_after = 1800',
+    'database.flush_after = 900',
+    'database.compression_type = "zstd"',
+    'database.parallelism = 2',
+    'database.max_files = 100',
+    'database.write_buffer_size = 16384',
+    'database.write_ahead_log = true',
+    '[store.fst]',
+    `path = ${JSON.stringify(store('fst'))}`,
+    'pool.inactive_after = 300',
+    'graph.consolidate_after = 30',
+    'graph.max_size = 2048',
+    'graph.max_words = 250000',
+    '',
+  ].join('\n');
+}
 
 // ------------------------------------------------------------------ Sonic Channel (TCP)
 
@@ -631,6 +667,11 @@ export function defaultsFor(kind: SearchKind): SearchConfig {
 }
 
 // ------------------------------------------------------------------ manager
+
+/** Windows: the engine runs from its official image in DoCatz (svcdocker.ts); undefined = its own binary. */
+const dockerOf = (kind: SearchKind) => (svcInDocker ? ENGINES[kind].docker : undefined);
+const imageOf = (kind: SearchKind, v: string | null | undefined) => `${ENGINES[kind].docker!.image}:${ENGINES[kind].docker!.tag(v ?? '')}`;
+const DOCKER_STEPS = ["Starting DoCatz's engine", 'Finding the latest release', 'Pulling the image', 'Preparing the data folder', 'Saving settings'];
 
 export class SearchManager {
   readonly processes = new ProcessManager('search-pids.json');
@@ -760,13 +801,14 @@ export class SearchManager {
     if (this.aborts.has(kind)) throw new Error(`${ENGINES[kind].name} is already being installed`);
     const c = { ...input, kind };
     this.validate(c);
-    const steps = [...STEPS, ...(c.autoStart ? ['Starting'] : [])];
+    const steps = [...(dockerOf(kind) ? DOCKER_STEPS : STEPS), ...(c.autoStart ? ['Starting'] : [])];
     const t = this.task(kind, { kind: 'install', title: `Installing ${ENGINES[kind].name}`, steps, step: 0 });
     const abort = new AbortController();
     this.aborts.set(kind, abort);
     const dir = binaryDirOf(c);
     const fresh = !existsSync(join(dir, ENGINES[kind].exe));
     const dataExisted = existsSync(c.dataDir);
+    if (dockerOf(kind)) return this.installDocker(c, t, abort, dataExisted);
     try {
       await ENGINES[kind].install(dir, t.report, abort.signal);
       check(abort.signal);
@@ -797,6 +839,44 @@ export class SearchManager {
     }
   }
 
+  /** Windows: the image pulled into DoCatz's engine instead of a download; the data folder is mounted into it. */
+  private async installDocker(c: SearchConfig, t: ReturnType<SearchManager['task']>, abort: AbortController, dataExisted: boolean): Promise<void> {
+    const kind = c.kind;
+    const d = ENGINES[kind].docker!;
+    const steps = [...DOCKER_STEPS, ...(c.autoStart ? ['Starting'] : [])];
+    const file = svcComposeFile(binaryDirOf(c));
+    try {
+      await svcEngineReady((detail) => t.report({ detail }));
+      check(abort.signal);
+      t.report({ step: 1, detail: d.image });
+      c.version = await d.latest();
+      t.report({ title: `Installing ${ENGINES[kind].name} ${c.version} in DoCatz`, step: 2, detail: imageOf(kind, c.version) });
+      mkdirSync(c.dataDir, { recursive: true });
+      writeSvcCompose(file, d.compose(c, imageOf(kind, c.version)));
+      await svcPull(file, kind as SvcKind, t.report, abort.signal);
+      t.report({ step: 3, detail: c.dataDir });
+      this.aborts.delete(kind);
+      t.report({ step: 4, detail: `https://${host(c.domain)}` });
+      store.setSearchEngine(kind, c);
+      this.onChange();
+      if (c.autoStart) {
+        t.report({ step: steps.indexOf('Starting'), detail: `127.0.0.1:${c.port}` });
+        await this.action(kind, 'start');
+      }
+      t.finish();
+    } catch (err) {
+      if (err instanceof Cancelled || abort.signal.aborted) {
+        await rm(file, { force: true }).catch(() => undefined);
+        if (!dataExisted) await rm(c.dataDir, { recursive: true, force: true }).catch(() => undefined);
+        t.report({ cancelled: true, error: 'Install cancelled; nothing was kept.', received: undefined, total: undefined });
+        throw new Error('Install cancelled');
+      }
+      t.fail(err);
+    } finally {
+      this.aborts.delete(kind);
+    }
+  }
+
   /** Returns the names of the services that could not be checked (offline, GitHub rate limit …). */
   async checkUpdates(): Promise<string[]> {
     const failed: string[] = [];
@@ -804,7 +884,7 @@ export class SearchManager {
       SEARCH_KINDS.map(async (kind) => {
         const c = this.config(kind);
         if (!c) return void this.updates.delete(kind);
-        const v = await ENGINES[kind].latest().catch(() => null);
+        const v = await (dockerOf(kind)?.latest() ?? ENGINES[kind].latest()).catch(() => null);
         if (!v) failed.push(ENGINES[kind].name);
         else if (isNewer(v, c.version)) this.updates.set(kind, v);
         else this.updates.delete(kind);
@@ -819,6 +899,7 @@ export class SearchManager {
     const c = this.config(kind);
     if (!c) throw new Error(`${ENGINES[kind].name} is not installed`);
     if (this.aborts.has(kind)) throw new Error(`${ENGINES[kind].name} is busy`);
+    if (dockerOf(kind)) return this.upgradeDocker(c);
     const steps = [...STEPS.slice(0, 5), ...UPDATE_TAIL];
     const t = this.task(kind, { kind: 'update', title: `Updating ${ENGINES[kind].name}`, steps, step: 0 });
     const abort = new AbortController();
@@ -842,6 +923,40 @@ export class SearchManager {
       t.report({ title: `Updated ${ENGINES[kind].name} to ${v}` });
       t.finish();
     } catch (err) {
+      t.fail(abort.signal.aborted ? new Error('Update cancelled; the current version was kept') : err);
+    } finally {
+      this.aborts.delete(kind);
+      this.onChange();
+    }
+  }
+
+  /** Windows: the newer image pulled, the container recreated on it if it ran, the old image removed. */
+  private async upgradeDocker(c: SearchConfig): Promise<void> {
+    const kind = c.kind;
+    const d = ENGINES[kind].docker!;
+    const t = this.task(kind, { kind: 'update', title: `Updating ${ENGINES[kind].name}`, steps: ["Starting DoCatz's engine", 'Finding the latest release', 'Pulling the image', 'Restarting'], step: 0 });
+    const abort = new AbortController();
+    this.aborts.set(kind, abort);
+    const file = svcComposeFile(binaryDirOf(c));
+    try {
+      await svcEngineReady((detail) => t.report({ detail }));
+      t.report({ step: 1, detail: d.image });
+      const v = await d.latest();
+      t.report({ step: 2, detail: imageOf(kind, v) });
+      const next = { ...c, version: v };
+      writeSvcCompose(file, d.compose(next, imageOf(kind, v)));
+      await svcPull(file, kind as SvcKind, t.report, abort.signal);
+      const wasActive = this.isActive(kind);
+      store.setSearchEngine(kind, next);
+      t.report({ step: 3 });
+      if (wasActive) await this.action(kind, 'restart');
+      if (v !== c.version) await svcRemoveImage(imageOf(kind, c.version));
+      this.updates.delete(kind);
+      this.processes.log(searchId(kind), 'sys', `Updated ${c.version ?? ''} → ${v}`);
+      t.report({ title: `Updated ${ENGINES[kind].name} to ${v}` });
+      t.finish();
+    } catch (err) {
+      writeSvcCompose(file, d.compose(c, imageOf(kind, c.version)));
       t.fail(abort.signal.aborted ? new Error('Update cancelled; the current version was kept') : err);
     } finally {
       this.aborts.delete(kind);
@@ -879,6 +994,7 @@ export class SearchManager {
     try {
       await this.processes.stop(searchId(kind));
       t.report({ step: 1, detail: binaryDirOf(c) });
+      if (dockerOf(kind)) await svcRemove(svcComposeFile(binaryDirOf(c)), kind as SvcKind, imageOf(kind, c.version));
       await rm(binaryDirOf(c), { recursive: true, force: true });
       if (deleteData) {
         t.report({ step: steps.indexOf('Deleting the data folder'), detail: c.dataDir });
@@ -901,8 +1017,21 @@ export class SearchManager {
     const id = searchId(kind);
     const c = this.config(kind);
     if (!c) throw new Error(`${ENGINES[kind].name} is not installed`);
-    if (action === 'stop' || action === 'restart') await this.processes.stop(id);
+    const d = dockerOf(kind);
+    const file = svcComposeFile(binaryDirOf(c));
+    if (action === 'stop' || action === 'restart') {
+      await this.processes.stop(id);
+      // Ending `compose up` (taskkill on Windows) can leave the container running: stopped for sure.
+      if (d && existsSync(file)) await svcCompose(file, kind as SvcKind, ['stop']).catch(() => undefined);
+    }
     if (action === 'stop') return;
+    if (d) {
+      // Already up (autostart, a second click): leave it — the leftover clean-up below would stop its container.
+      if (action === 'start' && this.isActive(kind)) return;
+      await svcEngineReady((detail) => this.processes.log(id, 'sys', detail));
+      // A container left running by a DevCatz that quit or crashed: stopped before `up` attaches again.
+      if (existsSync(file)) await svcCompose(file, kind as SvcKind, ['stop']).catch(() => undefined);
+    }
     for (let i = 0; i < 15 && (await isPortOpen(c.port)); i++) await new Promise((r) => setTimeout(r, 300));
     for (const port of portsOf(c)) {
       if (await isPortOpen(port)) {
@@ -916,6 +1045,12 @@ export class SearchManager {
     }
     this.errors.delete(kind);
     const dir = binaryDirOf(c);
+    if (d) {
+      mkdirSync(c.dataDir, { recursive: true });
+      writeSvcCompose(file, d.compose(c, imageOf(kind, c.version)));
+      this.processes.startMany(id, [{ label: '', command: svcUpCommand(file, kind as SvcKind), env: {}, cwd: dir }]);
+      return;
+    }
     if (!existsSync(join(dir, ENGINES[kind].exe))) throw new Error(`${ENGINES[kind].name} is missing; reinstall it`);
     mkdirSync(c.dataDir, { recursive: true });
     const s = ENGINES[kind].spec(c, dir);
@@ -958,6 +1093,7 @@ export class SearchManager {
         task: this.tasks.get(kind) ?? null,
         update: c ? (this.updates.get(kind) ?? null) : null,
         unavailable: e.unavailable ?? null,
+        inDocatz: !!dockerOf(kind),
         urls: !c
           ? null
           : e.features.http

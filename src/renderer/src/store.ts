@@ -80,6 +80,8 @@ export const dbGroupRequest = ref<{ mode: 'new' | 'rename'; id?: string; from?: 
 export const uninstallRequest = ref<{ scope: 'db' | 'storage' | 'ws' | 'search' | 'gateway' | 'whatsapp'; id: string } | null>(null);
 /** devcatz://gateways/<kind>?install=1 (DoCatz's Gateways page): that gateway's page opens its install dialog. */
 export const gwInstallRequest = ref<string | null>(null);
+/** devcatz://services/<kind>?install=1 (DoCatz's DevCatz Services page): Typesense / Sonic / Sockudo's install dialog. */
+export const svcInstallRequest = ref<string | null>(null);
 export const navRequest = ref<{ section: 'projects' | 'websocket' | 'search' | 'database' | 'storage' | 'runtimes' | 'git' | 'mail' | 'whatsapp' | 'expose' | 'monitoring' | 'settings'; id?: string } | null>(null);
 
 /** What's New / update progress (Catzoid #54): open from the app menu, the notification, Settings or About. */
