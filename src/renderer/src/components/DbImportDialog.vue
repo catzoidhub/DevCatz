@@ -91,6 +91,9 @@ async function run() {
 </script>
 
 <template>
+  <!-- At the end of <body>: Electron lets a no-drag region win only over drag regions found before it, and the
+       Database page's header and main area (drag) come after where this dialog is used — clicks went to the window. -->
+  <Teleport to="body">
   <dialog open class="modal modal-open" @keydown.esc="!running && emit('close')">
     <div class="modal-box flex max-h-[88vh] w-[34rem] max-w-[95vw] flex-col gap-4">
       <div class="flex items-start gap-3">
@@ -154,4 +157,5 @@ async function run() {
     </div>
     <div class="modal-backdrop" @click="!running && emit('close')" />
   </dialog>
+  </Teleport>
 </template>
