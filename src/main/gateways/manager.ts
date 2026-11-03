@@ -656,7 +656,7 @@ ${svc('postal worker', '')}`;
     this.aborts.set(kind, abort);
     try {
       if (e.docker) {
-        await gatewayEngineReady((detail) => t.report({ detail }));
+        await gatewayEngineReady((detail) => t.report({ detail }), abort.signal);
         t.report({ step: 1, detail: IMAGE[kind as Exclude<GwKind, 'stalwart'>] });
         c.version = c.version || (await LATEST[kind]());
         check(abort.signal);

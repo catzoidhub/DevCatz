@@ -73,7 +73,7 @@ export const gatewayCompose = (): string[] => [...gatewayDocker(), 'compose'];
  * The gateways' engine answers, or why not in plain words. Windows: DoCatz's engine; a DoCatz that is installed but
  * not running is opened (it starts its engine) and waited for. `report` gets what is happening meanwhile.
  */
-export async function gatewayEngineReady(report: (detail: string) => void = () => undefined): Promise<void> {
+export async function gatewayEngineReady(report: (detail: string) => void = () => undefined, signal?: AbortSignal): Promise<void> {
   if (!isWin) {
     const ds = await dockerStatus();
     if (!ds.daemon) throw new Error(ds.error ?? 'No container engine is running');
@@ -85,10 +85,18 @@ export async function gatewayEngineReady(report: (detail: string) => void = () =
   const context = (await onPath('docker')) && (await run('docker', ['context', 'inspect', 'docatz'], { timeout: 5000 })).code === 0;
   if (!engineAppInstalled(def) && !context) throw new Error(`On Windows the Docker gateways run in DoCatz, which is not installed. Install DoCatz (${def.download}), then Install in DoCatz again`);
   if (!engineAppInstalled(def)) throw new Error("DoCatz's engine is not running: start it in DoCatz (Engine), then try again");
+  // DoCatz's engine lives in its own WSL distro: none yet means its engine was never set up (or WSL 2 cannot run on
+  // this PC — a VM without nested virtualisation): no use waiting, DoCatz opens to show why.
+  const distros = (await run('wsl.exe', ['-l', '-q'], { timeout: 15_000 })).stdout.replace(/\0/g, '');
+  if (!/^docatz\s*$/im.test(distros)) {
+    await startEngine('docatz').catch(() => undefined);
+    throw new Error("DoCatz's engine is not set up on this PC yet (it runs in WSL 2): start it in DoCatz (Engine), then try again");
+  }
   report('Opening DoCatz and waiting for its engine');
   await startEngine('docatz');
   for (const end = Date.now() + 180_000; Date.now() < end; ) {
     await new Promise((r) => setTimeout(r, 3000));
+    if (signal?.aborted) throw new Error('Cancelled');
     if (await up()) return;
   }
   throw new Error("DoCatz's engine did not start in 3 minutes: start it in DoCatz (Engine), then try again");

@@ -664,7 +664,7 @@ export class WsManager {
     const d = ENGINES[kind].docker!;
     const file = svcComposeFile(binaryDirOf(c));
     try {
-      await svcEngineReady((detail) => t.report({ detail }));
+      await svcEngineReady((detail) => t.report({ detail }), abort.signal);
       check(abort.signal);
       t.report({ step: at('Finding the latest release'), detail: d.image });
       c.version = await d.latest();
@@ -757,7 +757,7 @@ export class WsManager {
     this.aborts.set(kind, abort);
     const file = svcComposeFile(binaryDirOf(c));
     try {
-      await svcEngineReady((detail) => t.report({ detail }));
+      await svcEngineReady((detail) => t.report({ detail }), abort.signal);
       t.report({ step: 1, detail: d.image });
       const v = await d.latest();
       t.report({ step: 2, detail: imageOf(kind, v) });
