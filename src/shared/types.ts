@@ -2693,7 +2693,7 @@ export interface HerdApi {
   dialcatzDismiss(): Promise<void>;
   /** Opens DoCatz at a site's compose file (docatz://compose?path=…) or its containers; false when DoCatz is not installed. */
   docatzOpen(siteId: string, file?: string | null): Promise<boolean>;
-  /** DoCatz's Gateways page at a gateway (Windows: the Docker gateways run in DoCatz); false = DoCatz not installed. */
+  /** DoCatz's DevCatz Services group at a gateway (Windows: the Docker gateways run in DoCatz); false = DoCatz not installed. */
   docatzOpenGateway(kind: string): Promise<boolean>;
   /** Downloads and installs DoCatz from a gateway's page (Windows), then opens DoCatz at that gateway. */
   docatzInstallGateway(kind: string): Promise<void>;

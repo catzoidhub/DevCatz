@@ -1109,7 +1109,7 @@ async function quit(reason: string): Promise<void> {
  * devcatz:// links (DBCatz's "Open in DevCatz", scripts):
  *   devcatz://db/<service id>   the Database page at that service
  *   devcatz://gateways/<kind>   a gateway (gowa, waha, postal, ntfy …); ?install=1 its install dialog,
- *                               ?action=start|stop|restart runs that (DoCatz's Gateways page, Windows)
+ *                               ?action=start|stop|restart runs that (DoCatz's DevCatz Services group, Windows)
  *   devcatz://services/<kind>   Typesense, Sonic or Sockudo (Windows: they run in DoCatz); same options
  *   devcatz://<section>          a rail section (database, storage, …)
  */
@@ -1118,7 +1118,7 @@ function handleLink(raw: string): void {
     const u = new URL(raw);
     const id = u.pathname.replace(/^\/+/, '');
     if (u.hostname === 'db' && id) return showWindow(`db:${decodeURIComponent(id)}`);
-    // DoCatz's Gateways page: devcatz://gateways/<kind>[?install=1 | ?action=start|stop|restart].
+    // DoCatz's DevCatz Services group: devcatz://gateways/<kind>[?install=1 | ?action=start|stop|restart].
     if (u.hostname === 'gateways') {
       const wa = herd.whatsapp.state().some((w) => w.engine === id);
       const gw = herd.gateways.state().some((g) => g.kind === id);
@@ -1131,7 +1131,7 @@ function handleLink(raw: string): void {
       }
       return showWindow(`gateways:${id}${u.searchParams.get('install') === '1' ? ':install' : ''}`);
     }
-    // DoCatz's DevCatz Services page: devcatz://services/<typesense|sonic|sockudo>[?install=1 | ?action=…].
+    // DoCatz's DevCatz Services group: devcatz://services/<typesense|sonic|sockudo>[?install=1 | ?action=…].
     if (u.hostname === 'services') {
       if (!isSvcKind(id)) return showWindow('search');
       const action = u.searchParams.get('action');

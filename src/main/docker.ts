@@ -63,7 +63,7 @@ export const dockerBin = () => cli.bin;
 export const dockerCompose = (): string[] => [cli.bin, ...cli.compose];
 /**
  * The docker command of DevCatz's Docker gateways (Postal, ntfy, Gotify, Jasmin, Telegram Bot API, WAHA). On Windows
- * they always run in DoCatz (`docker --context docatz`, its engine in WSL 2; DoCatz lists them on its Gateways page),
+ * they always run in DoCatz (`docker --context docatz`, its engine in WSL 2; DoCatz lists them under DevCatz Services),
  * whatever engine the Docker tab uses; elsewhere on the engine compose runs on.
  */
 export const gatewayDocker = (): string[] => (isWin ? ['docker', '--context', 'docatz'] : [cli.bin, ...cli.compose.slice(0, -1)]);

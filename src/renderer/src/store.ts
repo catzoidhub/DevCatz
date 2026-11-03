@@ -78,9 +78,9 @@ export const freeSpaceRequest = ref<string | null>(null);
 export const dbGroupRequest = ref<{ mode: 'new' | 'rename'; id?: string; from?: string } | null>(null);
 /** Ask DevCatz's "Uninstall …": the service's page opens its own uninstall dialog (typed confirmation), never a silent uninstall. */
 export const uninstallRequest = ref<{ scope: 'db' | 'storage' | 'ws' | 'search' | 'gateway' | 'whatsapp'; id: string } | null>(null);
-/** devcatz://gateways/<kind>?install=1 (DoCatz's Gateways page): that gateway's page opens its install dialog. */
+/** devcatz://gateways/<kind>?install=1 (DoCatz's DevCatz Services group): that gateway's page opens its install dialog. */
 export const gwInstallRequest = ref<string | null>(null);
-/** devcatz://services/<kind>?install=1 (DoCatz's DevCatz Services page): Typesense / Sonic / Sockudo's install dialog. */
+/** devcatz://services/<kind>?install=1 (DoCatz's DevCatz Services group): Typesense / Sonic / Sockudo's install dialog. */
 export const svcInstallRequest = ref<string | null>(null);
 export const navRequest = ref<{ section: 'projects' | 'websocket' | 'search' | 'database' | 'storage' | 'runtimes' | 'git' | 'mail' | 'whatsapp' | 'expose' | 'monitoring' | 'settings'; id?: string } | null>(null);
 

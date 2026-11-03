@@ -115,7 +115,7 @@ export class DoCatz {
   }
 
   /**
-   * DoCatz's Gateways page at one of DevCatz's gateways (`docatz://gateways?kind=<kind>`; on Windows the Docker ones run
+   * DoCatz's DevCatz Services group at one of DevCatz's gateways (`docatz://gateways?kind=<kind>`; on Windows the Docker ones run
    * there); false when DoCatz is not installed.
    */
   async openGateway(kind: string): Promise<boolean> {

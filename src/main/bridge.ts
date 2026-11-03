@@ -24,7 +24,7 @@ export interface BridgeSite {
 }
 
 /**
- * A gateway DevCatz runs (email / push / SMS / Telegram, WhatsApp), for DoCatz's Gateways page: on Windows the Docker
+ * A gateway DevCatz runs (email / push / SMS / Telegram, WhatsApp), for DoCatz's DevCatz Services group: on Windows the Docker
  * ones run in DoCatz's engine. `project` / `container` is how they appear there; `link` (devcatz://gateways/<kind>)
  * opens it in DevCatz, with `?install=1` its install dialog, `?action=start|stop|restart` runs that. No secrets.
  */

@@ -74,7 +74,7 @@ const needDocatz = computed(() => !!selected.value?.inDocatz && ((state.value?.d
 async function openInDocatz(kind: string) {
   if (!(await attempt(() => herd.docatzOpenGateway(kind)))) notify('error', 'DoCatz is not installed: install it to see this server there');
 }
-// DoCatz's DevCatz Services page → Install (devcatz://services/<kind>?install=1): the install dialog, nothing installed without it.
+// DoCatz's DevCatz Services group → Install (devcatz://services/<kind>?install=1): the install dialog, nothing installed without it.
 watch(
   [svcInstallRequest, selected],
   ([k, s]) => {

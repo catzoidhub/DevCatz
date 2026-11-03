@@ -64,7 +64,7 @@ watch(
 type Tab = 'sessions' | 'send' | 'contacts' | 'connection' | 'logs';
 const tab = ref<Tab>('sessions');
 const form = ref<{ service: WaState; mode: 'install' | 'edit' } | null>(null);
-// DoCatz's Gateways page → Install (devcatz://gateways/waha?install=1): the install dialog, nothing installed without it.
+// DoCatz's DevCatz Services group → Install (devcatz://gateways/waha?install=1): the install dialog, nothing installed without it.
 watch(
   [gwInstallRequest, selected],
   ([k, s]) => {
@@ -74,7 +74,7 @@ watch(
   },
   { immediate: true },
 );
-/** Windows: WAHA (Docker) installs and runs in DoCatz, listed on DoCatz's Gateways page. */
+/** Windows: WAHA (Docker) installs and runs in DoCatz, listed under DoCatz's DevCatz Services. */
 const inDocatz = (s: { docker: boolean }) => isWin && s.docker;
 /** DoCatz is not on this PC at all (no app, no DoCatz data), or its Download & Install is under way: that comes first. */
 const needDocatz = (s: { docker: boolean }) => inDocatz(s) && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task);

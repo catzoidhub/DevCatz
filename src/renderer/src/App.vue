@@ -506,7 +506,7 @@ function navigate(target: string) {
     runtime.value = target as RuntimeId;
     return;
   }
-  // devcatz://gateways/<kind>[?install=1] (DoCatz's Gateways page): that gateway, with its install dialog.
+  // devcatz://gateways/<kind>[?install=1] (DoCatz's DevCatz Services group): that gateway, with its install dialog.
   if (target.startsWith('gateways:')) {
     const [, kind, install] = target.split(':');
     section.value = 'whatsapp';
@@ -515,7 +515,7 @@ function navigate(target: string) {
     gwInstallRequest.value = install ? kind : null;
     return;
   }
-  // devcatz://services/<kind>[?install=1] (DoCatz's DevCatz Services page): Typesense / Sonic (Search), Sockudo (WebSocket).
+  // devcatz://services/<kind>[?install=1] (DoCatz's DevCatz Services group): Typesense / Sonic (Search), Sockudo (WebSocket).
   if (target.startsWith('services:')) {
     const [, kind, install] = target.split(':');
     const ws = kind === 'sockudo';
