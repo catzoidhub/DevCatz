@@ -1510,6 +1510,12 @@ export interface McatzpTarget {
   /** The account signed in to it, when the assistant keeps that on this computer. */
   account?: string;
 }
+/** Who is approved in one Catzoid app (each app's bridge.json). */
+export interface McatzpApproval {
+  id: 'devcatz' | 'dbcatz' | 'dialcatz' | 'docatz';
+  name: string;
+  clients: string[];
+}
 export interface McatzpInstallProgress {
   phase: 'download' | 'install';
   received: number;
@@ -2789,6 +2795,8 @@ export interface HerdApi {
   /** Installs or updates MCatzP; progress in state.mcatzpInstalling. */
   mcatzpInstall(): Promise<McatzpSetup>;
   mcatzpInstallCancel(): Promise<void>;
+  /** Where each client is approved, across the Catzoid apps. */
+  mcatzpApprovals(): Promise<McatzpApproval[]>;
   /** The AI assistants MCatzP can be added to. */
   mcatzpTargets(): Promise<McatzpTarget[]>;
   /** Writes the assistant's entry, or points it at the copy in use. */
@@ -3343,7 +3351,7 @@ export interface HerdApi {
 }
 
 export const API_METHODS: (keyof HerdApi)[] = [
-  'mcatzpSetup', 'mcatzpInstall', 'mcatzpInstallCancel', 'mcatzpTargets', 'mcatzpAddToClient', 'mcatzpRemoveFromClient',
+  'mcatzpSetup', 'mcatzpInstall', 'mcatzpInstallCancel', 'mcatzpApprovals', 'mcatzpTargets', 'mcatzpAddToClient', 'mcatzpRemoveFromClient',
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
   'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',

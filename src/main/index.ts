@@ -835,6 +835,7 @@ function api(): HerdApi {
       return mcatzpSetup.setupState();
     },
     mcatzpInstallCancel: async () => mcatzpInstalling?.abort(),
+    mcatzpApprovals: async () => mcatzpSetup.approvals(),
     mcatzpTargets: () => mcatzpSetup.targets(),
     mcatzpAddToClient: async (id) => {
       await mcatzpSetup.addToClient(clientId(id));

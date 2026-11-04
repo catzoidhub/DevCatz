@@ -589,6 +589,7 @@ export const MCATZP_COVERAGE = {
   mcatzpSetup: "never: what runs a client on this computer is the user's to install",
   mcatzpInstall: "never: what runs a client on this computer is the user's to install",
   mcatzpInstallCancel: "never: what runs a client on this computer is the user's to install",
+  mcatzpApprovals: "never: what runs a client on this computer is the user's to install",
   mcatzpTargets: "never: what runs a client on this computer is the user's to install",
   mcatzpAddToClient: "never: what runs a client on this computer is the user's to install",
   mcatzpRemoveFromClient: "never: what runs a client on this computer is the user's to install",

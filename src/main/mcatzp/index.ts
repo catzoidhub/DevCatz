@@ -44,7 +44,11 @@ export class Mcatzp {
       dataDir: app.getPath('userData'),
       actions: () => [...readActions(api, this.scopes()), ...moreReads(api, this.scopes()), ...windowReads(api, this.scopes()), ...this.changes()],
       isPaired: (name) => (store.settings.mcatzpClients ?? []).some((c) => c.name === name),
-      onPaired: (name) => store.updateSettings({ mcatzpClients: [...(store.settings.mcatzpClients ?? []), { name, approvedAt: new Date().toISOString() }] }),
+      onPaired: (name) => {
+        store.updateSettings({ mcatzpClients: [...(store.settings.mcatzpClients ?? []), { name, approvedAt: new Date().toISOString() }] });
+        setBridgeMcatzp(this.host.entry());
+      },
+      approved: () => (store.settings.mcatzpClients ?? []).map((c) => c.name),
       // A site named in the call must be shared; one that does not exist answers with its own error in run().
       inScope: (_action, args) => {
         if (typeof args.site !== 'string') return true;
@@ -120,6 +124,7 @@ export class Mcatzp {
   /** Forgets a client and closes every connection (a new token): the others reconnect, this one asks again. */
   revoke(name: string): Promise<void> {
     store.updateSettings({ mcatzpClients: (store.settings.mcatzpClients ?? []).filter((c) => c.name !== name) });
+    setBridgeMcatzp(this.host.entry());
     const next = this.queue.then(async () => {
       if (!this.host.running) return;
       await this.host.stop();
