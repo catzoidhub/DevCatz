@@ -125,18 +125,23 @@ async function add() {
       <p v-if="laravel" class="text-xs opacity-60">Laravel: DialCatz reads the route list (<code>php artisan route:list</code>), no OpenAPI needed{{ info?.install === 'scramble' ? '; Scramble below adds the request and response details' : '' }}.</p>
 
       <template v-if="info?.specs.length">
-        <div v-for="(s, i) in info.specs" :key="i" class="flex items-center gap-3 rounded-box border border-base-300/60 px-3 py-2 text-sm">
-          <span class="badge badge-sm" :class="s.url ? 'badge-success badge-soft' : 'badge-ghost'">{{ s.url ? 'served' : 'file' }}</span>
-          <code class="min-w-0 flex-1 truncate text-xs">{{ s.url ?? rel(s.file!) }}</code>
-          <span v-if="site.stack.apps.length > 1" class="text-xs opacity-60">{{ appName(s.app) }}</span>
-          <button v-if="s.url ?? s.docUrl" class="btn btn-ghost btn-xs" :title="s.url ?? s.docUrl" @click="herd.openUrl((s.url ?? s.docUrl)!)">Open URL</button>
-          <template v-if="s.file">
-            <button class="btn btn-ghost btn-xs" @click="herd.openapiReveal(site.id, s.file!)">{{ words.revealIn }}</button>
-            <button v-if="s.ignored === false" class="btn btn-ghost btn-xs" @click="ignore(s.file!)">Add to .gitignore</button>
-            <button v-else-if="s.ignored" class="btn btn-ghost btn-xs" @click="unignore(s.file!)">Remove from .gitignore</button>
-            <button v-if="s.ignored && s.tracked" class="btn btn-ghost btn-xs" title="Already committed, so .gitignore alone does not take it out of the repository" @click="removing = { kind: 'untrack', file: s.file! }">Stop tracking in Git</button>
-            <button class="btn btn-ghost btn-xs text-error" @click="removing = { kind: 'file', file: s.file! }">Remove</button>
-          </template>
+        <div v-for="(s, i) in info.specs" :key="i" class="rounded-box border border-base-300/60 text-sm">
+          <div class="flex items-center gap-3 px-3 py-2">
+            <span class="badge badge-sm shrink-0" :class="s.url ? 'badge-success badge-soft' : 'badge-ghost'">{{ s.url ? 'served' : 'file' }}</span>
+            <code class="selectable min-w-0 flex-1 truncate text-xs" :title="s.url ?? rel(s.file!)">{{ s.url ?? rel(s.file!) }}</code>
+            <span v-if="site.stack.apps.length > 1" class="shrink-0 text-xs opacity-60">{{ appName(s.app) }}</span>
+          </div>
+          <!-- Their own row, the same at any width: Remove stands apart on the right; a narrow window wraps inside this row. -->
+          <div class="flex flex-wrap items-center gap-1 border-t border-base-300/50 px-2 py-1">
+            <button v-if="s.url ?? s.docUrl" class="btn btn-ghost btn-xs" :title="s.url ?? s.docUrl" @click="herd.openUrl((s.url ?? s.docUrl)!)">Open URL</button>
+            <template v-if="s.file">
+              <button class="btn btn-ghost btn-xs" @click="herd.openapiReveal(site.id, s.file!)">{{ words.revealIn }}</button>
+              <button v-if="s.ignored === false" class="btn btn-ghost btn-xs" @click="ignore(s.file!)">Add to .gitignore</button>
+              <button v-else-if="s.ignored" class="btn btn-ghost btn-xs" @click="unignore(s.file!)">Remove from .gitignore</button>
+              <button v-if="s.ignored && s.tracked" class="btn btn-ghost btn-xs" title="Already committed, so .gitignore alone does not take it out of the repository" @click="removing = { kind: 'untrack', file: s.file! }">Stop tracking in Git</button>
+              <button class="btn btn-ghost btn-xs ml-auto text-error" @click="removing = { kind: 'file', file: s.file! }">Remove</button>
+            </template>
+          </div>
         </div>
         <div v-if="info.generator" class="flex items-center gap-3 rounded-box border border-base-300/60 px-3 py-2 text-sm">
           <span class="badge badge-ghost badge-sm">generator</span>
