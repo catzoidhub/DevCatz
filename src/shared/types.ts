@@ -768,6 +768,15 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 export interface Settings {
   /** Settings → AI → MCatzP: the local channel an AI client reaches DevCatz through. Off by default. */
   mcatzp?: boolean;
+  /** Every site is shared with MCatzP clients, new ones too. Off: only `mcatzpSites`, none at first. */
+  mcatzpAllSites?: boolean;
+  mcatzpSites?: string[];
+  /** Services and runtimes are readable (default on; they hold no secrets here). */
+  mcatzpServices?: boolean;
+  /** Clients may ask for changes, each confirmed in a dialog (default on). */
+  mcatzpChanges?: boolean;
+  /** Clients the user approved, by the name they gave; revocable. */
+  mcatzpClients?: { name: string; approvedAt: string }[];
   /** Default domain suffix: `localhost` (no setup) or e.g. `test` (needs the resolver). */
   tld: string;
   /** Docker tab: run on DoCatz's engine while it runs (default), or always on the system's current docker context. */
@@ -1448,6 +1457,16 @@ export interface BrowsersState {
   list: BrowserInfo[];
   /** What macOS opens https links with (null when it could not be read). */
   systemDefault: BrowserInfo | null;
+}
+
+export interface McatzpActivity {
+  time: string;
+  client: string;
+  method: string;
+  action?: string;
+  tier?: 'read' | 'change' | 'destructive';
+  outcome: 'ok' | 'refused' | 'declined' | 'failed';
+  reason?: string;
 }
 
 /** `pair`: may this client connect at all? `change`: may it do this (built from the real parameters)? */
@@ -2716,6 +2735,11 @@ export interface HerdApi {
   openapiUntrack(siteId: string, file: string): Promise<void>;
   /** Takes one of the site's OpenAPI files out of .gitignore; refused when a broader rule ignores it. */
   openapiUnignore(siteId: string, file: string): Promise<void>;
+  /** What MCatzP clients did, the newest first (names and outcomes only). */
+  mcatzpActivity(): Promise<McatzpActivity[]>;
+  mcatzpClearActivity(): Promise<void>;
+  /** Forgets an approved client and closes its connection; it asks again next time. */
+  mcatzpRevoke(name: string): Promise<void>;
   /** The answer to the question in state.mcatzpAsk. */
   mcatzpAnswer(id: string, answer: 'deny' | 'once' | 'session'): Promise<void>;
   /** Opens DialCatz's import for a site (dialcatz://open?site=<id>); false when DialCatz is not installed. */
@@ -3266,7 +3290,7 @@ export interface HerdApi {
 
 export const API_METHODS: (keyof HerdApi)[] = [
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
-  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
+  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',

@@ -1,9 +1,12 @@
 import { type ConfirmAnswer, McatzpHost } from '@catzoid/mcatzp-host';
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import { app } from 'electron';
 import type { HerdApi, McatzpAsk } from '@shared/types';
 import { setBridgeMcatzp } from '../bridge';
-import { type ChangeAction, changeActions, readActions } from './actions';
+import { store } from '../store';
+import { type ChangeAction, changeActions, findSite, readActions, type Scopes } from './actions';
+import { ActivityLog } from './activity';
 
 /** Unanswered questions lapse before MCatzP stops waiting (3 and 10 minutes), so a late Allow never runs for nobody. */
 const PAIR_WAIT_MS = 150_000;
@@ -11,12 +14,13 @@ const CHANGE_WAIT_MS = 9 * 60_000;
 
 /**
  * DevCatz's end of MCatzP: the local channel from the shared host, open only while Settings → AI → MCatzP is on.
- * For now a client's approval lasts until DevCatz quits, and a change is asked in the same dialog (TODO §33).
+ * Approved clients and what is shared live in the settings, the activity log in its own file (TODO §33). All of it
+ * goes through the host's hooks, so it can move into @catzoid/mcatzp-host once a second app needs the same.
  */
 export class Mcatzp {
-  private readonly paired = new Set<string>();
+  readonly activity = new ActivityLog(join(app.getPath('userData'), 'mcatzp-activity.jsonl'));
   private readonly host: McatzpHost;
-  private readonly changes: ChangeAction[];
+  private readonly api: HerdApi;
   /** start() / stop() run one after the other: the switch can flip while the socket is still opening. */
   private queue: Promise<unknown> = Promise.resolve();
   /** Questions waiting for the dialog, the oldest first; it shows one at a time. */
@@ -26,16 +30,25 @@ export class Mcatzp {
     api: HerdApi,
     private readonly show: (ask: McatzpAsk | null) => void,
   ) {
-    this.changes = changeActions(api);
+    this.api = api;
     this.host = new McatzpHost({
       app: { id: 'devcatz', name: 'DevCatz', version: app.getVersion() },
       dataDir: app.getPath('userData'),
-      actions: () => [...readActions(api), ...this.changes],
-      isPaired: (name) => this.paired.has(name),
-      onPaired: (name) => this.paired.add(name),
+      actions: () => [...readActions(api, this.scopes()), ...this.changes()],
+      isPaired: (name) => (store.settings.mcatzpClients ?? []).some((c) => c.name === name),
+      onPaired: (name) => store.updateSettings({ mcatzpClients: [...(store.settings.mcatzpClients ?? []), { name, approvedAt: new Date().toISOString() }] }),
+      // A site named in the call must be shared; one that does not exist answers with its own error in run().
+      inScope: (_action, args) => {
+        if (typeof args.site !== 'string') return true;
+        try {
+          return this.scopes().site(findSite(store.projects, args.site));
+        } catch {
+          return true;
+        }
+      },
       pair: (client) => this.ask({ id: randomUUID(), kind: 'pair', client: client.name, version: client.version ?? null }, PAIR_WAIT_MS).then((a) => a !== 'deny'),
       confirm: async (req) => {
-        const change = this.changes.find((c) => c.name === req.action.name);
+        const change = this.changes().find((c) => c.name === req.action.name);
         if (!change) return 'deny';
         let preview: Awaited<ReturnType<typeof change.preview>>;
         try {
@@ -46,7 +59,7 @@ export class Mcatzp {
         }
         return this.ask({ id: randomUUID(), kind: 'change', client: req.client, allowSession: req.allowSession, ...preview }, CHANGE_WAIT_MS);
       },
-      log: (e) => console.log(`mcatzp: ${e.client} ${e.action ?? e.method} ${e.outcome}${e.reason ? ` (${e.reason})` : ''}`),
+      log: (e) => this.activity.add(e),
     });
     setBridgeMcatzp(this.host.entry());
   }
@@ -56,7 +69,6 @@ export class Mcatzp {
     const next = this.queue.then(async () => {
       if (on === this.host.running) return;
       if (!on) {
-        this.paired.clear();
         for (const a of this.asks.splice(0)) {
           clearTimeout(a.timer);
           a.done('deny');
@@ -64,6 +76,38 @@ export class Mcatzp {
         this.show(null);
       }
       setBridgeMcatzp(await (on ? this.host.start() : this.host.stop()));
+    });
+    this.queue = next.catch((e) => console.warn('MCatzP channel:', (e as Error).message));
+    return next;
+  }
+
+  private scopes(): Scopes {
+    const s = store.settings;
+    const shared = new Set(s.mcatzpSites ?? []);
+    return {
+      // A worktree goes with its site.
+      site: (id) => s.mcatzpAllSites === true || shared.has(id) || shared.has(store.projects.find((p) => p.id === id)?.worktreeOf ?? ''),
+      services: s.mcatzpServices !== false,
+      changes: s.mcatzpChanges !== false,
+    };
+  }
+
+  private changes(): ChangeAction[] {
+    return changeActions(this.api, this.scopes());
+  }
+
+  /** What is shared changed: connected clients get the new list of tools. */
+  scopesChanged(): void {
+    this.host.notifyChanged();
+  }
+
+  /** Forgets a client and closes every connection (a new token): the others reconnect, this one asks again. */
+  revoke(name: string): Promise<void> {
+    store.updateSettings({ mcatzpClients: (store.settings.mcatzpClients ?? []).filter((c) => c.name !== name) });
+    const next = this.queue.then(async () => {
+      if (!this.host.running) return;
+      await this.host.stop();
+      setBridgeMcatzp(await this.host.start());
     });
     this.queue = next.catch((e) => console.warn('MCatzP channel:', (e as Error).message));
     return next;

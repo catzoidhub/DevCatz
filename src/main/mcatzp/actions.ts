@@ -36,7 +36,16 @@ export function envNames(content: string): string[] {
   return [...names];
 }
 
-export function readActions(api: HerdApi): ActionDef[] {
+/** What the user shares (Settings → AI → MCatzP). */
+export interface Scopes {
+  site(id: string): boolean;
+  services: boolean;
+  changes: boolean;
+}
+
+const NOTHING_SHARED = 'No sites are shared with MCatzP yet: the user chooses them in DevCatz, Settings → AI → MCatzP.';
+
+export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
   const state = (): Promise<AppState> => api.getState();
   const site = async (ref: unknown) => {
     const { projects } = await state();
@@ -47,7 +56,9 @@ export function readActions(api: HerdApi): ActionDef[] {
 
   return [
     read('list_sites', 'List sites', 'The sites DevCatz runs: name, domain, folder, status, whether it is a favorite, its sidebar group, and its apps with framework and port.', OBJECT(), async () => {
-      const { projects, settings } = await state();
+      const { projects: all, settings } = await state();
+      const projects = all.filter((p) => scopes.site(p.id));
+      if (!projects.length) return { text: NOTHING_SHARED, data: [] };
       return reply(projects.map((p) => ({ id: p.id, name: p.name, domain: p.domain, path: p.path, status: p.status, served: p.served ?? false, favorite: settings.favorites.includes(p.id), group: settings.siteGroups.find((g) => g.sites.includes(p.id))?.name ?? null, worktreeOf: p.worktreeOf ?? null, apps: appsOf(p) })));
     }),
     read('get_site', 'Site details', "One site: its apps, dev command, package manager, database and the ports that answer right now.", OBJECT({ site: SITE }, ['site']), async ({ site: ref }) => {
@@ -113,7 +124,7 @@ export function readActions(api: HerdApi): ActionDef[] {
       const log = await api.gitLog(p.id, typeof search === 'string' ? search : '', typeof skip === 'number' ? skip : 0);
       return reply(log.map((c) => ({ sha: c.sha, author: c.author, date: c.date, subject: c.subject, refs: c.refs })));
     }),
-    read('list_services', 'List services', 'The services DevCatz runs and whether they are up: databases, search engines, WebSocket servers, object storage, gateways, the mail catcher. No passwords or keys.', OBJECT(), async () => {
+    ...(!scopes.services ? [] : [read('list_services', 'List services', 'The services DevCatz runs and whether they are up: databases, search engines, WebSocket servers, object storage, gateways, the mail catcher. No passwords or keys.', OBJECT(), async () => {
       const s = await state();
       const svc = (x: { kind: string; name: string; installed: boolean; status: string; config: { version?: string | null } | null }) => ({ kind: x.kind, name: x.name, installed: x.installed, status: x.status, version: x.config?.version ?? null });
       return reply({
@@ -130,7 +141,7 @@ export function readActions(api: HerdApi): ActionDef[] {
       const s = await state();
       const rt = (r: { installed: { version: string }[]; defaultVersion: string | null }) => ({ installed: r.installed.map((v) => v.version), default: r.defaultVersion });
       return reply({ node: rt(s.node), bun: rt(s.bun), go: rt(s.go), python: rt(s.python), php: rt(s.php) });
-    }),
+    })]),
   ];
 }
 
@@ -177,7 +188,8 @@ export function findService<T extends Pick<Service, 'ref' | 'name' | 'engine' | 
   return found[0];
 }
 
-export function changeActions(api: HerdApi): ChangeAction[] {
+export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
+  if (!scopes.changes) return [];
   const VERBS: { action: StorageAction; verb: string; done: string }[] = [
     { action: 'start', verb: 'Start', done: 'Started' },
     { action: 'stop', verb: 'Stop', done: 'Stopped' },
@@ -208,25 +220,25 @@ export function changeActions(api: HerdApi): ChangeAction[] {
         return reply({ site: p.name, result: done });
       },
     },
-    {
+    ...(!scopes.services ? [] : [{
       name: `${action}_service`,
       title: `${verb} a service`,
       description: `${verb}s a service DevCatz runs: a database, search engine, WebSocket server, object storage, gateway or the mail catcher. DevCatz asks the user first.`,
-      tier: 'change',
+      tier: 'change' as const,
       allowSession: true,
       input: OBJECT({ service: SERVICE }, ['service']),
-      preview: async ({ service: ref }) => {
+      preview: async ({ service: ref }: Record<string, unknown>) => {
         const x = await serviceOf(ref);
         return {
           title: `${verb} ${x.name}?`,
           facts: [{ label: 'Service', value: `${x.kind}${x.version ? ` ${x.version}` : ''}` }, ...(x.port ? [{ label: 'Port', value: String(x.port) }] : []), { label: 'Now', value: x.status }],
         };
       },
-      run: async ({ service: ref }) => {
+      run: async ({ service: ref }: Record<string, unknown>) => {
         const x = await serviceOf(ref);
         await x.act(action);
         return reply({ service: x.name, result: done, status: (await serviceOf(ref)).status });
       },
-    },
+    } satisfies ChangeAction]),
   ]);
 }

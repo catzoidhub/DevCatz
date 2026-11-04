@@ -801,6 +801,9 @@ function api(): HerdApi {
     openapiIgnore: (siteId, file) => herd.openapiIgnore(String(siteId), String(file)),
     openapiUntrack: (siteId, file) => herd.openapiUntrack(String(siteId), String(file)),
     openapiUnignore: (siteId, file) => herd.openapiUnignore(String(siteId), String(file)),
+    mcatzpActivity: async () => mcatzp.activity.list(),
+    mcatzpClearActivity: async () => mcatzp.activity.clear(),
+    mcatzpRevoke: (name) => mcatzp.revoke(String(name)),
     mcatzpAnswer: async (id, answer) => mcatzp.answer(String(id), answer === 'once' || answer === 'session' ? answer : 'deny'),
     createOpenApi: (siteId, format, app) => herd.createOpenApi(String(siteId), format === 'json' ? 'json' : 'yaml', typeof app === 'string' ? app : undefined),
     dialcatzOpen: (siteId) => {
@@ -856,6 +859,7 @@ function api(): HerdApi {
     updateSettings: async (patch) => {
       await herd.updateSettings(patch);
       if (patch.mcatzp !== undefined) await mcatzp.set(patch.mcatzp);
+      if (Object.keys(patch).some((k) => k.startsWith('mcatzp'))) mcatzp.scopesChanged();
       // Native parts (vibrancy, dialogs, menus) follow the chosen theme too; the other Catzoid apps follow it.
       if (patch.theme) {
         nativeTheme.themeSource = patch.theme;

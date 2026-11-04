@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import devcatzLogo from '../assets/logos/devcatz.svg';
 import mcatzpLogo from '../assets/logos/mcatzp.svg';
 import { attempt, herd, state } from '../store';
 
 /** MCatzP asks here: may this MCP client connect (the first time), and may it do this change. */
 const ask = computed(() => state.value?.mcatzpAsk ?? null);
-const CAN = ['Sites, favorites and groups', 'Services and runtimes', 'Git status and history', 'Logs, with secrets masked', '.env variable names, never values'];
+const CAN = ['The sites you share: status, Git, logs with secrets masked', '.env variable names of those sites, never values', 'Services and runtimes, when you share them'];
 const answer = (a: 'deny' | 'once' | 'session') => {
   const id = ask.value?.id;
   if (id) void attempt(() => herd.mcatzpAnswer(id, a).then(() => true));
@@ -17,10 +18,15 @@ const answer = (a: 'deny' | 'once' | 'session') => {
   <Teleport to="body">
     <dialog v-if="ask" open class="modal modal-open z-[1000]" @keydown.esc.prevent="answer('deny')">
       <div class="modal-box flex w-[27rem] max-w-[95vw] flex-col items-center gap-4 text-center">
-        <img :src="mcatzpLogo" alt="MCatzP" class="size-16 rounded-2xl shadow-sm" draggable="false" />
+        <!-- The way the request travels: MCatzP → this app. -->
+        <div class="flex items-center gap-3" role="img" aria-label="MCatzP to DevCatz">
+          <img :src="mcatzpLogo" alt="" class="size-14 rounded-2xl shadow-sm" draggable="false" />
+          <svg viewBox="0 0 24 24" class="size-6 shrink-0 opacity-50" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+          <img :src="devcatzLogo" alt="" class="size-14 rounded-2xl shadow-sm" draggable="false" />
+        </div>
         <template v-if="ask.kind === 'pair'">
           <div>
-            <h3 class="text-lg font-semibold tracking-tight">Let <span class="selectable">{{ ask.client }}</span> use DevCatz?</h3>
+            <h3 class="text-lg font-semibold tracking-tight">Let <span class="client selectable">{{ ask.client }}</span> use DevCatz?</h3>
             <p class="mt-0.5 text-xs opacity-60">{{ ask.version ? `Version ${ask.version}, connecting` : 'Connecting' }} through MCatzP</p>
           </div>
           <div class="w-full rounded-box border border-base-300/70 bg-base-200/40 p-3 text-left">
@@ -30,7 +36,7 @@ const answer = (a: 'deny' | 'once' | 'session') => {
             </ul>
             <p class="mt-2 border-t border-base-300/60 pt-2 text-xs opacity-70">It can also ask to start, stop and restart sites and services; DevCatz asks you first. What it reads goes to that assistant's model provider.</p>
           </div>
-          <p class="text-xs opacity-60">This approval lasts until DevCatz quits. The name is what the client says about itself: if you did not just start it, choose Don't Allow.</p>
+          <p class="text-xs opacity-60">You can revoke this in Settings → AI → MCatzP. The name is what the client says about itself: if you did not just start it, choose Don't Allow.</p>
           <div class="flex w-full gap-2">
             <button class="btn btn-sm flex-1" autofocus @click="answer('deny')">Don't Allow</button>
             <button class="btn btn-primary btn-sm flex-1" @click="answer('once')">Allow</button>
@@ -39,7 +45,7 @@ const answer = (a: 'deny' | 'once' | 'session') => {
         <template v-else>
           <div>
             <h3 class="text-lg font-semibold tracking-tight">{{ ask.title }}</h3>
-            <p class="mt-0.5 text-xs opacity-60"><span class="selectable">{{ ask.client }}</span> asks through MCatzP</p>
+            <p class="mt-1 text-sm"><span class="client selectable">{{ ask.client }}</span> <span class="opacity-60">asks through MCatzP</span></p>
           </div>
           <dl class="w-full space-y-1 rounded-box border border-base-300/70 bg-base-200/40 p-3 text-left text-sm">
             <div v-for="f in ask.facts" :key="f.label" class="flex gap-3">
@@ -59,3 +65,14 @@ const answer = (a: 'deny' | 'once' | 'session') => {
     </dialog>
   </Teleport>
 </template>
+
+<style scoped>
+/* Who is asking is what the user checks first. */
+.client {
+  border-radius: 0.375rem;
+  background: color-mix(in oklab, var(--color-primary) 18%, transparent);
+  color: var(--primary-ink, var(--color-primary));
+  font-weight: 600;
+  padding: 0.05em 0.4em;
+}
+</style>
