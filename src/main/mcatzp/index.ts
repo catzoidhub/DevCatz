@@ -1,4 +1,4 @@
-import { type ConfirmAnswer, McatzpHost } from '@catzoid/mcatzp-host';
+import { type BridgeEntry, type ConfirmAnswer, McatzpHost } from '@catzoid/mcatzp-host';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { app } from 'electron';
@@ -80,17 +80,43 @@ export class Mcatzp {
   set(on: boolean): Promise<void> {
     const next = this.queue.then(async () => {
       if (on === this.host.running) return;
-      if (!on) {
-        for (const a of this.asks.splice(0)) {
-          clearTimeout(a.timer);
-          a.done('deny');
-        }
-        this.show(null);
-      }
+      if (!on) this.denyAll();
       setBridgeMcatzp(await (on ? this.host.start() : this.host.stop()));
     });
     this.queue = next.catch((e) => console.warn('MCatzP channel:', (e as Error).message));
     return next;
+  }
+
+  /**
+   * The app is quitting, which is not the switch going off: with the switch on, the entry says `closed`, so MCatzP
+   * tells the user to open the app rather than to turn MCatzP on. Written before the channel closes, since a quit that
+   * runs out of time never gets further. The next start writes a new entry without it.
+   */
+  quit(): Promise<void> {
+    const on = store.settings.mcatzp === true;
+    // The host's own type (protocol 1.0.0 on npm) does not have the field yet; MCatzP's server reads it.
+    const closed = () => {
+      const { channel: _c, tokenFile: _t, ...entry } = this.host.entry();
+      setBridgeMcatzp({ ...entry, enabled: false, closed: true } as BridgeEntry);
+    };
+    if (on) closed();
+    const next = this.queue.then(async () => {
+      this.denyAll();
+      const entry = await this.host.stop();
+      if (on) closed();
+      else setBridgeMcatzp(entry);
+    });
+    this.queue = next.catch((e) => console.warn('MCatzP channel:', (e as Error).message));
+    return next;
+  }
+
+  /** Nobody is left to answer: every open question is a no, and the dialog goes. */
+  private denyAll(): void {
+    for (const a of this.asks.splice(0)) {
+      clearTimeout(a.timer);
+      a.done('deny');
+    }
+    this.show(null);
   }
 
   private scopes(): Scopes {

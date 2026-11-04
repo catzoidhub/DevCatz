@@ -1131,6 +1131,7 @@ async function restartForUpdate(): Promise<void> {
   store.updateSettings({ resumeSites: herd.runningSites() });
   quitting = true;
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, 8000));
+  await Promise.race([mcatzp.quit().catch(() => undefined), timeout]);
   await Promise.race([herd.shutdown().catch((e) => console.error('shutdown before update:', e)), timeout]);
   herd.updater.quitAndInstall();
 }
@@ -1165,7 +1166,7 @@ async function quit(reason: string): Promise<void> {
   // and this is the backstop for anything else.
   const timeout = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 8000));
   try {
-    await Promise.race([mcatzp.set(false).catch(() => undefined), timeout]);
+    await Promise.race([mcatzp.quit().catch(() => undefined), timeout]);
     const result = await Promise.race([herd.shutdown().then(() => 'done' as const), timeout]);
     console.log(`shutdown ${result}`);
   } catch (err) {
