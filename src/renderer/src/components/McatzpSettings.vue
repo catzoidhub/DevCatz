@@ -154,12 +154,12 @@ const groups = computed(() => {
             <progress v-else class="progress progress-primary mt-1 block w-full" />
           </template>
           <template v-else-if="setup?.path">
-            <span>MCatzP {{ setup.version }} is on this computer</span>
+            <span class="flex flex-wrap items-center gap-2">MCatzP {{ setup.version }} is on this computer<span class="badge badge-ghost badge-sm font-normal" title="Install or add it from any Catzoid app and the others use the same">Shared with Catzoid apps</span></span>
             <code class="selectable mt-0.5 block truncate text-xs opacity-60" :title="setup.path">{{ setup.path }}</code>
             <span v-if="setup.source && setup.source !== 'catzoid'" class="block text-xs opacity-60">DevCatz uses this copy. Update it with {{ updateHow[setup.source] }}.</span>
           </template>
           <template v-else-if="setup">
-            <span>MCatzP is not on this computer yet</span>
+            <span class="flex flex-wrap items-center gap-2">MCatzP is not on this computer yet<span class="badge badge-ghost badge-sm font-normal" title="Install or add it from any Catzoid app and the others use the same">Shared with Catzoid apps</span></span>
             <span class="block text-xs opacity-60">
               <template v-if="setup.error">The site could not be reached: {{ setup.error }}</template>
               <template v-else-if="setup.noBuild">There is no build for this computer yet.</template>
@@ -179,7 +179,7 @@ const groups = computed(() => {
 
         <div v-if="section === 'clients'" class="flex flex-col gap-4">
           <div v-if="targets.length">
-            <span class="label-caps mb-2 block">AI assistants</span>
+            <span class="mb-2 flex flex-wrap items-center gap-2"><span class="label-caps">AI assistants</span><span class="badge badge-ghost badge-sm font-normal" title="Install or add it from any Catzoid app and the others use the same">Shared with Catzoid apps</span></span>
             <ul class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
               <li v-for="t in targets" :key="t.id" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
                 <span class="status status-sm shrink-0" :class="t.current ? 'status-success' : t.command !== null ? 'status-warning' : 'opacity-30'" />
