@@ -17,6 +17,7 @@ import gozeroLogo from './assets/logos/fw/go-zero.png';
 import gofrLogo from './assets/logos/fw/gofr.png';
 import goravelLogo from './assets/logos/fw/goravel.svg';
 import zcodeLogo from './assets/logos/fw/zcode.png';
+import antigravityLogo from './assets/logos/fw/antigravity.svg';
 import kiroLogo from './assets/logos/fw/kiro.png';
 import rooLogo from './assets/logos/fw/roo.png';
 import starletteLogo from './assets/logos/fw/starlette.png';
@@ -145,6 +146,8 @@ export const STACK_ICONS: Record<string, StackIcon> = {
   amp: { title: 'Amp', color: '#F34E3F', d: 'M12 0c6.628 0 12 5.373 12 12s-5.372 12-12 12C5.373 24 0 18.627 0 12S5.373 0 12 0zm-.92 19.278l5.034-8.377a.444.444 0 00.097-.268.455.455 0 00-.455-.455l-2.851.004.924-5.468-.927-.003-5.018 8.367s-.1.183-.1.291c0 .251.204.455.455.455l2.831-.004-.901 5.458z' },
   kiro: { title: 'Kiro', color: 'currentColor', d: '', img: kiroLogo },
   roo: { title: 'Roo Code', color: 'currentColor', d: '', img: rooLogo },
+  warp: { title: 'Warp', color: 'currentColor', d: 'M12.035 2.723h9.253A2.712 2.712 0 0 1 24 5.435v10.529a2.712 2.712 0 0 1-2.712 2.713H8.047Zm-1.681 2.6L6.766 19.677h5.598l-.399 1.6H2.712A2.712 2.712 0 0 1 0 18.565V8.036a2.712 2.712 0 0 1 2.712-2.712Z' },
+  antigravity: { title: 'Antigravity', color: 'currentColor', d: '', img: antigravityLogo },
   zcode: { title: 'ZCode', color: 'currentColor', d: '', img: zcodeLogo },
   goravel: { title: 'Goravel', color: 'currentColor', d: '', img: goravelLogo },
   html5: { title: 'HTML5', color: '#E34F26', d: 'M1.5 0h21l-1.91 21.563L11.977 24l-8.564-2.438L1.5 0zm7.031 9.75l-.232-2.718 10.059.003.23-2.622L5.412 4.41l.698 8.01h9.126l-.326 3.426-2.91.804-2.955-.81-.188-2.11H6.248l.33 4.171L12 19.351l5.379-1.443.744-8.157H8.531z' },

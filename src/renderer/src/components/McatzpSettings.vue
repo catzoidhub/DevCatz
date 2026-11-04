@@ -101,7 +101,7 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
-const MARK: Partial<Record<McatzpTarget['id'], string>> = { 'claude-code': 'claude', 'claude-desktop': 'claude', zcode: 'zcode', cursor: 'cursor', windsurf: 'windsurf', vscode: 'visualstudiocode', cline: 'cline', gemini: 'googlegemini', codex: 'openai', opencode: 'opencode', copilot: 'githubcopilot', kiro: 'kiro', qwen: 'qwen', lmstudio: 'lmstudio', roo: 'roo', amp: 'amp' };
+const MARK: Partial<Record<McatzpTarget['id'], string>> = { 'claude-code': 'claude', 'claude-desktop': 'claude', zcode: 'zcode', cursor: 'cursor', windsurf: 'windsurf', vscode: 'visualstudiocode', cline: 'cline', gemini: 'googlegemini', codex: 'openai', opencode: 'opencode', copilot: 'githubcopilot', kiro: 'kiro', qwen: 'qwen', lmstudio: 'lmstudio', roo: 'roo', amp: 'amp', warp: 'warp', antigravity: 'antigravity' };
 /** Which listed assistant a client is, by the name it gives itself; null for any other, which keeps its initial. */
 function clientTarget(name: string): McatzpTarget['id'] | null {
   const n = name.toLowerCase().replace(/[^a-z]/g, '');
@@ -110,7 +110,7 @@ function clientTarget(name: string): McatzpTarget['id'] | null {
   if (n.startsWith('visualstudiocode') || n.startsWith('vscode')) return 'vscode';
   if (n.startsWith('gemini')) return 'gemini';
   if (n.startsWith('github') || n.startsWith('copilot')) return 'copilot';
-  return (['zcode', 'cursor', 'windsurf', 'cline', 'codex', 'opencode', 'kiro', 'antigravity', 'qwen', 'lmstudio', 'roo', 'amp'] as const).find((id) => n.startsWith(id)) ?? null;
+  return (['zcode', 'cursor', 'windsurf', 'cline', 'codex', 'opencode', 'kiro', 'antigravity', 'qwen', 'lmstudio', 'roo', 'amp', 'warp'] as const).find((id) => n.startsWith(id)) ?? null;
 }
 
 /** Each approved client with what the log knows about it, the most recent first. */

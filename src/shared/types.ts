@@ -1499,7 +1499,7 @@ export interface McatzpSetup {
 }
 /** An AI assistant MCatzP can be added to. */
 export interface McatzpTarget {
-  id: 'claude-code' | 'zcode' | 'claude-desktop' | 'cursor' | 'windsurf' | 'vscode' | 'cline' | 'gemini' | 'codex' | 'opencode' | 'copilot' | 'kiro' | 'antigravity' | 'qwen' | 'lmstudio' | 'roo' | 'amp';
+  id: 'claude-code' | 'zcode' | 'claude-desktop' | 'cursor' | 'windsurf' | 'vscode' | 'cline' | 'gemini' | 'codex' | 'opencode' | 'copilot' | 'kiro' | 'antigravity' | 'qwen' | 'lmstudio' | 'roo' | 'amp' | 'warp';
   label: string;
   /** It is on this computer. */
   found: boolean;
