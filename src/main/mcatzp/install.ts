@@ -24,8 +24,9 @@ function platformName(): 'mac-arm64' | 'mac-x64' | 'win-x64' | null {
   return isWin && process.arch === 'x64' ? 'win-x64' : null;
 }
 
+// stdout only: under Rosetta Bun warns about AVX on stderr, and the first start can take many seconds.
 async function versionOf(path: string): Promise<string | null> {
-  const { code, stdout } = await run(path, ['--version'], { timeout: 8000 }).catch(() => ({ code: 1, stdout: '' }));
+  const { code, stdout } = await run(path, ['--version'], { timeout: 30_000 }).catch(() => ({ code: 1, stdout: '' }));
   return code === 0 ? (stdout.trim().match(/^\d+\.\d+[\w.+-]*$/)?.[0] ?? null) : null;
 }
 

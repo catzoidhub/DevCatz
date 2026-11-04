@@ -68,7 +68,13 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
 <template>
   <div class="card">
     <div class="card-body gap-3 p-4">
-      <h2 class="flex items-center gap-2 font-semibold"><img :src="mcatzpLogo" alt="" class="size-5 rounded" draggable="false" />MCatzP</h2>
+      <div class="flex items-center gap-3">
+        <img :src="mcatzpLogo" alt="" class="logo size-14 shrink-0 rounded-2xl" draggable="false" />
+        <div class="min-w-0">
+          <h2 class="text-lg font-semibold tracking-tight">MCatzP</h2>
+          <p class="text-xs opacity-60">One connection, every cat.</p>
+        </div>
+      </div>
       <label class="flex cursor-pointer items-start gap-3">
         <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5" :checked="on" @change="save({ mcatzp: ($event.target as HTMLInputElement).checked })" />
         <span>
@@ -183,3 +189,10 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
     </div>
   </div>
 </template>
+
+<style scoped>
+/* MCatzP's own pink, so the page is known at a glance. */
+.logo {
+  box-shadow: 0 0 0 1px color-mix(in oklab, #ff8dbe 45%, transparent), 0 6px 20px color-mix(in oklab, #ff8dbe 35%, transparent);
+}
+</style>
