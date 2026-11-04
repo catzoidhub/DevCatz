@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { words } from '@shared/platform';
 import type { McatzpActivity, McatzpSetup, Settings } from '@shared/types';
 import mcatzpLogo from '../assets/logos/mcatzp.svg';
@@ -36,9 +36,16 @@ async function installMcatzp() {
 }
 const cancelInstall = () => attempt(() => herd.mcatzpInstallCancel().then(() => true));
 
+const SECTIONS = [
+  { id: 'access', label: 'Access' },
+  { id: 'clients', label: 'Approved clients' },
+  { id: 'activity', label: 'Activity' },
+] as const;
+const section = ref<(typeof SECTIONS)[number]['id']>('access');
+
 const activity = ref<McatzpActivity[]>([]);
 const load = async () => {
-  if (on.value) activity.value = (await attempt(() => herd.mcatzpActivity())) ?? activity.value;
+  if (on.value && section.value === 'activity') activity.value = (await attempt(() => herd.mcatzpActivity())) ?? activity.value;
 };
 // While this page is open only: calls come from outside DevCatz, with no state change to follow.
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -48,6 +55,7 @@ onMounted(() => {
   timer = setInterval(() => void load(), 3000);
 });
 onBeforeUnmount(() => clearInterval(timer));
+watch(section, () => void load());
 const revoke = (name: string) => attempt(() => herd.mcatzpRevoke(name).then(() => true));
 async function clearLog() {
   await attempt(() => herd.mcatzpClearActivity().then(() => true));
@@ -97,7 +105,12 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
 
 
       <template v-if="on">
-        <div class="border-t border-base-300/50 pt-3">
+        <div role="tablist" class="seg self-start">
+          <button v-for="t in SECTIONS" :key="t.id" role="tab" class="seg-item" :class="{ 'is-active': section === t.id }" @click="section = t.id">{{ t.label }}</button>
+        </div>
+
+        <div v-if="section === 'access'" class="flex flex-col gap-3">
+        <div>
           <span class="label-caps mb-2 block">Shared sites</span>
           <label class="flex cursor-pointer items-center gap-2 text-sm">
             <input type="checkbox" class="checkbox checkbox-sm" :checked="s.mcatzpAllSites === true" @change="save({ mcatzpAllSites: ($event.target as HTMLInputElement).checked })" />
@@ -141,9 +154,9 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
             <input class="input input-sm min-w-0 flex-1 font-mono text-xs" :value="(s.mcatzpEnvSecret ?? []).join(', ')" placeholder="INTERNAL_URL, LICENSE" spellcheck="false" @change="saveNames('mcatzpEnvSecret', ($event.target as HTMLInputElement).value)" />
           </label>
         </div>
+        </div>
 
-        <div class="border-t border-base-300/50 pt-3">
-          <span class="label-caps mb-2 block">Approved clients</span>
+        <div v-else-if="section === 'clients'">
           <p v-if="!s.mcatzpClients?.length" class="text-xs opacity-60">None yet. A client asks here the first time it connects.</p>
           <div v-for="c in s.mcatzpClients" :key="c.name" class="flex items-center gap-2 py-0.5 text-sm">
             <span class="selectable min-w-0 flex-1 truncate">{{ c.name }}</span>
@@ -152,13 +165,12 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
           </div>
         </div>
 
-        <div class="border-t border-base-300/50 pt-3">
-          <div class="mb-2 flex items-center">
-            <span class="label-caps flex-1">Activity</span>
-            <button v-if="activity.length" class="btn btn-ghost btn-xs" @click="clearLog">Clear</button>
+        <div v-else>
+          <div v-if="activity.length" class="mb-2 flex justify-end">
+            <button class="btn btn-ghost btn-xs" @click="clearLog">Clear</button>
           </div>
           <p v-if="!activity.length" class="text-xs opacity-60">Nothing yet. Every call is listed here: names and outcomes, not what was read.</p>
-          <div v-else class="max-h-64 space-y-0.5 overflow-y-auto">
+          <div v-else class="max-h-[28rem] space-y-0.5 overflow-y-auto">
             <div v-for="(a, i) in activity" :key="i" class="flex items-baseline gap-2 text-xs" :title="a.reason">
               <span class="w-32 shrink-0 tabular-nums opacity-50">{{ when(a.time) }}</span>
               <span class="w-24 shrink-0 truncate opacity-70">{{ a.client }}</span>
