@@ -25,5 +25,7 @@ export default defineConfig({
       },
     },
     plugins: [vue(), tailwindcss()],
+    // Dev only. macOS's file events replay recent changes each time a watcher is added, and every replay reloaded the page, so it kept blinking.
+    server: { watch: { useFsEvents: false } as Record<string, unknown> },
   },
 });
