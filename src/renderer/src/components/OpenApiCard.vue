@@ -87,41 +87,6 @@ async function unignore(file: string) {
   await load(false);
 }
 
-// Access…: a password on the documents, asked by DevCatz's proxy on the site's domain.
-const accessOpen = ref(false);
-const accessOn = ref(false);
-const accessUser = ref('');
-const accessPassword = ref('');
-const envList = ref<string[]>([]);
-const envFile = ref('');
-const envIgnored = ref<boolean | null>(null);
-const ignoreEnv = ref(true);
-const accessBusy = ref(false);
-async function openAccess() {
-  const a = props.site.openapiAuth;
-  accessOn.value = !!a;
-  accessUser.value = a?.user ?? 'docs';
-  accessPassword.value = a?.password ?? '';
-  const files = (await attempt(() => herd.envFiles(props.site.id))) ?? [];
-  envList.value = files.filter((f) => f.exists && !f.template).map((f) => f.path);
-  envFile.value = envList.value.includes('.env') ? '.env' : '';
-  accessOpen.value = true;
-}
-watch(envFile, async (f) => {
-  envIgnored.value = f ? ((await attempt(() => herd.openapiEnvIgnored(props.site.id, f).then((v) => ({ v }))))?.v ?? null) : null;
-});
-function generatePassword() {
-  const bytes = crypto.getRandomValues(new Uint8Array(18));
-  accessPassword.value = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '').slice(0, 20);
-}
-async function saveAccess() {
-  accessBusy.value = true;
-  const ok = await attempt(() => herd.openapiSetAuth(props.site.id, accessOn.value ? { user: accessUser.value, password: accessPassword.value } : null, accessOn.value ? envFile.value || null : null, ignoreEnv.value).then(() => true));
-  accessBusy.value = false;
-  if (!ok) return;
-  accessOpen.value = false;
-  notify('success', accessOn.value ? 'The API documents now ask for a password' : 'The API documents no longer ask for a password');
-}
 async function create(format: 'yaml' | 'json') {
   creating.value = format;
   const file = await attempt(() => herd.createOpenApi(props.site.id, format, createApp.value));
@@ -150,9 +115,7 @@ async function add() {
       <div class="flex items-center gap-2">
         <h2 class="font-semibold">API</h2>
         <span class="badge badge-ghost badge-sm">OpenAPI</span>
-        <span v-if="site.openapiAuth" class="badge badge-success badge-soft badge-sm">Password on</span>
         <span class="flex-1" />
-        <button v-if="info?.specs.length" class="btn btn-ghost btn-xs" title="A password on the API documents" @click="openAccess">Access…</button>
         <button class="btn btn-ghost btn-xs" :disabled="probing || !running" :title="running ? 'Ask the running apps again' : 'Start the site to look for the documents its apps serve'" @click="load(true)">
           <span v-if="probing" class="loading loading-spinner loading-xs" />Look again
         </button>
@@ -179,6 +142,7 @@ async function add() {
           <button class="btn btn-ghost btn-xs text-error" :disabled="!!site.dbTask" @click="removing = { kind: 'generator' }">Remove</button>
         </div>
         <p v-if="!laravel" class="text-xs opacity-60">DialCatz imports the routes from {{ info.specs.length === 1 ? 'this document' : 'these documents' }}.</p>
+        <p v-if="info.specs.some((s) => s.file)" class="text-xs opacity-60">Open URL on a file is for local development only: DevCatz serves it on this {{ words.computer }}, never in production. If a file should not ship to production, add it to .gitignore or remove it.</p>
       </template>
 
       <template v-else-if="info">
@@ -221,50 +185,6 @@ async function add() {
     <Teleport to="body">
       <ConfirmDialog v-if="asking && info?.install" :title="WHAT[info.install].title" :text="WHAT[info.install].text" :confirm="WHAT[info.install].button" @ok="add" @cancel="asking = false" />
       <ConfirmDialog v-if="removeText" :title="removeText.title" :text="removeText.text" :confirm="removeText.button" tone="error" :busy="removeBusy" @ok="remove" @cancel="removing = null" />
-      <dialog v-if="accessOpen" open class="modal modal-open" @keydown.esc="!accessBusy && (accessOpen = false)">
-        <div class="modal-box w-[30rem] max-w-[95vw] space-y-3">
-          <div>
-            <h3 class="text-lg font-semibold tracking-tight">Access to the API documents</h3>
-            <p class="text-xs opacity-70">{{ site.name }}: the files above and the documents and viewers its apps serve.</p>
-          </div>
-          <label class="flex cursor-pointer items-center gap-3 text-sm">
-            <input v-model="accessOn" type="checkbox" class="toggle toggle-primary toggle-sm" />
-            Ask for a password (basic auth)
-          </label>
-          <template v-if="accessOn">
-            <label class="flex items-center gap-3 text-sm">
-              <span class="w-20 shrink-0 opacity-70">User</span>
-              <input v-model="accessUser" class="input input-sm min-w-0 flex-1 font-mono text-xs" spellcheck="false" autocomplete="off" />
-            </label>
-            <label class="flex items-center gap-3 text-sm">
-              <span class="w-20 shrink-0 opacity-70">Password</span>
-              <input v-model="accessPassword" class="input input-sm min-w-0 flex-1 font-mono text-xs" spellcheck="false" autocomplete="off" />
-              <button type="button" class="btn btn-sm" @click="generatePassword">Generate</button>
-            </label>
-            <label class="flex items-center gap-3 text-sm">
-              <span class="w-20 shrink-0 opacity-70">Write to</span>
-              <select v-model="envFile" class="select select-sm min-w-0 flex-1">
-                <option value="">Don't write to a file</option>
-                <option v-for="f in envList" :key="f" :value="f">{{ f }}</option>
-              </select>
-            </label>
-            <template v-if="envFile">
-              <p class="pl-[5.75rem] text-xs opacity-60">Sets <code>OPENAPI_DOCS_USER</code> and <code>OPENAPI_DOCS_PASSWORD</code>.</p>
-              <label v-if="envIgnored === false" class="flex cursor-pointer items-center gap-2 pl-[5.75rem] text-sm">
-                <input v-model="ignoreEnv" type="checkbox" class="checkbox checkbox-sm" />
-                Add {{ envFile }} to .gitignore
-              </label>
-              <p v-else-if="envIgnored" class="pl-[5.75rem] text-xs opacity-60">{{ envFile }} is already in .gitignore.</p>
-            </template>
-          </template>
-          <p class="text-xs opacity-60">{{ accessOn ? "DevCatz asks for it on the site's domain. The app's own port and your production server are not covered." : site.openapiAuth ? 'Lines already written to a .env file stay there.' : `Anyone who can reach the site's domain on this ${words.computer} can read the documents.` }}</p>
-          <div class="modal-action">
-            <button class="btn btn-ghost btn-sm" :disabled="accessBusy" @click="accessOpen = false">Cancel</button>
-            <button class="btn btn-primary btn-sm" :disabled="accessBusy || (accessOn && (!accessUser.trim() || !accessPassword))" @click="saveAccess"><span v-if="accessBusy" class="loading loading-spinner loading-xs" />Save</button>
-          </div>
-        </div>
-        <div class="modal-backdrop" @click="!accessBusy && (accessOpen = false)" />
-      </dialog>
     </Teleport>
   </div>
 </template>

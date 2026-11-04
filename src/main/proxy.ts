@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer as createHttpServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { basename, extname, join, resolve } from 'node:path';
@@ -8,7 +7,6 @@ import { createServer as createHttpsServer, request as httpsRequest } from 'node
 import { connect as netConnect, type Socket } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { createProxyServer } from 'http-proxy-3';
-import { OPENAPI_PATHS } from './bridge';
 import type { CertManager } from './certs';
 import { words } from '@shared/platform';
 
@@ -39,8 +37,8 @@ export interface Route {
   rootRedirect?: string;
   /** Paths DevCatz answers itself on this domain instead of forwarding (e.g. WAHA's dashboard bootstrap). */
   pages?: Record<string, (req: IncomingMessage, res: ServerResponse) => void>;
-  /** The site's API documents: the password on them, and its OpenAPI files served by DevCatz. */
-  docs?: { auth: { user: string; password: string } | null; file(rel: string): string | null };
+  /** The site's OpenAPI file at a project-relative path, served by DevCatz (the API tab's Open URL). */
+  docFile?(rel: string): string | null;
   /** PHP sites: served by PHP-FPM over FastCGI, static files straight from the document root. */
   php?: {
     docroot: string;
@@ -58,17 +56,6 @@ export interface Route {
 
 /** Where DevCatz serves a site's OpenAPI files on its domain. */
 export const OPENAPI_FILE_PREFIX = '/__devcatz/openapi/';
-/** Documents and the viewers of the common generators: asked for the password when the site has one. */
-const OPENAPI_GUARDED = new Set([...OPENAPI_PATHS, '/docs', '/docs/api', '/api-docs', '/api/docs', '/swagger', '/swagger-ui', '/swagger/index.html', '/swagger-ui.html', '/redoc']);
-
-function basicAuthOk(header: string | undefined, auth: { user: string; password: string }): boolean {
-  const m = header?.match(/^Basic\s+(\S+)$/i);
-  if (!m) return false;
-  const given = Buffer.from(m[1], 'base64');
-  const want = Buffer.from(`${auth.user}:${auth.password}`);
-  return given.length === want.length && timingSafeEqual(given, want);
-}
-
 /** Requests that belong to the Vite dev server behind a Laravel site. */
 const VITE_PATH = /^\/(@vite\/|@id\/|@fs\/|@react-refresh|node_modules\/|resources\/|__vite|.*[?&](import|direct|t=\d+)(&|$))/;
 
@@ -174,32 +161,19 @@ export class Proxy {
   }
 
 
-  /**
-   * API documents on a site's domain (API tab): asks for the password when one is set, whether the document comes
-   * from the app or from a file; serves the site's OpenAPI files at /__devcatz/openapi/<path>. True = answered.
-   * The app's own port is not behind this, so a password here only guards the domain.
-   */
-  private serveDocs(req: IncomingMessage, res: ServerResponse, docs: NonNullable<Route['docs']>): boolean {
-    const path = (req.url ?? '/').split('?')[0];
-    const isFile = path.startsWith(OPENAPI_FILE_PREFIX);
-    if (!isFile && !(docs.auth && OPENAPI_GUARDED.has(path.replace(/(?<=.)\/$/, '')))) return false;
-    if (docs.auth && !basicAuthOk(req.headers.authorization, docs.auth)) {
-      res.writeHead(401, { 'www-authenticate': 'Basic realm="API documents", charset="UTF-8"', 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-      res.end('The password for this site\'s API documents is set in DevCatz (the site\'s API tab → Access).');
-      return true;
-    }
-    if (!isFile) return false;
+  /** A site's OpenAPI file at /__devcatz/openapi/<path>: only files the site really has, on this computer (never through a share). */
+  private serveDocFile(req: IncomingMessage, res: ServerResponse, docFile: NonNullable<Route['docFile']>): void {
     let rel: string;
     try {
-      rel = decodeURIComponent(path.slice(OPENAPI_FILE_PREFIX.length));
+      rel = decodeURIComponent((req.url ?? '').split('?')[0].slice(OPENAPI_FILE_PREFIX.length));
     } catch {
       rel = '';
     }
-    const file = rel ? docs.file(rel) : null;
+    const file = rel ? docFile(rel) : null;
     if (!file || (req.method !== 'GET' && req.method !== 'HEAD')) {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('No such OpenAPI file in this site.');
-      return true;
+      return;
     }
     try {
       const body = readFileSync(file);
@@ -210,7 +184,6 @@ export class Proxy {
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
       res.end((e as Error).message);
     }
-    return true;
   }
 
   private handle = (req: IncomingMessage, res: ServerResponse, secure: boolean) => {
@@ -231,7 +204,7 @@ export class Proxy {
       res.writeHead(302, { location: route.rootRedirect });
       return res.end();
     }
-    if (route?.docs && this.serveDocs(req, res, route.docs)) return;
+    if (route?.docFile && (req.url ?? '').startsWith(OPENAPI_FILE_PREFIX)) return this.serveDocFile(req, res, route.docFile);
     const own = route?.pages?.[(req.url ?? '/').split('?')[0]];
     if (own) return own(req, res);
     if (route?.php) return this.servePhp(req, res, route, secure);

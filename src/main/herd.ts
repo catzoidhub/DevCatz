@@ -1590,26 +1590,6 @@ export class Herd extends EventEmitter {
     }
   }
 
-  async openapiEnvIgnored(id: string, envFile: string): Promise<boolean | null> {
-    return this.git.isIgnored(id, envfiles.envPath(this.project(id).path, envFile, this.envDirs(id)));
-  }
-
-  /** The password on the site's API documents; DevCatz's proxy asks for it on the site's domain. */
-  async openapiSetAuth(id: string, auth: { user: string; password: string } | null, envFile?: string | null, ignoreEnv?: boolean): Promise<void> {
-    const p = this.project(id);
-    if (auth && !/^[^:\s]+$/.test(auth.user)) throw new Error('User: no spaces or colons');
-    if (auth && (!auth.password || /[\r\n]/.test(auth.password))) throw new Error('Enter a password (one line)');
-    store.setProjects(store.projects.map((x) => (x.id === id ? { ...x, openapiAuth: auth } : x)));
-    this.rescan();
-    this.processes.log(id, 'sys', auth ? `[openapi] API documents now ask for a password (user ${auth.user})` : '[openapi] API documents no longer ask for a password');
-    if (auth && envFile) {
-      this.envMerge(id, envFile, { OPENAPI_DOCS_USER: auth.user, OPENAPI_DOCS_PASSWORD: auth.password }, 'API documents (DevCatz)', true);
-      if (ignoreEnv && (await this.openapiEnvIgnored(id, envFile)) === false) await this.git.ignoreFile(id, envfiles.envPath(p.path, envFile, this.envDirs(id)));
-    }
-    this.updateRoutes();
-    this.changed();
-  }
-
   /** A starter OpenAPI 3 document in an app's folder, for stacks without a generator (or before one is added). */
   async createOpenApi(id: string, format: 'yaml' | 'json', appDir?: string): Promise<string> {
     const p = this.project(id);
@@ -1710,14 +1690,7 @@ export class Herd extends EventEmitter {
         ...(p.worktreeOf ? { worktreeOf: p.worktreeOf } : {}),
         running: this.processes.isActive(p.id),
         apps: (stack?.apps ?? []).map((a) => ({ dir: a.dir, name: a.name, framework: a.framework, kind: a.kind, domain: a.domain, url: a.domain ? this.urlFor(p, a.domain) : null, port: a.port })),
-        // With a password on the documents the domain asks for it, so the other apps read them on the app's own port.
-        openapi: [
-          ...(this.specFileCache.get(p.id) ?? []),
-          ...(this.openapiUrls.get(p.id) ?? []).map((o) => {
-            const port = stack?.apps.find((a) => a.dir === o.app)?.port;
-            return p.openapiAuth && port ? { ...o, url: `http://127.0.0.1:${port}${new URL(o.url).pathname}` } : o;
-          }),
-        ],
+        openapi: [...(this.specFileCache.get(p.id) ?? []), ...(this.openapiUrls.get(p.id) ?? [])],
       };
     });
     const gateways: BridgeGateway[] = [
@@ -4007,10 +3980,7 @@ export class Herd extends EventEmitter {
           projectName: p.name,
           running: this.processes.isActive(p.id) || (this.openPorts.get(p.id) ?? []).includes(app.port ?? -1),
           secure: p.secure !== false,
-          docs: {
-            auth: p.openapiAuth ?? null,
-            file: (rel) => specFiles(p, this.stacks.get(p.id)).find((f) => this.specRel(p, f.file) === rel)?.file ?? null,
-          },
+          docFile: (rel) => specFiles(p, this.stacks.get(p.id)).find((f) => this.specRel(p, f.file) === rel)?.file ?? null,
         };
         if (app.docroot !== undefined) {
           const version = this.phpChoice(p).version;

@@ -800,8 +800,6 @@ function api(): HerdApi {
     openapiRemoveGenerator: (siteId) => herd.openapiRemoveGenerator(String(siteId)),
     openapiIgnore: (siteId, file) => herd.openapiIgnore(String(siteId), String(file)),
     openapiUnignore: (siteId, file) => herd.openapiUnignore(String(siteId), String(file)),
-    openapiSetAuth: (siteId, auth, envFile, ignoreEnv) => herd.openapiSetAuth(String(siteId), auth ? { user: String(auth.user).trim(), password: String(auth.password) } : null, envFile ? String(envFile) : null, ignoreEnv === true),
-    openapiEnvIgnored: (siteId, envFile) => herd.openapiEnvIgnored(String(siteId), String(envFile)),
     mcatzpAnswer: async (id, answer) => mcatzp.answer(String(id), answer === 'once' || answer === 'session' ? answer : 'deny'),
     createOpenApi: (siteId, format, app) => herd.createOpenApi(String(siteId), format === 'json' ? 'json' : 'yaml', typeof app === 'string' ? app : undefined),
     dialcatzOpen: (siteId) => {
