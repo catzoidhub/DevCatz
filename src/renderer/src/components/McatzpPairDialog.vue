@@ -50,7 +50,7 @@ const answer = (a: 'deny' | 'once' | 'session') => {
             </ul>
             <p class="mt-2 border-t border-base-300/60 pt-2 text-xs opacity-70">It can also ask for changes, such as starting a service or creating a database; DevCatz asks you first. What it reads goes to that assistant's model provider.</p>
           </div>
-          <p class="text-xs opacity-60">You can revoke this in Settings → MCatzP. The name is what the client says about itself: if you did not just start it, choose Don't Allow.</p>
+          <p class="text-xs opacity-60">You can revoke this in Settings → MCatzP. The name is what the client says about itself: if you did not just start it, choose Don't Allow. If its tools do not show after you allow it, start a new session there.</p>
           <div class="flex w-full gap-2">
             <button class="btn btn-sm flex-1" autofocus @click="answer('deny')">Don't Allow</button>
             <button class="btn btn-primary btn-sm flex-1" @click="answer('once')">Allow</button>
