@@ -709,6 +709,8 @@ export class StorageManager {
     if (!c) throw new Error(`${ENGINES[kind].name} is not installed`);
     if (action === 'stop' || action === 'restart') await this.processes.stop(id);
     if (action === 'stop') return;
+    // Already up (just installed, a second click): leave it. The port check below would call its own port taken.
+    if (action === 'start' && this.isActive(kind)) return;
     for (let i = 0; i < 10 && (await isPortOpen(c.apiPort)); i++) await new Promise((r) => setTimeout(r, 300));
     const ports = c.kind === 'seaweedfs' ? [c.apiPort, c.consolePort, ...Object.values(seaweedPorts(c))] : [c.apiPort, c.consolePort];
     for (const port of ports) {

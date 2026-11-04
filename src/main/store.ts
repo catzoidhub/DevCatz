@@ -126,6 +126,16 @@ class Store {
       settings: { ...DEFAULT_SETTINGS, ...loaded.settings },
       ports: loaded.ports ?? {},
     };
+    // One entry per MCatzP client, the oldest: two sessions of a client could be approved at the same moment.
+    const clients = this.data.settings.mcatzpClients;
+    if (clients) {
+      const oldest = new Map<string, (typeof clients)[number]>();
+      for (const c of clients) {
+        const seen = oldest.get(c.name);
+        if (!seen || c.approvedAt < seen.approvedAt) oldest.set(c.name, c);
+      }
+      this.data.settings.mcatzpClients = [...oldest.values()];
+    }
   }
 
   get projects(): ProjectConfig[] {

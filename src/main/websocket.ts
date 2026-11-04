@@ -846,9 +846,9 @@ export class WsManager {
       if (d && existsSync(file)) await svcCompose(file, 'sockudo', ['stop']).catch(() => undefined);
     }
     if (action === 'stop') return;
+    // Already up (just installed, a second click): leave it. The port check below would call its own port taken.
+    if (action === 'start' && this.isActive(kind)) return;
     if (d) {
-      // Already up (autostart, a second click): leave it — the leftover clean-up below would stop its container.
-      if (action === 'start' && this.isActive(kind)) return;
       await svcEngineReady((detail) => this.processes.log(id, 'sys', detail));
       // A container left running by a DevCatz that quit or crashed: stopped before `up` attaches again.
       if (existsSync(file)) await svcCompose(file, 'sockudo', ['stop']).catch(() => undefined);

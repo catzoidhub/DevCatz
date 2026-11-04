@@ -414,6 +414,8 @@ export class DbServiceManager {
     const pid = dbProcessId(id);
     if (action === 'stop' || action === 'restart') await this.stopServer(c);
     if (action === 'stop') return;
+    // Already up (a second click): leave it. The port check below would call its own port taken.
+    if (action === 'start' && this.isActive(id)) return;
     const e = DB_ENGINES[c.engine];
     const fail = (msg: string): never => {
       this.processes.log(pid, 'sys', msg);
