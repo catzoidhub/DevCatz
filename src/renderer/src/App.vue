@@ -552,7 +552,7 @@ function navigate(target: string) {
   else if (target.startsWith('rename-group:')) groupDialog.value = { mode: 'rename', from: target.slice(13), name: target.slice(13) };
   else if (target === 'new-site') newSiteOpen.value = true;
   else if (target.startsWith('site:')) selected.value = target.slice(5);
-  else if (target.startsWith('git:') || target.startsWith('docker:')) {
+  else if (target.startsWith('git:') || target.startsWith('docker:') || target.startsWith('api:')) {
     const [tab, id] = target.split(':');
     siteTabRequest.value = { id, tab };
     selected.value = id;

@@ -15,7 +15,7 @@ import { attempt, herd, loadLogs, logs, notify } from '../store';
 const aiDockerOn = aiOn('docker');
 
 /** `desktop`: an Electron / Tauri app — it ships as an installer, so only its development services run here (no deploy files). */
-const props = defineProps<{ project: ProjectState; desktop?: boolean; /** Build ▾ at the top asked for this (it runs here, with its progress). */ request?: { file: string; action: 'up' | 'down'; n: number } | null }>();
+const props = defineProps<{ project: ProjectState; desktop?: boolean; /** Build ▾ at the top asked for this (it runs here, with its progress). */ request?: { file: string; action: 'up' | 'down' | 'start' | 'stop'; n: number } | null }>();
 const emit = defineEmits<{ logs: []; git: []; handled: [] }>();
 
 const status = ref<DockerStatus | null>(null);
@@ -87,6 +87,7 @@ async function replaceDocatzEnv() {
 }
 
 // ---- Progress of Build & Up / Build / Down: read from the compose output as it streams into the site's log.
+const anyRunning = computed(() => services.value.some((s) => s.state === 'running'));
 const run = ref<{ action: DockerAction; from: number; at: number } | null>(null);
 const testCard = ref<HTMLElement | null>(null);
 const now = ref(Date.now());
@@ -102,7 +103,8 @@ const progress = computed(() => {
   const lines = (logs.get(props.project.id) ?? []).slice(r.from).filter((l) => l.stream === 'docker' || l.stream === 'err');
   const steps = new Map<string, string>();
   const containers = new Map<string, string>();
-  let phase = r.action === 'down' ? 'Stopping containers' : r.action === 'build' ? 'Building images' : 'Preparing';
+  const stopping = r.action === 'down' || r.action === 'stop';
+  let phase = stopping ? 'Stopping containers' : r.action === 'build' ? 'Building images' : 'Preparing';
   let last = '';
   for (const { text } of lines) {
     // "#7 [app stage-2 3/5] …" (several services) or "#7 [3/3] …" (one).
@@ -114,7 +116,7 @@ const progress = computed(() => {
     const c = /^\s*Container (\S+)\s+(Creating|Created|Starting|Started|Waiting|Healthy|Running|Stopping|Stopped|Removing|Removed|Error)/.exec(text);
     if (c) {
       containers.set(c[1], c[2]);
-      phase = r.action === 'down' ? 'Stopping containers' : 'Starting containers';
+      phase = stopping ? 'Stopping containers' : 'Starting containers';
     }
     if (/^\s*Image \S+ Building/.test(text)) phase = 'Building images';
     if (text.trim()) last = text.trim();
@@ -560,6 +562,8 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             <span v-if="busyKey === 'up:'" class="loading loading-spinner loading-xs" />{{ current?.build ? 'Build & Up' : 'Up' }}
           </button>
           <button class="btn btn-sm" :disabled="!ready || !!busyKey" @click="compose('down')"><span v-if="busyKey === 'down:'" class="loading loading-spinner loading-xs" />Down</button>
+          <button v-if="anyRunning" class="btn btn-sm" :disabled="!ready || !!busyKey" title="Stop the containers and keep them: Start brings them back as they were" @click="compose('stop')"><span v-if="busyKey === 'stop:'" class="loading loading-spinner loading-xs" />Stop</button>
+          <button v-else class="btn btn-sm" :disabled="!ready || !!busyKey || !services.length" :title="services.length ? 'Start the containers that exist, without building or making new ones' : 'No containers yet: Up makes them'" @click="compose('start')"><span v-if="busyKey === 'start:'" class="loading loading-spinner loading-xs" />Start</button>
           <button class="btn btn-sm" :disabled="!ready || !!busyKey || !services.length" @click="compose('restart')">Restart</button>
           <button class="btn btn-sm" :disabled="!ready || !!busyKey" @click="compose('build')"><span v-if="busyKey === 'build:'" class="loading loading-spinner loading-xs" />Build only</button>
           <button class="btn btn-sm btn-ghost" :disabled="!ready || !services.length" @click="compose('logs')">Logs</button>
@@ -616,6 +620,8 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
                   <div v-if="s.published.length" class="text-xs opacity-50">ports {{ s.published.join(', ') }}</div>
                 </td>
                 <td class="whitespace-nowrap text-right">
+                  <button v-if="s.state === 'running'" class="btn btn-ghost btn-xs" :disabled="!!busyKey" @click="compose('stop', s.service)">Stop</button>
+                  <button v-else class="btn btn-ghost btn-xs" :disabled="!!busyKey" @click="compose('start', s.service)">Start</button>
                   <button class="btn btn-ghost btn-xs" :disabled="!!busyKey" @click="compose('restart', s.service)">Restart</button>
                   <button class="btn btn-ghost btn-xs" @click="compose('logs', s.service)">Logs</button>
                 </td>

@@ -249,8 +249,8 @@ watch(() => `${p.value.id}|${tab.value}`, () => void loadCompose(), { immediate:
 /** A compose command of the site runs (main process): Build ▾ spins and its Docker items wait. */
 const dockerBusy = computed(() => !!p.value.dockerRun);
 /** Build ▾ → Docker Compose: run in the Docker tab (its step 3 shows the progress), the request handed over there. */
-const dockerRequest = ref<{ file: string; action: 'up' | 'down'; n: number } | null>(null);
-function dockerAction(file: string, action: 'up' | 'down') {
+const dockerRequest = ref<{ file: string; action: 'up' | 'down' | 'start' | 'stop'; n: number } | null>(null);
+function dockerAction(file: string, action: 'up' | 'down' | 'start' | 'stop') {
   tab.value = 'docker';
   dockerRequest.value = { file, action, n: (dockerRequest.value?.n ?? 0) + 1 };
 }
@@ -258,6 +258,9 @@ function dockerAction(file: string, action: 'up' | 'down') {
 const dockerItems = computed<MenuItem[]>(() => !composeFiles.value.length ? [] : [
   ...composeFiles.value.flatMap((f, i): MenuItem[] => [
     { label: `${f.build ? 'Build & Up' : 'Up'} · ${f.file}`, hint: f.build ? 'build the images, then (re)create and start the containers' : 'start the containers', separator: i > 0, disabled: dockerBusy.value, action: () => void dockerAction(f.file, 'up') },
+    p.value.dockerUp
+      ? { label: `Stop · ${f.file}`, hint: 'stop the containers and keep them', disabled: dockerBusy.value, action: () => void dockerAction(f.file, 'stop') }
+      : { label: `Start · ${f.file}`, hint: 'start the containers that exist, without building', disabled: dockerBusy.value, action: () => void dockerAction(f.file, 'start') },
     { label: `Down · ${f.file}`, hint: 'stop and remove its containers (volumes stay)', disabled: dockerBusy.value, action: () => void dockerAction(f.file, 'down') },
   ]),
   {

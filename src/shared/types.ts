@@ -1003,7 +1003,7 @@ export interface ComposeEnvPlan {
   sources: { service: string; kind: DevServiceKind; port: number }[];
 }
 
-export type DockerAction = 'up' | 'down' | 'restart' | 'build' | 'logs';
+export type DockerAction = 'up' | 'down' | 'start' | 'stop' | 'restart' | 'build' | 'logs';
 
 // ------------------------------------------------------------ object storage
 

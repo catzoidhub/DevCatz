@@ -4498,6 +4498,8 @@ export class Herd extends EventEmitter {
     const args: Record<DockerAction, string[]> = {
       up: ['up', '-d', '--build', '--remove-orphans'],
       down: ['down'],
+      start: ['start'],
+      stop: ['stop'],
       restart: ['restart'],
       build: ['build'],
       logs: ['logs', '--tail', '200', '--no-color', '--timestamps'],
