@@ -82,6 +82,10 @@ async function ignore(file: string) {
   if (await attempt(() => herd.openapiIgnore(props.site.id, file).then(() => true))) notify('success', `${rel(file)} added to .gitignore`);
   await load(false);
 }
+async function unignore(file: string) {
+  if (await attempt(() => herd.openapiUnignore(props.site.id, file).then(() => true))) notify('success', `${rel(file)} removed from .gitignore`);
+  await load(false);
+}
 
 // Access…: a password on the documents, asked by DevCatz's proxy on the site's domain.
 const accessOpen = ref(false);
@@ -165,7 +169,7 @@ async function add() {
           <template v-if="s.file">
             <button class="btn btn-ghost btn-xs" @click="herd.openapiReveal(site.id, s.file!)">{{ words.revealIn }}</button>
             <button v-if="s.ignored === false" class="btn btn-ghost btn-xs" @click="ignore(s.file!)">Add to .gitignore</button>
-            <span v-else-if="s.ignored" class="text-xs opacity-50">in .gitignore</span>
+            <button v-else-if="s.ignored" class="btn btn-ghost btn-xs" @click="unignore(s.file!)">Remove from .gitignore</button>
             <button class="btn btn-ghost btn-xs text-error" @click="removing = { kind: 'file', file: s.file! }">Remove</button>
           </template>
         </div>

@@ -105,8 +105,8 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
       <label class="flex cursor-pointer items-start gap-3">
         <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5" :checked="state!.settings.mcatzp === true" @change="setMcatzp(($event.target as HTMLInputElement).checked)" />
         <span>
-          Let AI assistants read DevCatz through MCatzP
-          <span class="block text-xs opacity-60">While this is on, an MCP client you approve can read your sites, services, runtimes, Git status and logs (secrets masked). It reaches DevCatz through a channel only your account on this {{ words.computer }} can open, and it cannot change anything. What it reads goes to that assistant's model provider.</span>
+          Let AI assistants use DevCatz through MCatzP
+          <span class="block text-xs opacity-60">While this is on, an MCP client you approve can read your sites, services, runtimes, Git status and logs (secrets masked), and ask to start, stop or restart sites and services: DevCatz asks you first. It reaches DevCatz through a channel only your account on this {{ words.computer }} can open. What it reads goes to that assistant's model provider.</span>
         </span>
       </label>
     </div>

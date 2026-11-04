@@ -1450,9 +1450,14 @@ export interface BrowsersState {
   systemDefault: BrowserInfo | null;
 }
 
+/** `pair`: may this client connect at all? `change`: may it do this (built from the real parameters)? */
+export type McatzpAsk =
+  | { id: string; kind: 'pair'; client: string; version: string | null }
+  | { id: string; kind: 'change'; client: string; title: string; facts: { label: string; value: string }[]; allowSession: boolean };
+
 export interface AppState {
-  /** An MCP client waiting for the user's approval (MCatzP), the oldest first. */
-  mcatzpAsk: { id: string; client: string; version: string | null } | null;
+  /** A question from an MCP client waiting for the user (MCatzP), the oldest first. */
+  mcatzpAsk: McatzpAsk | null;
   projects: ProjectState[];
   /** Linked sites whose folder is gone (deleted or moved outside DevCatz): their settings wait until removed or located. */
   missingSites: { id: string; name: string; path: string; domain: string }[];
@@ -2707,6 +2712,8 @@ export interface HerdApi {
   openapiRemoveGenerator(siteId: string): Promise<void>;
   /** Adds one of the site's OpenAPI files to .gitignore. */
   openapiIgnore(siteId: string, file: string): Promise<void>;
+  /** Takes one of the site's OpenAPI files out of .gitignore; refused when a broader rule ignores it. */
+  openapiUnignore(siteId: string, file: string): Promise<void>;
   /**
    * Sets or clears (null) the password on the site's API documents. With `envFile`, OPENAPI_DOCS_USER and
    * OPENAPI_DOCS_PASSWORD are written there too, and with `ignoreEnv` that file goes into .gitignore.
@@ -2714,8 +2721,8 @@ export interface HerdApi {
   openapiSetAuth(siteId: string, auth: { user: string; password: string } | null, envFile?: string | null, ignoreEnv?: boolean): Promise<void>;
   /** Whether a .env file of the site is in .gitignore; null when the site has no Git repository. */
   openapiEnvIgnored(siteId: string, envFile: string): Promise<boolean | null>;
-  /** The answer to the MCatzP client waiting in state.mcatzpAsk. */
-  mcatzpAnswer(id: string, allow: boolean): Promise<void>;
+  /** The answer to the question in state.mcatzpAsk. */
+  mcatzpAnswer(id: string, answer: 'deny' | 'once' | 'session'): Promise<void>;
   /** Opens DialCatz's import for a site (dialcatz://open?site=<id>); false when DialCatz is not installed. */
   dialcatzOpen(siteId: string): Promise<boolean>;
   /** Downloads the latest DialCatz release, installs it to /Applications and opens the site; progress in state.dialcatz.task. */
@@ -3264,7 +3271,7 @@ export interface HerdApi {
 
 export const API_METHODS: (keyof HerdApi)[] = [
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
-  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiSetAuth', 'openapiEnvIgnored', 'mcatzpAnswer', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
+  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiSetAuth', 'openapiEnvIgnored', 'mcatzpAnswer', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',

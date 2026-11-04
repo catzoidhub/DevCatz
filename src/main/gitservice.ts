@@ -380,6 +380,12 @@ export class GitService {
     await this.refresh(id);
   }
 
+  /** Takes one file of the site out of .gitignore. */
+  async unignoreFile(id: string, abs: string): Promise<void> {
+    await g.removeIgnore(await this.root(id), abs);
+    await this.refresh(id);
+  }
+
   /** Whether a file of the site is ignored; null when the site has no repository. */
   async isIgnored(id: string, abs: string): Promise<boolean | null> {
     const root = await g.repoRoot(this.h.project(id).path);

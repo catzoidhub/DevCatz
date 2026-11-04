@@ -1552,6 +1552,11 @@ export class Herd extends EventEmitter {
     this.processes.log(id, 'sys', `[openapi] ${this.specRel(this.project(id), file)} added to .gitignore`);
   }
 
+  async openapiUnignore(id: string, file: string): Promise<void> {
+    await this.git.unignoreFile(id, this.specFile(id, file));
+    this.processes.log(id, 'sys', `[openapi] ${this.specRel(this.project(id), file)} removed from .gitignore`);
+  }
+
   /** Scramble: `composer remove`. NestJS: the lines DevCatz added to src/main.ts, then the package. Output in the log. */
   async openapiRemoveGenerator(id: string): Promise<void> {
     const p = this.project(id);

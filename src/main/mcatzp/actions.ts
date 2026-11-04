@@ -1,9 +1,10 @@
 import type { ActionDef, CallResult } from '@catzoid/mcatzp-host';
-import type { AppState, HerdApi, ProjectState } from '@shared/types';
+import type { AppState, HerdApi, McatzpAsk, ProjectState, StorageAction } from '@shared/types';
 import { maskText } from '../ai/devcatz';
 
 /**
- * DevCatz's actions for MCatzP (TODO §33): each one calls the same `api()` method its UI uses. Read tier only so far.
+ * DevCatz's actions for MCatzP (TODO §33): each one calls the same `api()` method its UI uses. Read tier, and of the
+ * change tier starting, stopping and restarting sites and services.
  * What goes out is picked field by field, never a whole state object: service configs hold passwords and keys.
  * Text that can carry secrets (logs, remote URLs) goes through the AI's masking. .env values never leave here (§33).
  */
@@ -131,4 +132,101 @@ export function readActions(api: HerdApi): ActionDef[] {
       return reply({ node: rt(s.node), bun: rt(s.bun), go: rt(s.go), python: rt(s.python), php: rt(s.php) });
     }),
   ];
+}
+
+/** A change: what its dialog shows comes from the real site or service, never from the assistant's words. */
+export interface ChangeAction extends ActionDef {
+  preview(args: Record<string, unknown>): Promise<{ title: string; facts: Extract<McatzpAsk, { kind: 'change' }>['facts'] }>;
+}
+
+interface Service {
+  /** What list_services calls it. */
+  ref: string;
+  name: string;
+  /** A database's engine: "mysql" finds it when only one service runs that engine. */
+  engine?: string;
+  kind: string;
+  version: string | null;
+  port: number | null;
+  installed: boolean;
+  status: string;
+  act(action: StorageAction): Promise<void>;
+}
+
+function servicesOf(s: AppState, api: HerdApi): Service[] {
+  const named = (x: { kind: string; name: string; installed: boolean; status: string; config: { version?: string | null; port?: number } | null }, kind: string, act: Service['act']): Service => ({ ref: x.kind, name: x.name, kind, version: x.config?.version ?? null, port: x.config?.port ?? null, installed: x.installed, status: x.status, act });
+  return [
+    ...s.databases.filter((d) => !d.pending && d.engine !== 'sqlite').map((d): Service => ({ ref: d.id, name: d.name, engine: d.engine, kind: `${d.engineName} database`, version: d.version, port: d.port, installed: true, status: d.status, act: (a) => api.dbAction(d.id, a) })),
+    ...s.searchEngines.map((x) => named(x, 'Search engine', (a) => api.searchAction(x.kind, a))),
+    ...s.websockets.map((x) => named(x, 'WebSocket server', (a) => api.wsAction(x.kind, a))),
+    ...s.storage.map((x) => named(x, 'Object storage', (a) => api.storageAction(x.kind, a))),
+    ...s.gateways.map((x) => named(x, 'Gateway', (a) => api.gwAction(x.kind, a))),
+    ...s.whatsapp.map((w) => named({ ...w, kind: w.engine }, 'WhatsApp gateway', (a) => api.waAction(w.engine, a))),
+    { ref: 'mail', name: 'Mail catcher', kind: 'Mail catcher', version: null, port: s.mail.port, installed: true, status: s.mail.running ? 'running' : 'stopped', act: (a) => api.mailAction(a) },
+  ];
+}
+
+/** One service by what list_services shows, or a database by its engine when only one runs it; never a guess. */
+export function findService<T extends Pick<Service, 'ref' | 'name' | 'engine' | 'installed'>>(list: T[], ref: string): T {
+  const r = ref.trim().toLowerCase();
+  const exact = list.filter((x) => x.ref.toLowerCase() === r || x.name.toLowerCase() === r);
+  const found = exact.length ? exact : list.filter((x) => x.engine?.toLowerCase() === r);
+  if (found.length > 1) throw new Error(`${found.length} services match ${ref}: use one of ${found.map((x) => x.ref).join(', ')} (list_services)`);
+  if (!found.length) throw new Error(`No service ${ref} (list_services shows them)`);
+  if (!found[0].installed) throw new Error(`${found[0].name} is not installed: install it in DevCatz first`);
+  return found[0];
+}
+
+export function changeActions(api: HerdApi): ChangeAction[] {
+  const VERBS: { action: StorageAction; verb: string; done: string }[] = [
+    { action: 'start', verb: 'Start', done: 'Started' },
+    { action: 'stop', verb: 'Stop', done: 'Stopped' },
+    { action: 'restart', verb: 'Restart', done: 'Restarted' },
+  ];
+  const siteOf = async (ref: unknown) => {
+    const { projects } = await api.getState();
+    const id = findSite(projects, String(ref));
+    return projects.find((p) => p.id === id)!;
+  };
+  const serviceOf = async (ref: unknown) => findService(servicesOf(await api.getState(), api), String(ref));
+  const SERVICE = { type: 'string', minLength: 1, maxLength: 200, description: "The service's id or name from list_services (a database's id or name, or a kind such as meilisearch or mail); a database engine such as mysql when only one service runs it." };
+  return VERBS.flatMap(({ action, verb, done }): ChangeAction[] => [
+    {
+      name: `${action}_site`,
+      title: `${verb} a site`,
+      description: `${verb}s a site's dev servers. DevCatz asks the user first.`,
+      tier: 'change',
+      allowSession: true,
+      input: OBJECT({ site: SITE }, ['site']),
+      preview: async ({ site: ref }) => {
+        const p = await siteOf(ref);
+        return { title: `${verb} the site ${p.name}?`, facts: [{ label: 'Domain', value: p.domain }, { label: 'Folder', value: p.path }, { label: 'Now', value: p.status }] };
+      },
+      run: async ({ site: ref }) => {
+        const p = await siteOf(ref);
+        await api[action](p.id);
+        return reply({ site: p.name, result: done });
+      },
+    },
+    {
+      name: `${action}_service`,
+      title: `${verb} a service`,
+      description: `${verb}s a service DevCatz runs: a database, search engine, WebSocket server, object storage, gateway or the mail catcher. DevCatz asks the user first.`,
+      tier: 'change',
+      allowSession: true,
+      input: OBJECT({ service: SERVICE }, ['service']),
+      preview: async ({ service: ref }) => {
+        const x = await serviceOf(ref);
+        return {
+          title: `${verb} ${x.name}?`,
+          facts: [{ label: 'Service', value: `${x.kind}${x.version ? ` ${x.version}` : ''}` }, ...(x.port ? [{ label: 'Port', value: String(x.port) }] : []), { label: 'Now', value: x.status }],
+        };
+      },
+      run: async ({ service: ref }) => {
+        const x = await serviceOf(ref);
+        await x.act(action);
+        return reply({ service: x.name, result: done, status: (await serviceOf(ref)).status });
+      },
+    },
+  ]);
 }

@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { GitBranch, GitCommit, GitFile, GitStash, GitStatus, GitSummary, GitTag } from '@shared/types';
 import { getShellEnv } from './env';
 import { exePath, isWin, killTree } from './platform';
@@ -456,6 +456,35 @@ export function addIgnore(root: string, lines: string[]): void {
   const file = join(root, '.gitignore');
   const cur = existsSync(file) ? readFileSync(file, 'utf8') : '';
   appendFileSync(file, `${cur && !cur.endsWith('\n') ? '\n' : ''}${cur ? '\n' : ''}# Added by DevCatz\n${clean.join('\n')}\n`);
+}
+
+/**
+ * Takes a file out of .gitignore: the rule that matches it goes, with DevCatz's own comment when nothing else is under
+ * it. A rule that also covers other files (`*.yaml`, a folder) or lives outside the repository stays, and the error says so.
+ */
+export async function removeIgnore(root: string, abs: string): Promise<void> {
+  // A file can have the same rule twice: each pass takes out the one git says wins.
+  for (let i = 0; i < 20; i++) {
+    const r = await git(root, ['check-ignore', '-v', '--no-index', abs]);
+    if (r.code !== 0) return;
+    const m = r.stdout.match(/^(.*?):(\d+):(.*)\t/);
+    if (!m) throw new Error('Could not tell which rule ignores this file');
+    const [, source, lineNo, pattern] = m;
+    const sourceAbs = resolve(root, source);
+    const name = relative(dirname(sourceAbs), abs).split(sep).join('/');
+    const rule = pattern.replace(/^\//, '');
+    if (basename(sourceAbs) !== '.gitignore' || relative(root, sourceAbs).startsWith('..') || (rule !== name && rule !== name.split('/').pop())) {
+      throw new Error(`Ignored by the rule ${pattern} in ${source}, which may cover other files too: change it there by hand`);
+    }
+    const lines = readFileSync(sourceAbs, 'utf8').split('\n');
+    const at = Number(lineNo) - 1;
+    lines.splice(at, 1);
+    if (lines[at - 1] === '# Added by DevCatz' && !lines[at]?.trim()) {
+      lines.splice(at - 1, 1);
+      if (at >= 2 && !lines[at - 2].trim()) lines.splice(at - 2, 1);
+    }
+    writeFileSync(sourceAbs, lines.join('\n'));
+  }
 }
 
 // ------------------------------------------------------------ clone
