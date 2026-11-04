@@ -15,6 +15,7 @@ import { getShellEnv, run } from './env';
 import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './storage';
 import { dataDir, store } from './store';
 import { exe, isWin } from './platform';
+import { OPENAPI_FILE_PREFIX } from './proxy';
 import { githubLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { getPhpRuntime } from './websocket';
 import { currentOS, words } from '@shared/platform';
@@ -781,6 +782,12 @@ export class ExposeManager {
       const live = this.live.get(id);
       if (!live) return res.destroy();
       if (!this.authOk(live, req.headers.authorization)) return this.unauthorized(res, domain);
+      // DevCatz's own copy of the site's OpenAPI files stays on this computer: a share never makes a project file public.
+      if ((req.url ?? '').toLowerCase().replace(/%5f/g, '_').startsWith(OPENAPI_FILE_PREFIX)) {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end('Not shared.');
+        return;
+      }
       void this.forward(live, domain, target, req, res, false);
     });
     server.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) => {
