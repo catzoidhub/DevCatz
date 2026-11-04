@@ -310,7 +310,10 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           },
           run: async (args, ctx) => {
             const { input } = await planService(api, args);
-            return inBackground(api, ctx, api.dbCreate(input), { service: input.name }, 'Created', 'Still creating: list_services shows its progress', (s) => taskProgress(s.databases.find((d) => d.pending && d.name === input.name)?.task));
+            return inBackground(api, ctx, api.dbCreate(input), async () => {
+              const d = (await api.getState()).databases.find((x) => x.pending && x.name === input.name);
+              if (d) await api.dbCancelCreate(d.id);
+            }, { service: input.name }, 'Created', 'Still creating: list_services shows its progress; only cancel_install stops it', (s) => taskProgress(s.databases.find((d) => d.pending && d.name === input.name)?.task));
           },
         },
         {
@@ -345,7 +348,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           },
           run: async ({ service }, ctx) => {
             const x = await installable(api, service);
-            return inBackground(api, ctx, x.install(), { service: x.name }, 'Installed', 'Still installing: list_services shows its progress', (s) => taskProgress([...s.searchEngines, ...s.websockets, ...s.storage, ...s.gateways].find((t) => t.kind === x.ref)?.task ?? s.whatsapp.find((t) => t.engine === x.ref)?.task));
+            return inBackground(api, ctx, x.install(), x.cancel, { service: x.name }, 'Installed', 'Still installing: list_services shows its progress; only cancel_install stops it', (s) => taskProgress([...s.searchEngines, ...s.websockets, ...s.storage, ...s.gateways].find((t) => t.kind === x.ref)?.task ?? s.whatsapp.find((t) => t.engine === x.ref)?.task));
           },
         },
         {
@@ -362,7 +365,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
             const r = runtime as Runtime;
             const v = await runtimeVersionOf(api, r, version);
             const go = r === 'node' ? api.nodeInstall(v) : r === 'bun' ? api.bunInstall(v) : r === 'go' ? api.goInstall(v) : r === 'python' ? api.pythonInstall(v) : api.phpInstall(v);
-            return inBackground(api, ctx, go, { runtime: r, version: v }, 'Installed', 'Still installing: list_runtimes shows its progress', (s) => runtimeProgress(s[r].installing));
+            return inBackground(api, ctx, go, () => api.installCancel(r), { runtime: r, version: v }, 'Installed', 'Still installing: list_runtimes shows its progress; only cancel_install stops it', (s) => runtimeProgress(s[r].installing));
           },
         },
       ];
@@ -372,7 +375,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
         {
           name: 'cancel_install',
           title: 'Cancel an install',
-          description: 'Stops a service, database service or runtime that is being installed or created, and throws away what it got so far. Runs at once, without a dialog. `what` is its kind or name from list_services, or the runtime (node, bun, go, python, php).',
+          description: 'The only way to stop a service, database service or runtime that is being installed or created: it throws away what it got so far. Runs at once, without a dialog. Do not tell the user something was cancelled without this answering so. `what` is its kind or name from list_services, or the runtime (node, bun, go, python, php).',
           tier: 'change',
           noDialog: true,
           input: OBJECT({ what: { type: 'string', minLength: 1, maxLength: 60 } }, ['what']),
@@ -419,7 +422,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           run: async ({ runtime, tool }, ctx) => {
             const t = (await api.toolsState(runtime as RuntimeToolRuntime)).find((x) => x.id === tool);
             if (!t) throw new Error(`No tool ${String(tool)} for ${String(runtime)} (list_runtime_tools shows them)`);
-            return inBackground(api, ctx, api.toolInstall(t.id), { tool: t.label }, 'Installed', 'Still installing: list_runtime_tools shows when it is there', (s) => (s.toolTask?.id === t.id ? { message: s.toolTask.detail || `Installing ${t.label}`, percent: 50 } : null));
+            return inBackground(api, ctx, api.toolInstall(t.id), () => api.installCancel(`tool:${t.id}`), { tool: t.label }, 'Installed', 'Still installing: list_runtime_tools shows when it is there', (s) => (s.toolTask?.id === t.id ? { message: s.toolTask.detail || `Installing ${t.label}`, percent: 50 } : null));
           },
         },
       ];
@@ -480,7 +483,7 @@ async function runtimeVersionOf(api: HerdApi, r: Runtime, version: unknown): Pro
  */
 const WATCH_MS = 50_000;
 
-async function inBackground(api: HerdApi, ctx: ActionContext, work: Promise<unknown>, about: Record<string, unknown>, done: string, going: string, watch: (s: AppState) => { message: string; percent: number } | null): Promise<CallResult> {
+async function inBackground(api: HerdApi, ctx: ActionContext, work: Promise<unknown>, cancel: () => Promise<void>, about: Record<string, unknown>, done: string, going: string, watch: (s: AppState) => { message: string; percent: number } | null): Promise<CallResult> {
   let ended = false;
   const finished = work.then(() => (ended = true));
   const wait = ctx.progress ? WATCH_MS : 1500;
@@ -489,16 +492,22 @@ async function inBackground(api: HerdApi, ctx: ActionContext, work: Promise<unkn
     ? setInterval(() => {
         void api.getState().then((s) => {
           const p = watch(s);
-          if (!p || ended || `${p.message}` === sent) return;
+          if (!p || ended || p.message === sent) return;
           sent = p.message;
           ctx.progress!(p);
         });
       }, 1000)
     : undefined;
+  // The client gave up while it was still watching: it no longer wants this. A dropped connection is no such wish.
+  const stop = () => {
+    if (ctx.signal.reason === 'cancelled') void cancel().catch((e) => console.warn('MCatzP cancel:', (e as Error).message));
+  };
+  ctx.signal.addEventListener('abort', stop, { once: true });
   try {
     await Promise.race([finished, new Promise((r) => setTimeout(r, wait))]);
   } finally {
     clearInterval(timer);
+    ctx.signal.removeEventListener('abort', stop);
   }
   if (!ended) work.catch((e) => console.warn('MCatzP:', (e as Error).message));
   return reply({ ...about, result: ended ? done : going });
@@ -516,11 +525,11 @@ async function installable(api: HerdApi, ref: unknown) {
     return out;
   };
   const all = [
-    ...s.searchEngines.map((x) => ({ ref: x.kind, name: x.name, what: 'Search engine', page: `services:${x.kind}`, busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.searchInstall(x.kind, x.fields.key ? fill(x.defaults, ['key']) : x.defaults) })),
-    ...s.websockets.map((x) => ({ ref: x.kind, name: x.name, what: 'WebSocket server', page: 'websocket', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.wsInstall(x.kind, fill(x.defaults, [...(x.fields.key ? (['key'] as const) : []), ...(x.fields.secret ? (['secret'] as const) : [])])) })),
-    ...s.storage.map((x) => ({ ref: x.kind, name: x.name, what: 'Object storage', page: 'storage', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.apiPort, domain: x.defaults.apiDomain, install: () => api.storageInstall(x.kind, x.defaults) })),
-    ...s.gateways.map((x) => ({ ref: x.kind, name: x.name, what: 'Gateway', page: `gateways:${x.kind}`, busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.gwInstall(x.kind, fill(x.defaults, ['password'])) })),
-    ...s.whatsapp.map((x) => ({ ref: x.engine as string, name: x.name, what: 'WhatsApp gateway', page: `gateways:${x.engine}`, busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.waInstall(x.engine, fill(x.defaults, ['apiKey'])) })),
+    ...s.searchEngines.map((x) => ({ ref: x.kind, name: x.name, what: 'Search engine', page: `services:${x.kind}`, busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, cancel: () => api.searchCancelInstall(x.kind), install: () => api.searchInstall(x.kind, x.fields.key ? fill(x.defaults, ['key']) : x.defaults) })),
+    ...s.websockets.map((x) => ({ ref: x.kind, name: x.name, what: 'WebSocket server', page: 'websocket', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, cancel: () => api.wsCancelInstall(x.kind), install: () => api.wsInstall(x.kind, fill(x.defaults, [...(x.fields.key ? (['key'] as const) : []), ...(x.fields.secret ? (['secret'] as const) : [])])) })),
+    ...s.storage.map((x) => ({ ref: x.kind, name: x.name, what: 'Object storage', page: 'storage', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.apiPort, domain: x.defaults.apiDomain, cancel: () => api.storageCancelInstall(x.kind), install: () => api.storageInstall(x.kind, x.defaults) })),
+    ...s.gateways.map((x) => ({ ref: x.kind, name: x.name, what: 'Gateway', page: `gateways:${x.kind}`, busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, cancel: () => api.gwCancelInstall(x.kind), install: () => api.gwInstall(x.kind, fill(x.defaults, ['password'])) })),
+    ...s.whatsapp.map((x) => ({ ref: x.engine as string, name: x.name, what: 'WhatsApp gateway', page: `gateways:${x.engine}`, busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, cancel: () => api.waCancelInstall(x.engine), install: () => api.waInstall(x.engine, fill(x.defaults, ['apiKey'])) })),
   ];
   const r = String(ref).trim().toLowerCase();
   const x = all.find((a) => a.ref.toLowerCase() === r || a.name.toLowerCase() === r);

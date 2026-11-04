@@ -61,9 +61,9 @@ export class Mcatzp {
           return 'once';
         }
         const { page, ...question } = preview;
-        const answer = await this.ask({ id: randomUUID(), kind: 'change', client: req.client, allowSession: req.allowSession, ...question }, CHANGE_WAIT_MS);
+        const answer = await this.ask({ id: randomUUID(), kind: 'change', client: req.client, allowSession: req.allowSession, ...question }, CHANGE_WAIT_MS, req.signal);
         // The user is right here and just said yes: take them to what is happening. Not for allowed-for-the-session calls.
-        if (answer !== 'deny') this.open(page);
+        if (answer !== 'deny' && !req.signal.aborted) this.open(page);
         return answer;
       },
       log: (e) => this.activity.add(e),
@@ -122,10 +122,12 @@ export class Mcatzp {
     return next;
   }
 
-  private ask(ask: McatzpAsk, waitMs: number): Promise<ConfirmAnswer> {
+  private ask(ask: McatzpAsk, waitMs: number, gone?: AbortSignal): Promise<ConfirmAnswer> {
     return new Promise((done) => {
       const timer = setTimeout(() => this.answer(ask.id, 'deny'), waitMs);
       this.asks.push({ ask, done, timer });
+      // The client gave up or left: nobody is waiting for this any more, so the question must not stay to be allowed later.
+      gone?.addEventListener('abort', () => this.answer(ask.id, 'deny'), { once: true });
       if (this.asks.length === 1) this.show(ask);
     });
   }
