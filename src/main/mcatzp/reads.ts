@@ -218,6 +218,7 @@ export function moreReads(api: HerdApi, scopes: Scopes): ActionDef[] {
         updates: { notifications: x.updateNotifications, auto: x.appUpdateAuto, channel: x.appUpdateChannel },
       });
     }),
+    read('list_missing_sites', 'Missing sites', 'Linked sites whose folder is gone.', OBJECT(), async () => plain((await state()).missingSites)),
     read('list_git_accounts', 'Git accounts', 'The connected Git hosting accounts: names only, never a token.', OBJECT(), async () => plain((await state()).git.accounts.map((a) => ({ id: a.id, kind: a.kind, baseUrl: a.baseUrl, username: a.username })))),
     read('list_git_repos', 'Repositories of an account', 'The repositories of a connected Git account, optionally only matching a search.', OBJECT({ account: S('An id from list_git_accounts.'), search: { type: 'string', maxLength: 200 } }, ['account']), async (a) => plain(await api.gitRepos(String(a.account), typeof a.search === 'string' ? a.search : ''))),
     read('list_ssh_keys', 'SSH keys', 'The SSH keys in ~/.ssh: type, comment, fingerprint and public key, never a private key.', OBJECT(), async () => plain((await api.gitSshKeys()).map((k) => ({ type: k.type, comment: k.comment, fingerprint: k.fingerprint, publicKey: k.publicKey })))),

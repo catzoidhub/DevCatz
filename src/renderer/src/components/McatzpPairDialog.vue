@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import devcatzLogo from '../assets/logos/devcatz.svg';
 import mcatzpLogo from '../assets/logos/mcatzp.svg';
 import { attempt, herd, state } from '../store';
@@ -7,9 +7,12 @@ import { attempt, herd, state } from '../store';
 /** MCatzP asks here: may this MCP client connect (the first time), and may it do this change. */
 const ask = computed(() => state.value?.mcatzpAsk ?? null);
 const CAN = ['The sites you share: status, Git, logs with secrets masked', '.env of those sites: names and values that are not secret', 'Services and runtimes, when you share them'];
+const typed = ref('');
+const typeName = computed(() => (ask.value?.kind === 'change' ? ask.value.typeName : undefined));
+watch(() => ask.value?.id, () => (typed.value = ''));
 const answer = (a: 'deny' | 'once' | 'session') => {
   const id = ask.value?.id;
-  if (id) void attempt(() => herd.mcatzpAnswer(id, a).then(() => true));
+  if (id) void attempt(() => herd.mcatzpAnswer(id, a, typed.value).then(() => true));
 };
 </script>
 
@@ -63,7 +66,17 @@ const answer = (a: 'deny' | 'once' | 'session') => {
               <dd class="selectable min-w-0 flex-1 break-words">{{ f.value }}</dd>
             </div>
           </dl>
-          <div class="flex w-full flex-col gap-2">
+          <template v-if="typeName">
+            <label class="w-full text-left text-sm">
+              <span class="mb-1 block opacity-70">To allow it, type <code class="selectable font-semibold text-error">{{ typeName }}</code>.</span>
+              <input v-model="typed" class="input input-sm w-full font-mono text-xs" spellcheck="false" autocomplete="off" @keydown.enter="typed.trim() === typeName && answer('once')" />
+            </label>
+            <div class="flex w-full gap-2">
+              <button class="btn btn-sm flex-1" autofocus @click="answer('deny')">Don't Allow</button>
+              <button class="btn btn-error btn-sm flex-1" :disabled="typed.trim() !== typeName" @click="answer('once')">Allow</button>
+            </div>
+          </template>
+          <div v-else class="flex w-full flex-col gap-2">
             <div class="flex w-full gap-2">
               <button class="btn btn-sm flex-1" autofocus @click="answer('deny')">Don't Allow</button>
               <button class="btn btn-primary btn-sm flex-1" @click="answer('once')">Allow once</button>

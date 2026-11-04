@@ -806,7 +806,7 @@ function api(): HerdApi {
     mcatzpActivity: async () => mcatzp.activity.list(),
     mcatzpClearActivity: async () => mcatzp.activity.clear(),
     mcatzpRevoke: (name) => mcatzp.revoke(String(name)),
-    mcatzpAnswer: async (id, answer) => mcatzp.answer(String(id), answer === 'once' || answer === 'session' ? answer : 'deny'),
+    mcatzpAnswer: async (id, answer, typed) => mcatzp.answer(String(id), answer === 'once' || answer === 'session' ? answer : 'deny', typeof typed === 'string' ? typed : undefined),
     createOpenApi: (siteId, format, app) => herd.createOpenApi(String(siteId), format === 'json' ? 'json' : 'yaml', typeof app === 'string' ? app : undefined),
     dialcatzOpen: (siteId) => {
       if (!herd.find(String(siteId))) throw new Error('This site is gone');

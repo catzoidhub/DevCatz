@@ -1479,7 +1479,7 @@ export interface McatzpActivity {
 /** `pair`: may this client connect at all? `change`: may it do this (built from the real parameters)? */
 export type McatzpAsk =
   | { id: string; kind: 'pair'; client: string; version: string | null }
-  | { id: string; kind: 'change'; client: string; title: string; facts: { label: string; value: string }[]; allowSession: boolean };
+  | { id: string; kind: 'change'; client: string; title: string; facts: { label: string; value: string }[]; allowSession: boolean; /** Destructive: this must be typed to allow it. */ typeName?: string };
 
 export interface AppState {
   /** A question from an MCP client waiting for the user (MCatzP), the oldest first. */
@@ -2748,7 +2748,7 @@ export interface HerdApi {
   /** Forgets an approved client and closes its connection; it asks again next time. */
   mcatzpRevoke(name: string): Promise<void>;
   /** The answer to the question in state.mcatzpAsk. */
-  mcatzpAnswer(id: string, answer: 'deny' | 'once' | 'session'): Promise<void>;
+  mcatzpAnswer(id: string, answer: 'deny' | 'once' | 'session', typed?: string): Promise<void>;
   /** Opens DialCatz's import for a site (dialcatz://open?site=<id>); false when DialCatz is not installed. */
   dialcatzOpen(siteId: string): Promise<boolean>;
   /** Downloads the latest DialCatz release, installs it to /Applications and opens the site; progress in state.dialcatz.task. */

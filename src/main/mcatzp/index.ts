@@ -8,6 +8,7 @@ import { SECRET_KEY } from '../ai/devcatz';
 import { store } from '../store';
 import { type ChangeAction, changeActions, findSite, readActions, type Scopes } from './actions';
 import { ActivityLog } from './activity';
+import { destructiveActions } from './destructive';
 import { devChanges } from './devchanges';
 import { moreReads } from './reads';
 import { serviceChanges } from './servicechanges';
@@ -107,7 +108,7 @@ export class Mcatzp {
   }
 
   private changes(): ChangeAction[] {
-    return [...changeActions(this.api, this.scopes()), ...devChanges(this.api, this.scopes()), ...siteChanges(this.api, this.scopes()), ...serviceChanges(this.api, this.scopes())];
+    return [...changeActions(this.api, this.scopes()), ...devChanges(this.api, this.scopes()), ...siteChanges(this.api, this.scopes()), ...serviceChanges(this.api, this.scopes()), ...destructiveActions(this.api, this.scopes())];
   }
 
   /** What is shared changed: connected clients get the new list of tools. */
@@ -138,9 +139,12 @@ export class Mcatzp {
   }
 
   /** The user's answer in the dialog (or the wait running out); then the next question, if any. */
-  answer(id: string, answer: ConfirmAnswer): void {
+  answer(id: string, answer: ConfirmAnswer, typed?: string): void {
     const at = this.asks.findIndex((a) => a.ask.id === id);
     if (at < 0) return;
+    // The dialog checks this too; here it is what counts.
+    const need = this.asks[at].ask.kind === 'change' ? (this.asks[at].ask as { typeName?: string }).typeName : undefined;
+    if (need && answer !== 'deny' && typed?.trim() !== need) throw new Error(`Type ${need} to confirm`);
     const [a] = this.asks.splice(at, 1);
     clearTimeout(a.timer);
     a.done(answer);

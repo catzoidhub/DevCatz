@@ -224,7 +224,7 @@ export interface ChangeAction extends ActionDef {
   /** Only stops work and throws its leftovers away: runs at once, since a dialog would hold up the stopping. Still logged. */
   noDialog?: boolean;
   /** `page`: where DevCatz opens once the user allows it, so they watch it happen (a navigation target of App.vue). */
-  preview(args: Record<string, unknown>): Promise<{ title: string; facts: Extract<McatzpAsk, { kind: 'change' }>['facts']; page: string }>;
+  preview(args: Record<string, unknown>): Promise<{ title: string; facts: Extract<McatzpAsk, { kind: 'change' }>['facts']; page: string; typeName?: string }>;
 }
 
 interface Service {

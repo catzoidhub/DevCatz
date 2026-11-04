@@ -24,6 +24,10 @@ export const MCATZP_COVERAGE = {
   waCheckUpdates: 'tool: check_updates',
   gwCheckUpdates: 'tool: check_updates',
   servicesCheckUpdates: 'tool: check_updates',
+  // tool: clear_caught
+  exposeClearRequests: 'tool: clear_caught',
+  gwClearSms: 'tool: clear_caught',
+  waClearMessages: 'tool: clear_caught',
   // tool: clear_site_logs
   clearLogs: 'tool: clear_site_logs',
   // tool: create_database
@@ -55,6 +59,8 @@ export const MCATZP_COVERAGE = {
   envCreate: 'tool: env_create',
   // tool: env_generate_key
   envKeyGenerate: 'tool: env_generate_key',
+  // tool: env_remove_variable (whole-file edits: the Env tab)
+  envWrite: 'tool: env_remove_variable (whole-file edits: the Env tab)',
   // tool: env_write
   envMerge: 'tool: env_write',
   // tool: expose_cancel_install
@@ -66,14 +72,18 @@ export const MCATZP_COVERAGE = {
   exposeReplay: 'tool: expose_replay',
   // tool: expose_requests
   exposeRequests: 'tool: expose_requests',
+  // tool: forget_missing_site
+  missingRemove: 'tool: forget_missing_site',
+  // tool: free_site_deps
+  freeDeps: 'tool: free_site_deps',
   // tool: gateway_send
   gwSend: 'tool: gateway_send',
   // tool: get_status
   mailForwardConfig: 'tool: get_status',
   // tool: git_add_remote
   gitAddRemote: 'tool: git_add_remote',
-  // tool: git_branch (delete: later, destructive)
-  gitBranch: 'tool: git_branch (delete: later, destructive)',
+  // tool: git_branch (delete: git_branch_delete / git_tag_delete)
+  gitBranch: 'tool: git_branch (delete: git_branch_delete / git_tag_delete)',
   // tool: git_cancel
   gitCancel: 'tool: git_cancel',
   // tool: git_cancel_clone
@@ -84,10 +94,12 @@ export const MCATZP_COVERAGE = {
   gitCherryPick: 'tool: git_cherry_pick',
   // tool: git_clone
   gitClone: 'tool: git_clone',
-  // tool: git_commit (amend: later, destructive)
-  gitCommit: 'tool: git_commit (amend: later, destructive)',
+  // tool: git_commit (amend: git_amend)
+  gitCommit: 'tool: git_commit (amend: git_amend)',
   // tool: git_create_pull
   gitCreatePull: 'tool: git_create_pull',
+  // tool: git_discard
+  gitDiscard: 'tool: git_discard',
   // tool: git_ignore_add
   gitIgnoreAdd: 'tool: git_ignore_add',
   // tool: git_ignore_save
@@ -96,14 +108,22 @@ export const MCATZP_COVERAGE = {
   gitInit: 'tool: git_init',
   // tool: git_rebase
   gitOperation: 'tool: git_rebase',
+  // tool: git_reset
+  gitReset: 'tool: git_reset',
+  // tool: git_restore_file
+  gitRestoreFile: 'tool: git_restore_file',
+  // tool: git_revert
+  gitRevert: 'tool: git_revert',
+  // tool: git_squash
+  gitSquash: 'tool: git_squash',
   // tool: git_stage
   gitStage: 'tool: git_stage',
-  // tool: git_stash (drop: later, destructive)
-  gitStash: 'tool: git_stash (drop: later, destructive)',
-  // tool: git_sync (force push: later, destructive)
-  gitSync: 'tool: git_sync (force push: later, destructive)',
-  // tool: git_tag (delete: later, destructive)
-  gitTag: 'tool: git_tag (delete: later, destructive)',
+  // tool: git_stash (drop: git_stash_drop)
+  gitStash: 'tool: git_stash (drop: git_stash_drop)',
+  // tool: git_sync (force push: git_force_push)
+  gitSync: 'tool: git_sync (force push: git_force_push)',
+  // tool: git_tag (delete: git_branch_delete / git_tag_delete)
+  gitTag: 'tool: git_tag (delete: git_branch_delete / git_tag_delete)',
   // tool: git_unstage
   gitUnstage: 'tool: git_unstage',
   // tool: import_databases
@@ -165,6 +185,10 @@ export const MCATZP_COVERAGE = {
   gitSshKeys: 'tool: list_ssh_keys',
   // tool: locate_missing_site
   missingLocateApply: 'tool: locate_missing_site',
+  // tool: mail_delete
+  mailDelete: 'tool: mail_delete',
+  // tool: mail_delete_all
+  mailDeleteAll: 'tool: mail_delete_all',
   // tool: mail_forward
   mailForward: 'tool: mail_forward',
   // tool: mail_get
@@ -189,6 +213,9 @@ export const MCATZP_COVERAGE = {
   openapiIgnore: 'tool: openapi_gitignore',
   openapiUnignore: 'tool: openapi_gitignore',
   openapiUntrack: 'tool: openapi_gitignore',
+  // tool: openapi_remove
+  openapiRemoveFile: 'tool: openapi_remove',
+  openapiRemoveGenerator: 'tool: openapi_remove',
   // tool: park_folder
   parkFolder: 'tool: park_folder',
   // tool: park_restore
@@ -207,6 +234,12 @@ export const MCATZP_COVERAGE = {
   // tool: refresh_runtimes
   rescan: 'tool: refresh_runtimes',
   refreshRuntimes: 'tool: refresh_runtimes',
+  // tool: remove_db_build
+  dbBuildAction: 'tool: remove_db_build',
+  // tool: remove_php_extension
+  phpExtRemove: 'tool: remove_php_extension',
+  // tool: remove_site
+  removeProject: 'tool: remove_site',
   // tool: rename_db_group, delete_db_group
   dbGroupAction: 'tool: rename_db_group, delete_db_group',
   // tool: rename_site_group
@@ -233,26 +266,38 @@ export const MCATZP_COVERAGE = {
   rustToolchainInstall: 'tool: rust_toolchain',
   rustSetDefault: 'tool: rust_toolchain',
   rustTargetAdd: 'tool: rust_toolchain',
-  // tool: scout_command (flush: later, destructive)
-  scoutCommand: 'tool: scout_command (flush: later, destructive)',
+  // tool: scout_command (flush: scout_flush)
+  scoutCommand: 'tool: scout_command (flush: scout_flush)',
   // tool: search_add_documents
   searchUpsert: 'tool: search_add_documents',
   // tool: search_backups
   searchBackups: 'tool: search_backups',
   // tool: search_cancel_tasks
   searchCancelTasks: 'tool: search_cancel_tasks',
+  // tool: search_clear_tasks
+  searchClearTasks: 'tool: search_clear_tasks',
   // tool: search_create_backup
   searchCreateBackup: 'tool: search_create_backup',
   // tool: search_create_index
   searchCreateIndex: 'tool: search_create_index',
   // tool: search_create_key
   searchCreateKey: 'tool: search_create_key',
+  // tool: search_delete_backup
+  searchDeleteBackup: 'tool: search_delete_backup',
+  // tool: search_delete_document
+  searchDeleteDoc: 'tool: search_delete_document',
+  // tool: search_delete_index
+  searchDeleteIndex: 'tool: search_delete_index',
+  // tool: search_delete_key
+  searchDeleteKey: 'tool: search_delete_key',
   // tool: search_indexes
   searchIndexes: 'tool: search_indexes',
   // tool: search_keys
   searchKeys: 'tool: search_keys',
   // tool: search_query
   searchQuery: 'tool: search_query',
+  // tool: search_restore_backup
+  searchRestoreBackup: 'tool: search_restore_backup',
   // tool: search_save_settings
   searchSaveSettings: 'tool: search_save_settings',
   // tool: search_settings
@@ -391,6 +436,10 @@ export const MCATZP_COVERAGE = {
   s3CancelUpload: 'tool: storage_cancel_upload',
   // tool: storage_create_bucket
   s3CreateBucket: 'tool: storage_create_bucket',
+  // tool: storage_delete
+  s3Delete: 'tool: storage_delete',
+  // tool: storage_delete_bucket
+  s3DeleteBucket: 'tool: storage_delete_bucket',
   // tool: storage_list
   s3List: 'tool: storage_list',
   // tool: storage_make_folder
@@ -399,6 +448,28 @@ export const MCATZP_COVERAGE = {
   s3SetPublic: 'tool: storage_set_public',
   // tool: storage_upload
   s3Upload: 'tool: storage_upload',
+  // tool: uninstall_runtime
+  nodeUninstall: 'tool: uninstall_runtime',
+  bunUninstall: 'tool: uninstall_runtime',
+  goUninstall: 'tool: uninstall_runtime',
+  pythonUninstall: 'tool: uninstall_runtime',
+  phpUninstall: 'tool: uninstall_runtime',
+  // tool: uninstall_runtime_tool
+  toolUninstall: 'tool: uninstall_runtime_tool',
+  // tool: uninstall_rust_part
+  rustToolchainUninstall: 'tool: uninstall_rust_part',
+  rustToolUninstall: 'tool: uninstall_rust_part',
+  // tool: uninstall_service
+  dbRemove: 'tool: uninstall_service',
+  searchUninstall: 'tool: uninstall_service',
+  waUninstall: 'tool: uninstall_service',
+  gwUninstall: 'tool: uninstall_service',
+  wsUninstall: 'tool: uninstall_service',
+  storageUninstall: 'tool: uninstall_service',
+  // tool: uninstall_tunnel_tool
+  exposeUninstall: 'tool: uninstall_tunnel_tool',
+  // tool: unpark_folder
+  unparkFolder: 'tool: unpark_folder',
   // tool: update_runtime
   runtimeUpdate: 'tool: update_runtime',
   // tool: update_service
@@ -432,6 +503,10 @@ export const MCATZP_COVERAGE = {
   waHooks: 'tool: whatsapp_hooks',
   // tool: whatsapp_messages
   waMessages: 'tool: whatsapp_messages',
+  // tool: whatsapp_remove_hook
+  waRemoveHook: 'tool: whatsapp_remove_hook',
+  // tool: whatsapp_remove_session
+  waSessionRemove: 'tool: whatsapp_remove_session',
   // tool: whatsapp_replay
   waReplay: 'tool: whatsapp_replay',
   // tool: whatsapp_send
@@ -445,53 +520,10 @@ export const MCATZP_COVERAGE = {
   worktreeAdd: 'tool: worktree_add',
   // tool: worktree_create
   worktreeCreate: 'tool: worktree_create',
-  // later: destructive
-  dbBuildAction: 'later: destructive',
-  searchRestoreBackup: 'later: destructive',
-  envWrite: 'later: destructive',
-  unparkFolder: 'later: destructive',
-  missingRemove: 'later: destructive',
-  removeProject: 'later: destructive',
-  openapiRemoveFile: 'later: destructive',
-  openapiRemoveGenerator: 'later: destructive',
-  freeDeps: 'later: destructive',
-  nodeUninstall: 'later: destructive',
-  bunUninstall: 'later: destructive',
-  goUninstall: 'later: destructive',
-  rustToolchainUninstall: 'later: destructive',
-  rustToolUninstall: 'later: destructive',
-  toolUninstall: 'later: destructive',
-  pythonUninstall: 'later: destructive',
-  phpUninstall: 'later: destructive',
-  phpExtRemove: 'later: destructive',
-  dbRemove: 'later: destructive',
-  searchUninstall: 'later: destructive',
-  searchDeleteIndex: 'later: destructive',
-  searchDeleteDoc: 'later: destructive',
-  mailDelete: 'later: destructive',
-  mailDeleteAll: 'later: destructive',
-  exposeUninstall: 'later: destructive',
-  exposeClearRequests: 'later: destructive',
-  waUninstall: 'later: destructive',
-  gwUninstall: 'later: destructive',
-  gwClearSms: 'later: destructive',
-  waSessionRemove: 'later: destructive',
-  waClearMessages: 'later: destructive',
-  waRemoveHook: 'later: destructive',
-  gitDiscard: 'later: destructive',
-  worktreeRemove: 'later: destructive',
-  worktreePrune: 'later: destructive',
-  gitSquash: 'later: destructive',
-  gitRevert: 'later: destructive',
-  gitReset: 'later: destructive',
-  gitRestoreFile: 'later: destructive',
-  searchClearTasks: 'later: destructive',
-  searchDeleteBackup: 'later: destructive',
-  searchDeleteKey: 'later: destructive',
-  wsUninstall: 'later: destructive',
-  storageUninstall: 'later: destructive',
-  s3DeleteBucket: 'later: destructive',
-  s3Delete: 'later: destructive',
+  // tool: worktree_prune
+  worktreePrune: 'tool: worktree_prune',
+  // tool: worktree_remove
+  worktreeRemove: 'tool: worktree_remove',
   // never: a QR logs in a WhatsApp account
   waSessionQr: 'never: a QR logs in a WhatsApp account',
   // never: credentials (user, 2026-11-04)
