@@ -1351,6 +1351,12 @@ export function writeFiles(root: string, files: { path: string; content: string 
 // ------------------------------------------------------------------- compose
 
 /** `docker compose ps` for the file, with OrbStack URLs. */
+/** The folder of every running compose container on the engine in use, one per container (one call for all sites). */
+export async function runningComposeFolders(): Promise<string[]> {
+  const r = await run(bin(), [...cli.compose.slice(0, -1), 'ps', '--filter', 'label=com.docker.compose.project.working_dir', '--format', '{{.Label "com.docker.compose.project.working_dir"}}'], { timeout: 5000 }).catch(() => null);
+  return r?.code === 0 ? r.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+}
+
 export async function services(root: string, file: string, project: string | null): Promise<DockerService[]> {
   const args = [...cli.compose, '-f', file, ...(project ? ['-p', project] : []), 'ps', '-a', '--format', 'json'];
   const r = await run(bin(), args, { cwd: root, timeout: 10_000 });

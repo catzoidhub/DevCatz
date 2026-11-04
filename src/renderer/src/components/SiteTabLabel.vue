@@ -23,6 +23,7 @@ const gatewayStatus = (): ProcessStatus => {
     <StatusDot v-if="project.stack.database" :status="project.dbStatus" />
     <StatusDot v-if="project.stack.redis" :status="project.redisStatus" />
   </span>
+  <StatusDot v-if="t === 'docker' && (project.dockerRun || project.dockerUp)" :status="project.dockerRun ? 'starting' : 'running'" :title="project.dockerUp ? `${project.dockerUp} running` : undefined" />
   <StatusDot v-if="t === 'websocket'" :status="wsStatus" />
   <StatusDot v-if="t === 'search'" :status="searchStatus" />
   <StatusDot v-if="t === 'storage'" :status="s3Status" />

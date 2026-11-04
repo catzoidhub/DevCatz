@@ -719,6 +719,8 @@ export interface ProjectState extends ProjectConfig {
   dbTask: string | null;
   /** A compose command of the site in progress (Docker tab / Build ▾): one at a time per site. */
   dockerRun: { file: string; action: DockerAction; service: string | null; at: number } | null;
+  /** Compose containers of the site running now (checked every 10 s). */
+  dockerUp: number;
   exitCode: number | null;
   /** When the preview screenshot was taken (ms), null if there is none. */
   screenshotAt: number | null;

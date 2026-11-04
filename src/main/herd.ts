@@ -507,6 +507,8 @@ export class Herd extends EventEmitter {
     this.timers.push(setInterval(() => void this.pollPorts(), 1500));
     void this.pollPorts();
     this.timers.push(setInterval(() => void this.pollDatabases(), 5000));
+    this.timers.push(setInterval(() => void this.pollDocker(), 10_000));
+    void this.pollDocker();
     void this.pollDatabases();
     this.dbs.autoStart();
     this.timers.push(setTimeout(() => void this.dbs.prefetchVersions(), 20_000));
@@ -1930,6 +1932,28 @@ export class Herd extends EventEmitter {
       this.updateRoutes();
       this.changed();
     }
+  }
+
+  /** Compose containers running per site, for the Docker tab's dot. */
+  private dockerUp = new Map<string, number>();
+
+  private dockerPolls = 0;
+
+  private async pollDocker(): Promise<void> {
+    // Which engine to ask follows dockerStatus(), otherwise only called on a Docker tab; once a minute is enough for it.
+    if (this.dockerPolls++ % 6 === 0) await docker.dockerStatus().catch(() => undefined);
+    const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    const folders = (await docker.runningComposeFolders()).map(norm);
+    let dirty = false;
+    for (const p of this.projects) {
+      const root = norm(p.path);
+      const n = folders.filter((f) => f === root || f.startsWith(`${root}/`)).length;
+      if ((this.dockerUp.get(p.id) ?? 0) !== n) {
+        this.dockerUp.set(p.id, n);
+        dirty = true;
+      }
+    }
+    if (dirty) this.changed();
   }
 
   private async pollDatabases(): Promise<void> {
@@ -4956,6 +4980,7 @@ export class Herd extends EventEmitter {
       dbStatus: this.dbStates.get(p.id) ?? (this.stacks.get(p.id)?.database ? 'unknown' : 'none'),
       dbTask: this.dbTasks.get(p.id) ?? null,
       dockerRun: this.dockerRunInfo.get(p.id) ?? null,
+      dockerUp: this.dockerUp.get(p.id) ?? 0,
       redisStatus: this.redisStates.get(p.id) ?? (this.stacks.get(p.id)?.redis ? 'unknown' : 'none'),
       screenshotAt: screenshotTime(p.id),
       capturing: this.capturing.has(p.id),
