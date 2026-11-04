@@ -37,6 +37,11 @@ async function installMcatzp() {
   void loadTargets();
 }
 const targets = ref<McatzpTarget[]>([]);
+// What is on this computer first; the rest only when asked for.
+const showAllTargets = ref(false);
+const foundTargets = computed(() => targets.value.filter((t) => t.found || t.command !== null));
+const shownTargets = computed(() => (showAllTargets.value ? [...foundTargets.value, ...targets.value.filter((t) => !t.found && t.command === null)] : foundTargets.value));
+const hiddenTargets = computed(() => targets.value.length - foundTargets.value.length);
 const clientBusy = ref<string | null>(null);
 const clientChanged = ref<string | null>(null);
 const loadTargets = async () => {
@@ -181,7 +186,7 @@ const groups = computed(() => {
           <div v-if="targets.length">
             <span class="mb-2 flex flex-wrap items-center gap-2"><span class="label-caps">AI assistants</span><span class="badge badge-ghost badge-sm font-normal" title="Install or add it from any Catzoid app and the others use the same">Shared with Catzoid apps</span></span>
             <ul class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
-              <li v-for="t in targets" :key="t.id" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+              <li v-for="t in shownTargets" :key="t.id" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
                 <span class="status status-sm shrink-0" :class="t.current ? 'status-success' : t.command !== null ? 'status-warning' : 'opacity-30'" />
                 <div class="min-w-0 flex-1 basis-48">
                   <span class="font-medium">{{ t.label }}</span>
@@ -196,6 +201,7 @@ const groups = computed(() => {
                 </button>
               </li>
             </ul>
+          <button v-if="hiddenTargets" class="btn btn-ghost btn-xs mt-1" @click="showAllTargets = !showAllTargets">{{ showAllTargets ? 'Show only what is on this computer' : `Show ${hiddenTargets} not on this computer` }}</button>
             <p v-if="clientChanged" class="mt-2 text-xs opacity-70">Start a new session in {{ clientChanged }} so it picks up the change.</p>
           </div>
 
