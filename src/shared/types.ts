@@ -754,6 +754,8 @@ export interface ProjectState extends ProjectConfig {
 export type ThemeMode = 'system' | 'light' | 'dark';
 
 export interface Settings {
+  /** Settings → AI → MCatzP: the local channel an AI client reaches DevCatz through. Off by default. */
+  mcatzp?: boolean;
   /** Default domain suffix: `localhost` (no setup) or e.g. `test` (needs the resolver). */
   tld: string;
   /** Docker tab: run on DoCatz's engine while it runs (default), or always on the system's current docker context. */

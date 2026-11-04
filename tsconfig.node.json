@@ -9,7 +9,11 @@
     "resolveJsonModule": true,
     "types": ["node"],
     "baseUrl": ".",
-    "paths": { "@shared/*": ["src/shared/*"] }
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@catzoid/mcatzp-host": ["../MCatzP/packages/host/src/index.ts"],
+      "@catzoid/mcatzp-protocol": ["../MCatzP/packages/protocol/src/index.ts"]
+    }
   },
   "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
 }

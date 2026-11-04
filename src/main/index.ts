@@ -19,6 +19,7 @@ import { ENGINES } from './storage';
 import { SearchManager } from './search';
 import * as gitHosts from './githosts';
 import { MIGRATION_FLAG } from './migrate';
+import { Mcatzp } from './mcatzp';
 import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3UploadProgress, type Settings, type TaskProgress, type GwKind, type SearchKind, type StorageKind, type WaEngine, type WsKind } from '@shared/types';
 import { uninstall, uninstallPlan, UNINSTALL_STEPS } from './uninstall';
 import { isMac, isWin } from './platform';
@@ -38,6 +39,7 @@ const EDITORS = isWin
   : ['Visual Studio Code', 'Cursor', 'Zed', 'WebStorm', 'PhpStorm', 'Sublime Text', 'Nova'];
 
 let herd: Herd;
+let mcatzp: Mcatzp;
 let win: BrowserWindow | null = null;
 let tray: HerdTray | null = null;
 let quitting = false;
@@ -847,6 +849,7 @@ function api(): HerdApi {
     db: (id, action, arg) => herd.db(id, action, arg),
     updateSettings: async (patch) => {
       await herd.updateSettings(patch);
+      if (patch.mcatzp !== undefined) await mcatzp.set(patch.mcatzp);
       // Native parts (vibrancy, dialogs, menus) follow the chosen theme too; the other Catzoid apps follow it.
       if (patch.theme) {
         nativeTheme.themeSource = patch.theme;
@@ -1096,6 +1099,7 @@ async function quit(reason: string): Promise<void> {
   // and this is the backstop for anything else.
   const timeout = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 8000));
   try {
+    await Promise.race([mcatzp.set(false).catch(() => undefined), timeout]);
     const result = await Promise.race([herd.shutdown().then(() => 'done' as const), timeout]);
     console.log(`shutdown ${result}`);
   } catch (err) {
@@ -1185,6 +1189,8 @@ app.whenReady().then(async () => {
   setStatusPageIcon(join(RESOURCES, 'icon-192.png'));
   herd = new Herd();
   registerIpc();
+  mcatzp = new Mcatzp(api());
+  void mcatzp.set(store.settings.mcatzp === true).catch(() => undefined);
   void migrateAiToShared()
     .then(() => herd.emit('change'))
     .catch((e) => console.warn('AI settings migration:', e.message));

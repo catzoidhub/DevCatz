@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { app } from 'electron';
+import type { BridgeEntry } from '@catzoid/mcatzp-host';
 import type { AppInfo, ProjectConfig, SiteOpenApi, StackInfo } from '@shared/types';
 
 /**
@@ -53,27 +54,41 @@ export const bridgeFile = () => join(app.getPath('userData'), 'bridge.json');
 
 let last = '';
 let timer: ReturnType<typeof setTimeout> | null = null;
+let written: { sites: BridgeSite[]; gateways: BridgeGateway[]; services: BridgeGateway[] } | null = null;
+let mcatzp: BridgeEntry | null = null;
+
+function writeFile(): void {
+  if (!written) return;
+  try {
+    const file = bridgeFile();
+    const dir = join(file, '..');
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const tmp = `${file}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify({ schema: 1, app: 'DevCatz', written: new Date().toISOString(), ...written, ...(mcatzp ? { mcatzp } : {}) }, null, 2)}\n`, { mode: 0o600 });
+    chmodSync(tmp, 0o600);
+    renameSync(tmp, file);
+  } catch (e) {
+    console.warn('bridge.json could not be written:', (e as Error).message);
+  }
+}
 
 /** Writes bridge.json (debounced, only when it changed). */
 export function writeBridge(sites: BridgeSite[], gateways: BridgeGateway[] = [], services: BridgeGateway[] = []): void {
   const body = JSON.stringify([sites, gateways, services]);
   if (body === last) return;
   last = body;
+  written = { sites, gateways, services };
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
-    try {
-      const file = bridgeFile();
-      const dir = join(file, '..');
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const tmp = `${file}.tmp`;
-      writeFileSync(tmp, `${JSON.stringify({ schema: 1, app: 'DevCatz', written: new Date().toISOString(), sites, gateways, services }, null, 2)}\n`, { mode: 0o600 });
-      chmodSync(tmp, 0o600);
-      renameSync(tmp, file);
-    } catch (e) {
-      console.warn('bridge.json could not be written:', (e as Error).message);
-    }
+    writeFile();
   }, 400);
+}
+
+/** MCatzP's entry (MCatzP #4): how `mcatzp` finds this app's channel. Written at once when the switch flips. */
+export function setBridgeMcatzp(entry: BridgeEntry): void {
+  mcatzp = entry;
+  writeFile();
 }
 
 // ------------------------------------------------------------------ OpenAPI
