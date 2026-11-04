@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { ActionDef, CallResult } from '@catzoid/mcatzp-host';
 import type { AppState, DbEngine, DbEngineInfo, HerdApi, McatzpAsk, ProjectState, StorageAction } from '@shared/types';
 import { maskText } from '../ai/devcatz';
@@ -14,6 +15,9 @@ const SITE = { type: 'string', minLength: 1, maxLength: 200, description: "The s
 const ENGINE = { type: 'string', minLength: 1, maxLength: 40, description: 'A database engine from list_db_engines, such as mysql or postgresql.' };
 const DB_SERVICE = { type: 'string', minLength: 1, maxLength: 200, description: "A database service's id or name from list_services, or its engine when only one service runs it." };
 
+const RUNTIME = { type: 'string', enum: ['node', 'bun', 'go', 'python', 'php'] };
+type Runtime = 'node' | 'bun' | 'go' | 'python' | 'php';
+
 const reply = (data: unknown): CallResult => ({ text: JSON.stringify(data, null, 2), data });
 
 const appsOf = (p: ProjectState) => p.stack.apps.map((a) => ({ dir: a.dir, name: a.name, framework: a.framework, library: a.library ?? null, kind: a.kind, port: a.port }));
@@ -27,6 +31,10 @@ export function findSite(projects: Pick<ProjectState, 'id' | 'name' | 'domain'>[
   if (named.length > 1) throw new Error(`${named.length} sites are called ${ref}: use the id or domain (list_sites)`);
   if (!named.length) throw new Error(`No site ${ref} (list_sites shows them)`);
   return named[0].id;
+}
+
+function runtimeVersions(api: HerdApi, r: Runtime): Promise<{ version: string }[]> {
+  return r === 'node' ? api.nodeRemote() : r === 'bun' ? api.bunRemote() : r === 'go' ? api.goRemote() : r === 'python' ? api.pythonRemote() : api.phpRemote();
 }
 
 async function engineOf(api: HerdApi, engine: unknown): Promise<DbEngineInfo> {
@@ -142,14 +150,14 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
     }),
     ...(!scopes.services ? [] : [read('list_services', 'List services', 'The services DevCatz runs and whether they are up: databases, search engines, WebSocket servers, object storage, gateways, the mail catcher. No passwords or keys.', OBJECT(), async () => {
       const s = await state();
-      const svc = (x: { kind: string; name: string; installed: boolean; status: string; config: { version?: string | null } | null }) => ({ kind: x.kind, name: x.name, installed: x.installed, status: x.status, version: x.config?.version ?? null });
+      const svc = (x: { kind: string; name: string; installed: boolean; status: string; error: string | null; task: { error?: string | null } | null; config: { version?: string | null } | null }) => ({ kind: x.kind, name: x.name, installed: x.installed, status: x.task && !x.task.error ? 'installing' : x.status, error: x.task?.error ?? x.error, version: x.config?.version ?? null });
       return reply({
         databases: s.databases.map((d) => ({ id: d.id, name: d.name, engine: d.engine, version: d.version, port: d.port, status: d.pending ? 'creating' : d.status, error: d.task?.error ?? d.error, favorite: s.settings.dbFavorites.includes(d.id), group: s.settings.dbGroups.find((g) => g.sites.includes(d.id))?.name ?? null, linkedSites: d.linkedSites })),
         search: s.searchEngines.map(svc),
         websockets: s.websockets.map(svc),
         storage: s.storage.map(svc),
         gateways: s.gateways.map(svc),
-        whatsapp: s.whatsapp.map((w) => ({ kind: w.engine, name: w.name, installed: w.installed, status: w.status, version: w.config?.version ?? null })),
+        whatsapp: s.whatsapp.map((w) => svc({ ...w, kind: w.engine })),
         mail: { running: s.mail.running, count: s.mail.count, unread: s.mail.unread },
       });
     }),
@@ -166,9 +174,12 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
       const d = databaseOf(s, service);
       return reply({ service: d.name, databases: await api.dbList(d.id) });
     }),
+    read('list_runtime_versions', 'List runtime versions', 'The versions of a runtime (node, bun, go, python, php) that can be installed.', OBJECT({ runtime: RUNTIME }, ['runtime']), async ({ runtime }) => {
+      return reply((await runtimeVersions(api, runtime as Runtime)).map((v) => v.version));
+    }),
     read('list_runtimes', 'List runtimes', 'The installed versions of Node.js, Bun, Go, Python and PHP, and the default of each.', OBJECT(), async () => {
       const s = await state();
-      const rt = (r: { installed: { version: string }[]; defaultVersion: string | null }) => ({ installed: r.installed.map((v) => v.version), default: r.defaultVersion });
+      const rt = (r: { installed: { version: string }[]; defaultVersion: string | null; installing: { version: string; error?: string } | null }) => ({ installed: r.installed.map((v) => v.version), default: r.defaultVersion, installing: r.installing && !r.installing.error ? r.installing.version : null, error: r.installing?.error ?? null });
       return reply({ node: rt(s.node), bun: rt(s.bun), go: rt(s.go), python: rt(s.python), php: rt(s.php) });
     })]),
   ];
@@ -262,11 +273,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           },
           run: async (args) => {
             const { input } = await planService(api, args);
-            const created = api.dbCreate(input);
-            // A wrong name or port fails at once; a download goes on and shows in list_services and in DevCatz.
-            const quick = await Promise.race([created.then((id) => ({ id })), new Promise<null>((r) => setTimeout(() => r(null), 1500))]);
-            if (!quick) created.catch((e) => console.warn('MCatzP create_service:', (e as Error).message));
-            return reply({ service: input.name, result: quick ? 'Created' : 'Creating: list_services shows its progress' });
+            return inBackground(api.dbCreate(input), { service: input.name }, 'Created', 'Creating: list_services shows its progress');
           },
         },
         {
@@ -283,6 +290,42 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
             const d = databaseOf(await api.getState(), service);
             await api.dbCreateDatabase(d.id, String(name));
             return reply({ service: d.name, database: name, result: 'Created' });
+          },
+        },
+      ];
+  const installs: ChangeAction[] = !scopes.services
+    ? []
+    : [
+        {
+          name: 'install_service',
+          title: 'Install a service',
+          description: 'Installs a search engine, WebSocket server, object storage or gateway with DevCatz\'s defaults, the same as its install form. Answers while that goes on: list_services shows it as installing, then its status or error. Keys and passwords are never returned. DevCatz asks the user first.',
+          tier: 'change',
+          input: OBJECT({ service: { type: 'string', minLength: 1, maxLength: 60, description: 'A kind or name from list_services that is not installed yet, such as meilisearch.' } }, ['service']),
+          preview: async ({ service }) => {
+            const x = await installable(api, service);
+            return { title: `Install ${x.name}?`, facts: [{ label: 'Service', value: x.what }, ...(x.version ? [{ label: 'Version', value: x.version }] : []), { label: 'Port', value: String(x.port) }, { label: 'Domain', value: x.domain }] };
+          },
+          run: async ({ service }) => {
+            const x = await installable(api, service);
+            return inBackground(x.install(), { service: x.name }, 'Installed', 'Installing: list_services shows its progress');
+          },
+        },
+        {
+          name: 'install_runtime',
+          title: 'Install a runtime',
+          description: 'Installs a version of Node.js, Bun, Go, Python or PHP from list_runtime_versions. Answers while that goes on: list_runtimes shows it as installing. DevCatz asks the user first.',
+          tier: 'change',
+          input: OBJECT({ runtime: RUNTIME, version: { type: 'string', minLength: 1, maxLength: 40 } }, ['runtime', 'version']),
+          preview: async ({ runtime, version }) => {
+            const v = await runtimeVersionOf(api, runtime as Runtime, version);
+            return { title: `Install ${RUNTIME_NAMES[runtime as Runtime]} ${v}?`, facts: [{ label: 'Runtime', value: RUNTIME_NAMES[runtime as Runtime] }, { label: 'Version', value: v }] };
+          },
+          run: async ({ runtime, version }) => {
+            const r = runtime as Runtime;
+            const v = await runtimeVersionOf(api, r, version);
+            const go = r === 'node' ? api.nodeInstall(v) : r === 'bun' ? api.bunInstall(v) : r === 'go' ? api.goInstall(v) : r === 'python' ? api.pythonInstall(v) : api.phpInstall(v);
+            return inBackground(go, { runtime: r, version: v }, 'Installed', 'Installing: list_runtimes shows its progress');
           },
         },
       ];
@@ -325,7 +368,49 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
       },
     } satisfies ChangeAction]),
   ]);
-  return [...lifecycle, ...creates];
+  return [...lifecycle, ...creates, ...installs];
+}
+
+const RUNTIME_NAMES: Record<Runtime, string> = { node: 'Node.js', bun: 'Bun', go: 'Go', python: 'Python', php: 'PHP' };
+
+async function runtimeVersionOf(api: HerdApi, r: Runtime, version: unknown): Promise<string> {
+  const found = (await runtimeVersions(api, r)).find((v) => v.version === version);
+  if (!found) throw new Error(`No ${RUNTIME_NAMES[r]} version ${String(version)} (list_runtime_versions shows them)`);
+  return found.version;
+}
+
+/** A wrong value fails at once; a download goes on, shown in DevCatz and in the list actions. */
+async function inBackground(work: Promise<unknown>, about: Record<string, unknown>, done: string, going: string): Promise<CallResult> {
+  const quick = await Promise.race([work.then(() => true), new Promise<false>((r) => setTimeout(() => r(false), 1500))]);
+  if (!quick) work.catch((e) => console.warn('MCatzP:', (e as Error).message));
+  return reply({ ...about, result: quick ? done : going });
+}
+
+/** A key the form would ask for: generated here, so the assistant never sets or sees one. */
+const newSecret = () => randomBytes(24).toString('hex');
+
+/** A service that can be installed now, with its install call on DevCatz's defaults. */
+async function installable(api: HerdApi, ref: unknown) {
+  const s = await api.getState();
+  const fill = <T extends object>(c: T, keys: (keyof T)[]): T => {
+    const out = { ...c };
+    for (const k of keys) if (out[k] === '') out[k] = newSecret() as T[keyof T];
+    return out;
+  };
+  const all = [
+    ...s.searchEngines.map((x) => ({ ref: x.kind, name: x.name, what: 'Search engine', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.searchInstall(x.kind, x.fields.key ? fill(x.defaults, ['key']) : x.defaults) })),
+    ...s.websockets.map((x) => ({ ref: x.kind, name: x.name, what: 'WebSocket server', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.wsInstall(x.kind, fill(x.defaults, [...(x.fields.key ? (['key'] as const) : []), ...(x.fields.secret ? (['secret'] as const) : [])])) })),
+    ...s.storage.map((x) => ({ ref: x.kind, name: x.name, what: 'Object storage', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.apiPort, domain: x.defaults.apiDomain, install: () => api.storageInstall(x.kind, x.defaults) })),
+    ...s.gateways.map((x) => ({ ref: x.kind, name: x.name, what: 'Gateway', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.gwInstall(x.kind, fill(x.defaults, ['password'])) })),
+    ...s.whatsapp.map((x) => ({ ref: x.engine as string, name: x.name, what: 'WhatsApp gateway', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.waInstall(x.engine, fill(x.defaults, ['apiKey'])) })),
+  ];
+  const r = String(ref).trim().toLowerCase();
+  const x = all.find((a) => a.ref.toLowerCase() === r || a.name.toLowerCase() === r);
+  if (!x) throw new Error(`No service ${String(ref)} to install (list_services shows them; databases go through create_service)`);
+  if (x.installed) throw new Error(`${x.name} is already installed`);
+  if (x.busy) throw new Error(`${x.name} is already being installed (list_services shows its progress)`);
+  if (x.unavailable) throw new Error(x.unavailable);
+  return x;
 }
 
 /** What create_service will make: DevCatz's own defaults for the rest, as in its form (the assistant never sets a password). */
