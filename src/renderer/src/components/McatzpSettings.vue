@@ -178,7 +178,7 @@ const groups = computed(() => {
           <p class="text-xs opacity-60">One connection, every cat.</p>
         </div>
       </div>
-      <label class="flex cursor-pointer items-start gap-3">
+      <label class="mt-2 flex cursor-pointer items-start gap-3">
         <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5" :checked="on" @change="save({ mcatzp: ($event.target as HTMLInputElement).checked })" />
         <span>
           Let AI assistants use DevCatz through MCatzP
