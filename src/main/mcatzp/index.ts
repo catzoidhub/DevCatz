@@ -13,7 +13,7 @@ const PAIR_WAIT_MS = 150_000;
 const CHANGE_WAIT_MS = 9 * 60_000;
 
 /**
- * DevCatz's end of MCatzP: the local channel from the shared host, open only while Settings → AI → MCatzP is on.
+ * DevCatz's end of MCatzP: the local channel from the shared host, open only while Settings → MCatzP is on.
  * Approved clients and what is shared live in the settings, the activity log in its own file (TODO §33). All of it
  * goes through the host's hooks, so it can move into @catzoid/mcatzp-host once a second app needs the same.
  */

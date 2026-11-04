@@ -3,7 +3,6 @@ import { currentOS, keyLabel, words } from '@shared/platform';
 import { computed, ref, watch } from 'vue';
 import { AI_FEATURES, AI_PROVIDERS, aiProvider, type AiFeature, type AiProvider, type AiSettingsPatch } from '@shared/types';
 import AiModelPicker from './AiModelPicker.vue';
-import McatzpSettings from './McatzpSettings.vue';
 import { attempt, herd, notify, state } from '../store';
 
 /**
@@ -98,8 +97,6 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
 </script>
 
 <template>
-  <McatzpSettings />
-
   <div class="card">
     <div class="card-body gap-3 p-4">
       <h2 class="font-semibold">AI</h2>

@@ -5,7 +5,7 @@ import type { McatzpActivity, Settings } from '@shared/types';
 import mcatzpLogo from '../assets/logos/mcatzp.svg';
 import { attempt, herd, state } from '../store';
 
-/** Settings → AI → MCatzP: the switch, what is shared, the approved clients and what they did. */
+/** Settings → MCatzP: the switch, what is shared, the approved clients and what they did. */
 const s = computed(() => state.value!.settings);
 const on = computed(() => s.value.mcatzp === true);
 const sites = computed(() => [...state.value!.projects].filter((p) => !p.worktreeOf).sort((a, b) => a.name.localeCompare(b.name)));

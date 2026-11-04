@@ -21,7 +21,17 @@ const answer = (a: 'deny' | 'once' | 'session') => {
         <!-- The way the request travels: MCatzP → this app. -->
         <div class="flex items-center gap-3" role="img" aria-label="MCatzP to DevCatz">
           <img :src="mcatzpLogo" alt="" class="size-14 rounded-2xl shadow-sm" draggable="false" />
-          <svg viewBox="0 0 24 24" class="size-6 shrink-0 opacity-50" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+          <!-- Still on purpose: nothing here moves, a waiting dialog must not cost CPU. -->
+          <svg viewBox="0 0 64 24" class="h-6 w-16 shrink-0" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <defs>
+              <linearGradient id="mcatzp-to-app" gradientUnits="userSpaceOnUse" x1="4" y1="12" x2="60" y2="12">
+                <stop offset="0" stop-color="#FF8DBE" />
+                <stop offset="1" stop-color="#8E7BFF" />
+              </linearGradient>
+            </defs>
+            <circle cx="5" cy="12" r="2.5" fill="url(#mcatzp-to-app)" />
+            <path d="M12 12h46M50 5l8 7-8 7" stroke="url(#mcatzp-to-app)" stroke-width="2.5" />
+          </svg>
           <img :src="devcatzLogo" alt="" class="size-14 rounded-2xl shadow-sm" draggable="false" />
         </div>
         <template v-if="ask.kind === 'pair'">
@@ -36,7 +46,7 @@ const answer = (a: 'deny' | 'once' | 'session') => {
             </ul>
             <p class="mt-2 border-t border-base-300/60 pt-2 text-xs opacity-70">It can also ask to start, stop and restart sites and services; DevCatz asks you first. What it reads goes to that assistant's model provider.</p>
           </div>
-          <p class="text-xs opacity-60">You can revoke this in Settings → AI → MCatzP. The name is what the client says about itself: if you did not just start it, choose Don't Allow.</p>
+          <p class="text-xs opacity-60">You can revoke this in Settings → MCatzP. The name is what the client says about itself: if you did not just start it, choose Don't Allow.</p>
           <div class="flex w-full gap-2">
             <button class="btn btn-sm flex-1" autofocus @click="answer('deny')">Don't Allow</button>
             <button class="btn btn-primary btn-sm flex-1" @click="answer('once')">Allow</button>

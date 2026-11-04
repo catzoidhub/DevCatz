@@ -766,7 +766,7 @@ export interface ProjectState extends ProjectConfig {
 export type ThemeMode = 'system' | 'light' | 'dark';
 
 export interface Settings {
-  /** Settings → AI → MCatzP: the local channel an AI client reaches DevCatz through. Off by default. */
+  /** Settings → MCatzP: the local channel an AI client reaches DevCatz through. Off by default. */
   mcatzp?: boolean;
   /** Every site is shared with MCatzP clients, new ones too. Off: only `mcatzpSites`, none at first. */
   mcatzpAllSites?: boolean;

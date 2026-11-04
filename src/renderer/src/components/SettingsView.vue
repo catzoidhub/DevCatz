@@ -4,6 +4,7 @@ import { confirmCleanUrls, confirmResolver, confirmTrustCa } from '../confirms';
 import { currentOS, words } from '@shared/platform';
 import PageHeader from './PageHeader.vue';
 import AiSettings from './AiSettings.vue';
+import McatzpSettings from './McatzpSettings.vue';
 import AboutCard from './AboutCard.vue';
 import ParkDialog from './ParkDialog.vue';
 import UpdatesCard from './UpdatesCard.vue';
@@ -141,6 +142,7 @@ const openSection = (section: 'websocket' | 'search', id: string) => (navRequest
 const ALL_TABS = [
   { id: 'general', label: 'General' },
   { id: 'ai', label: 'AI' },
+  { id: 'mcatzp', label: 'MCatzP' },
   { id: 'project', label: 'Project' },
   { id: 'database', label: 'Database' },
   { id: 'storage', label: 'Object Storage' },
@@ -882,6 +884,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
 
     <!-- Monitoring -->
     <AiSettings v-if="tab === 'ai'" />
+    <McatzpSettings v-if="tab === 'mcatzp'" />
     <div v-if="tab === 'monitoring'" class="card">
       <div class="card-body gap-4">
         <h2 class="font-semibold">Sampling</h2>

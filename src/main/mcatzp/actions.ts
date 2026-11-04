@@ -36,14 +36,14 @@ export function envNames(content: string): string[] {
   return [...names];
 }
 
-/** What the user shares (Settings → AI → MCatzP). */
+/** What the user shares (Settings → MCatzP). */
 export interface Scopes {
   site(id: string): boolean;
   services: boolean;
   changes: boolean;
 }
 
-const NOTHING_SHARED = 'No sites are shared with MCatzP yet: the user chooses them in DevCatz, Settings → AI → MCatzP.';
+const NOTHING_SHARED = 'No sites are shared with MCatzP yet: the user chooses them in DevCatz, Settings → MCatzP.';
 
 export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
   const state = (): Promise<AppState> => api.getState();
