@@ -1499,7 +1499,7 @@ export interface McatzpSetup {
 }
 /** An AI assistant MCatzP can be added to. */
 export interface McatzpTarget {
-  id: 'claude-code' | 'zcode' | 'claude-desktop' | 'cursor' | 'windsurf' | 'vscode' | 'cline' | 'gemini' | 'codex';
+  id: 'claude-code' | 'zcode' | 'claude-desktop' | 'cursor' | 'windsurf' | 'vscode' | 'cline' | 'gemini' | 'codex' | 'opencode';
   label: string;
   /** It is on this computer. */
   found: boolean;
@@ -1507,6 +1507,8 @@ export interface McatzpTarget {
   command: string | null;
   /** The entry runs the copy in use. */
   current: boolean;
+  /** The account signed in to it, when the assistant keeps that on this computer. */
+  account?: string;
 }
 export interface McatzpInstallProgress {
   phase: 'download' | 'install';

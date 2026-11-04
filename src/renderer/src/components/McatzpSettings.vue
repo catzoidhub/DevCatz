@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { words } from '@shared/platform';
 import type { McatzpActivity, McatzpSetup, McatzpTarget, Settings } from '@shared/types';
 import mcatzpLogo from '../assets/logos/mcatzp.svg';
+import { STACK_ICONS } from '../stackicons';
+import StackMark from './StackMark.vue';
 import CatMood from './CatMood.vue';
 import { attempt, herd, state } from '../store';
 
@@ -99,11 +101,24 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
+const MARK: Record<McatzpTarget['id'], string> = { 'claude-code': 'claude', 'claude-desktop': 'claude', zcode: 'zcode', cursor: 'cursor', windsurf: 'windsurf', vscode: 'visualstudiocode', cline: 'cline', gemini: 'googlegemini', codex: 'openai', opencode: 'opencode' };
+/** Which listed assistant a client is, by the name it gives itself; null for any other, which keeps its initial. */
+function clientTarget(name: string): McatzpTarget['id'] | null {
+  const n = name.toLowerCase().replace(/[^a-z]/g, '');
+  if (n.startsWith('claudecode')) return 'claude-code';
+  if (n.startsWith('claude')) return 'claude-desktop';
+  if (n.startsWith('visualstudiocode') || n.startsWith('vscode')) return 'vscode';
+  if (n.startsWith('gemini')) return 'gemini';
+  return (['zcode', 'cursor', 'windsurf', 'cline', 'codex', 'opencode'] as const).find((id) => n.startsWith(id)) ?? null;
+}
+
 /** Each approved client with what the log knows about it, the most recent first. */
 const clients = computed(() => {
   const list = (s.value.mcatzpClients ?? []).map((c) => {
     const own = activity.value.filter((a) => a.client === c.name && a.action);
-    return { ...c, last: own[0]?.time ?? null, calls: own.length };
+    const id = clientTarget(c.name);
+    const mark = id ? MARK[id] : null;
+    return { ...c, last: own[0]?.time ?? null, calls: own.length, mark, account: targets.value.find((t) => t.id === id)?.account };
   });
   return list.sort((a, b) => (b.last ?? b.approvedAt).localeCompare(a.last ?? a.approvedAt));
 });
@@ -185,19 +200,20 @@ const groups = computed(() => {
         <div v-if="section === 'clients'" class="flex flex-col gap-4">
           <div v-if="targets.length">
             <span class="mb-2 flex flex-wrap items-center gap-2"><span class="label-caps">AI assistants</span><span class="badge badge-ghost badge-sm font-normal" title="Install or add it from any Catzoid app and the others use the same">Shared with Catzoid apps</span></span>
-            <ul class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
-              <li v-for="t in shownTargets" :key="t.id" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-                <span class="status status-sm shrink-0" :class="t.current ? 'status-success' : t.command !== null ? 'status-warning' : 'opacity-30'" />
-                <div class="min-w-0 flex-1 basis-48">
-                  <span class="font-medium">{{ t.label }}</span>
-                  <span v-if="!t.found" class="block text-xs opacity-60">Not found on this computer</span>
-                  <span v-else-if="t.current" class="block text-xs opacity-60">Added, using this copy</span>
-                  <span v-else-if="t.command !== null" class="block truncate text-xs opacity-60" :title="t.command">Runs another copy: {{ t.command }}</span>
-                  <span v-else class="block text-xs opacity-60">Not added yet</span>
+            <ul class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+              <li v-for="t in shownTargets" :key="t.id" class="flex min-w-0 items-center gap-2.5 rounded-box border border-base-300/60 p-2.5 text-sm" :class="{ 'opacity-60': !t.found && t.command === null }">
+                <StackMark :icon="STACK_ICONS[MARK[t.id]]" :label="t.label" class="size-7 shrink-0" />
+                <div class="min-w-0 flex-1">
+                  <p class="flex items-center gap-1.5 font-medium"><span class="truncate">{{ t.label }}</span><span v-if="t.command !== null" class="status status-xs shrink-0" :class="t.current ? 'status-success' : 'status-warning'" /></p>
+                  <p class="truncate text-xs opacity-60" :title="t.command ?? t.account ?? ''">
+                    <template v-if="t.command !== null && !t.current">Runs another copy</template>
+                    <template v-else-if="t.account">{{ t.current ? 'Added · ' : '' }}{{ t.account }}</template>
+                    <template v-else>{{ !t.found ? 'Not on this computer' : t.current ? 'Added' : 'Not added' }}</template>
+                  </p>
                 </div>
-                <button v-if="t.command !== null" class="btn btn-ghost btn-xs" :disabled="clientBusy === t.id" @click="removeClient(t)">Remove</button>
-                <button v-if="t.found && !t.current" class="btn btn-sm" :disabled="!setup?.path || clientBusy === t.id" :title="setup?.path ? '' : 'Install MCatzP first'" @click="addClient(t)">
-                  <span v-if="clientBusy === t.id" class="loading loading-spinner loading-xs" />{{ t.command !== null ? 'Use this copy' : `Add to ${t.label}` }}
+                <button v-if="t.command !== null" class="btn btn-ghost btn-xs shrink-0" :disabled="clientBusy === t.id" @click="removeClient(t)">Remove</button>
+                <button v-if="t.found && !t.current" class="btn btn-xs shrink-0" :disabled="!setup?.path || clientBusy === t.id" :title="setup?.path ? `Add MCatzP to ${t.label}` : 'Install MCatzP first'" @click="addClient(t)">
+                  <span v-if="clientBusy === t.id" class="loading loading-spinner loading-xs" />{{ t.command !== null ? 'Use this copy' : 'Add' }}
                 </button>
               </li>
             </ul>
@@ -210,10 +226,11 @@ const groups = computed(() => {
             <p v-if="!s.mcatzpClients?.length" class="text-xs opacity-60">None yet. A client asks in DevCatz the first time it connects, and shows up here once you allow it.</p>
             <ul v-else class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
             <li v-for="c in clients" :key="c.name" class="flex items-center gap-3 px-3 py-2.5">
-              <span class="avatar-letter" aria-hidden="true">{{ c.name.slice(0, 1).toUpperCase() }}</span>
+              <StackMark v-if="c.mark" :icon="STACK_ICONS[c.mark]" :label="c.name" class="size-9 shrink-0" />
+              <span v-else class="avatar-letter" aria-hidden="true">{{ c.name.slice(0, 1).toUpperCase() }}</span>
               <div class="min-w-0 flex-1">
                 <p class="selectable truncate text-sm font-medium">{{ c.name }}</p>
-                <p class="truncate text-xs opacity-60">Approved {{ day(c.approvedAt) }}<template v-if="c.last"> · last call {{ when(c.last) }} · {{ c.calls }} {{ c.calls === 1 ? 'call' : 'calls' }}</template></p>
+                <p class="truncate text-xs opacity-60"><template v-if="c.account">{{ c.account }} · </template>Approved {{ day(c.approvedAt) }}<template v-if="c.last"> · last call {{ when(c.last) }} · {{ c.calls }} {{ c.calls === 1 ? 'call' : 'calls' }}</template></p>
               </div>
               <button class="btn btn-sm" @click="revoke(c.name)">Revoke</button>
             </li>
