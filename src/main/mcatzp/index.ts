@@ -13,6 +13,7 @@ import { devChanges } from './devchanges';
 import { moreReads } from './reads';
 import { serviceChanges } from './servicechanges';
 import { siteChanges } from './sitechanges';
+import { windowChanges, windowReads } from './windowactions';
 
 /** Unanswered questions lapse before MCatzP stops waiting (3 and 10 minutes), so a late Allow never runs for nobody. */
 const PAIR_WAIT_MS = 150_000;
@@ -41,7 +42,7 @@ export class Mcatzp {
     this.host = new McatzpHost({
       app: { id: 'devcatz', name: 'DevCatz', version: app.getVersion() },
       dataDir: app.getPath('userData'),
-      actions: () => [...readActions(api, this.scopes()), ...moreReads(api, this.scopes()), ...this.changes()],
+      actions: () => [...readActions(api, this.scopes()), ...moreReads(api, this.scopes()), ...windowReads(api, this.scopes()), ...this.changes()],
       isPaired: (name) => (store.settings.mcatzpClients ?? []).some((c) => c.name === name),
       onPaired: (name) => store.updateSettings({ mcatzpClients: [...(store.settings.mcatzpClients ?? []), { name, approvedAt: new Date().toISOString() }] }),
       // A site named in the call must be shared; one that does not exist answers with its own error in run().
@@ -63,7 +64,7 @@ export class Mcatzp {
         const { page, ...question } = preview;
         const answer = await this.ask({ id: randomUUID(), kind: 'change', client: req.client, allowSession: req.allowSession, ...question }, CHANGE_WAIT_MS, req.signal);
         // The user is right here and just said yes: take them to what is happening. Not for allowed-for-the-session calls.
-        if (answer !== 'deny' && !req.signal.aborted) this.open(page);
+        if (answer !== 'deny' && !req.signal.aborted && page) this.open(page);
         return answer;
       },
       log: (e) => this.activity.add(e),
@@ -108,7 +109,7 @@ export class Mcatzp {
   }
 
   private changes(): ChangeAction[] {
-    return [...changeActions(this.api, this.scopes()), ...devChanges(this.api, this.scopes()), ...siteChanges(this.api, this.scopes()), ...serviceChanges(this.api, this.scopes()), ...destructiveActions(this.api, this.scopes())];
+    return [...changeActions(this.api, this.scopes()), ...devChanges(this.api, this.scopes()), ...siteChanges(this.api, this.scopes()), ...serviceChanges(this.api, this.scopes()), ...destructiveActions(this.api, this.scopes()), ...windowChanges(this.api, this.scopes())];
   }
 
   /** What is shared changed: connected clients get the new list of tools. */

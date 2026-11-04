@@ -7,6 +7,12 @@ import type { HerdApi } from '@shared/types';
  * file picker, this app's own updater or AI buttons). `never: …`: left out on purpose, with why.
  */
 export const MCATZP_COVERAGE = {
+  // tool: arrange_db_list
+  dbSetOrder: 'tool: arrange_db_list',
+  // tool: arrange_site_list
+  toggleGroup: 'tool: arrange_site_list',
+  moveGroup: 'tool: arrange_site_list',
+  setSiteOrder: 'tool: arrange_site_list',
   // tool: build_site
   buildSite: 'tool: build_site',
   // tool: cancel_install
@@ -17,6 +23,8 @@ export const MCATZP_COVERAGE = {
   gwCancelInstall: 'tool: cancel_install',
   wsCancelInstall: 'tool: cancel_install',
   storageCancelInstall: 'tool: cancel_install',
+  // tool: check_app_update
+  appUpdateCheck: 'tool: check_app_update',
   // tool: check_updates
   rustToolsCheck: 'tool: check_updates',
   checkUpdates: 'tool: check_updates',
@@ -39,6 +47,13 @@ export const MCATZP_COVERAGE = {
   deleteGroup: 'tool: delete_site_group',
   // tool: deps_report
   depsReport: 'tool: deps_report',
+  // tool: dismiss_notice
+  dialcatzDismiss: 'tool: dismiss_notice',
+  docatzDismiss: 'tool: dismiss_notice',
+  phpExtDismiss: 'tool: dismiss_notice',
+  dbDismiss: 'tool: dismiss_notice',
+  dbcatzDismiss: 'tool: dismiss_notice',
+  taskDismiss: 'tool: dismiss_notice',
   // tool: docker_cancel
   dockerCancel: 'tool: docker_cancel',
   // tool: docker_compose
@@ -129,6 +144,14 @@ export const MCATZP_COVERAGE = {
   // tool: import_databases
   dbImportOne: 'tool: import_databases',
   dbImportList: 'tool: import_databases',
+  // tool: install_cancel_catzoid_app
+  dialcatzCancelInstall: 'tool: install_cancel_catzoid_app',
+  docatzCancelInstall: 'tool: install_cancel_catzoid_app',
+  dbcatzCancelInstall: 'tool: install_cancel_catzoid_app',
+  // tool: install_catzoid_app
+  dialcatzInstall: 'tool: install_catzoid_app',
+  docatzInstall: 'tool: install_catzoid_app',
+  dbcatzInstall: 'tool: install_catzoid_app',
   // tool: install_composer
   composerInstall: 'tool: install_composer',
   // tool: install_deps
@@ -205,6 +228,34 @@ export const MCATZP_COVERAGE = {
   monitorHistory: 'tool: monitor_history',
   // tool: monitor_snapshot
   monitorSnapshot: 'tool: monitor_snapshot',
+  // tool: open_data_folder
+  dbOpenData: 'tool: open_data_folder',
+  searchOpenData: 'tool: open_data_folder',
+  mailOpenData: 'tool: open_data_folder',
+  waOpenData: 'tool: open_data_folder',
+  gwOpenData: 'tool: open_data_folder',
+  wsOpenData: 'tool: open_data_folder',
+  storageOpenData: 'tool: open_data_folder',
+  // tool: open_in_dbcatz
+  dbcatzOpen: 'tool: open_in_dbcatz',
+  // tool: open_in_dialcatz
+  dialcatzOpen: 'tool: open_in_dialcatz',
+  // tool: open_in_docatz
+  docatzOpen: 'tool: open_in_docatz',
+  docatzOpenGateway: 'tool: open_in_docatz',
+  // tool: open_logs_folder
+  openLogsFolder: 'tool: open_logs_folder',
+  // tool: open_php_ini
+  phpOpenIni: 'tool: open_php_ini',
+  // tool: open_site
+  openFolder: 'tool: open_site',
+  openEditor: 'tool: open_site',
+  openTerminal: 'tool: open_site',
+  // tool: open_site_file
+  openapiReveal: 'tool: open_site_file',
+  gitOpenFile: 'tool: open_site_file',
+  // tool: open_url, open_site
+  openUrl: 'tool: open_url, open_site',
   // tool: openapi_add_generator
   addOpenApi: 'tool: openapi_add_generator',
   // tool: openapi_create
@@ -397,6 +448,9 @@ export const MCATZP_COVERAGE = {
   redisDetails: 'tool: site_redis',
   // tool: site_runtime_needs
   siteRuntimeNeeds: 'tool: site_runtime_needs',
+  // tool: site_screenshot
+  getScreenshot: 'tool: site_screenshot',
+  refreshScreenshot: 'tool: site_screenshot',
   // tool: site_service_env
   mailEnv: 'tool: site_service_env',
   gwEnv: 'tool: site_service_env',
@@ -526,6 +580,11 @@ export const MCATZP_COVERAGE = {
   worktreeRemove: 'tool: worktree_remove',
   // never: a QR logs in a WhatsApp account
   waSessionQr: 'never: a QR logs in a WhatsApp account',
+  // never: a client must not answer its own questions or clear its trail
+  mcatzpAnswer: 'never: a client must not answer its own questions or clear its trail',
+  mcatzpActivity: 'never: a client must not answer its own questions or clear its trail',
+  mcatzpClearActivity: 'never: a client must not answer its own questions or clear its trail',
+  mcatzpRevoke: 'never: a client must not answer its own questions or clear its trail',
   // never: credentials (user, 2026-11-04)
   mailSetForwardConfig: 'never: credentials (user, 2026-11-04)',
   exposeCloudflareLogin: 'never: credentials (user, 2026-11-04)',
@@ -537,6 +596,12 @@ export const MCATZP_COVERAGE = {
   gitRemoveAccount: 'never: credentials (user, 2026-11-04)',
   gitSshGenerate: 'never: credentials (user, 2026-11-04)',
   gitSshAddToAccount: 'never: credentials (user, 2026-11-04)',
+  // never: reports go out in the users name
+  reportPreview: 'never: reports go out in the users name',
+  reportSend: 'never: reports go out in the users name',
+  reportError: 'never: reports go out in the users name',
+  setCrashReports: 'never: reports go out in the users name',
+  crashAskDismiss: 'never: reports go out in the users name',
   // never: signs with the server secret
   wsClientAuth: 'never: signs with the server secret',
   // never: system security, needs an administrator (user, 2026-11-04)
@@ -550,6 +615,13 @@ export const MCATZP_COVERAGE = {
   uninstallPlan: 'never: the app itself (user, 2026-11-04)',
   uninstall: 'never: the app itself (user, 2026-11-04)',
   updateSettings: 'never: the app itself (user, 2026-11-04)',
+  // never: updating the app itself stays with the user
+  appUpdateDownload: 'never: updating the app itself stays with the user',
+  appUpdateCancel: 'never: updating the app itself stays with the user',
+  appUpdateRestart: 'never: updating the app itself stays with the user',
+  appUpdateSkip: 'never: updating the app itself stays with the user',
+  appUpdateInstallOnQuit: 'never: updating the app itself stays with the user',
+  appUpdatePrefs: 'never: updating the app itself stays with the user',
   // not a tool
   searchImportFile: 'not a tool',
   mailSaveAttachment: 'not a tool',
@@ -560,59 +632,14 @@ export const MCATZP_COVERAGE = {
   mailAttachmentData: 'not a tool',
   pickFolder: 'not a tool',
   aboutInfo: 'not a tool',
-  appUpdateCheck: 'not a tool',
-  appUpdateDownload: 'not a tool',
-  appUpdateCancel: 'not a tool',
-  appUpdateRestart: 'not a tool',
-  appUpdateSkip: 'not a tool',
-  appUpdateInstallOnQuit: 'not a tool',
-  appUpdatePrefs: 'not a tool',
-  reportPreview: 'not a tool',
-  reportSend: 'not a tool',
   captureWindow: 'not a tool',
-  reportError: 'not a tool',
-  setCrashReports: 'not a tool',
-  crashAskDismiss: 'not a tool',
-  openapiReveal: 'not a tool',
-  mcatzpAnswer: 'not a tool',
-  mcatzpActivity: 'not a tool',
-  mcatzpClearActivity: 'not a tool',
-  mcatzpRevoke: 'not a tool',
-  dialcatzOpen: 'not a tool',
-  dialcatzInstall: 'not a tool',
-  dialcatzCancelInstall: 'not a tool',
-  dialcatzDismiss: 'not a tool',
-  docatzOpen: 'not a tool',
-  docatzOpenGateway: 'not a tool',
   docatzInstallGateway: 'not a tool',
-  docatzInstall: 'not a tool',
-  docatzCancelInstall: 'not a tool',
-  docatzDismiss: 'not a tool',
-  openUrl: 'not a tool',
-  openFolder: 'not a tool',
-  openEditor: 'not a tool',
-  openTerminal: 'not a tool',
   revealCa: 'not a tool',
   quitApp: 'not a tool',
   takePendingNav: 'not a tool',
-  getScreenshot: 'not a tool',
-  refreshScreenshot: 'not a tool',
-  phpExtDismiss: 'not a tool',
-  phpOpenIni: 'not a tool',
-  dbDismiss: 'not a tool',
-  dbOpenData: 'not a tool',
   dbOpenBinaries: 'not a tool',
-  dbcatzOpen: 'not a tool',
-  dbcatzInstall: 'not a tool',
-  dbcatzCancelInstall: 'not a tool',
-  dbcatzDismiss: 'not a tool',
   monitorLive: 'not a tool',
   monitorExport: 'not a tool',
-  searchOpenData: 'not a tool',
-  mailOpenData: 'not a tool',
-  waOpenData: 'not a tool',
-  taskDismiss: 'not a tool',
-  gwOpenData: 'not a tool',
   aiSettings: 'not a tool',
   aiSetSettings: 'not a tool',
   aiModels: 'not a tool',
@@ -634,18 +661,10 @@ export const MCATZP_COVERAGE = {
   aiPreviewAsk: 'not a tool',
   aiAsk: 'not a tool',
   aiRunAction: 'not a tool',
-  gitOpenFile: 'not a tool',
   searchRevealBackup: 'not a tool',
-  wsOpenData: 'not a tool',
-  storageOpenData: 'not a tool',
-  openLogsFolder: 'not a tool',
   pickFile: 'not a tool',
-  toggleGroup: 'not a tool',
-  moveGroup: 'not a tool',
   siteMenu: 'not a tool',
   groupMenu: 'not a tool',
-  setSiteOrder: 'not a tool',
-  dbSetOrder: 'not a tool',
   dbMenu: 'not a tool',
   dbGroupMenu: 'not a tool',
 } satisfies Record<keyof HerdApi, string>;
