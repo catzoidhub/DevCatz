@@ -6,6 +6,8 @@
       "name": "js-herd",
       "dependencies": {
         "@anthropic-ai/sdk": "^1.1.0",
+        "@catzoid/mcatzp-host": "^1.0.0",
+        "@catzoid/mcatzp-protocol": "^1.0.0",
         "ajv": "^8.17.1",
         "electron-updater": "^6.8.11",
         "http-proxy-3": "^2.0.1",
@@ -74,6 +76,10 @@
     "@babel/traverse": ["@babel/traverse@7.29.10", "", { "dependencies": { "@babel/code-frame": "^7.29.7", "@babel/generator": "^7.29.8", "@babel/helper-globals": "^7.29.7", "@babel/parser": "^7.29.9", "@babel/template": "^7.29.7", "@babel/types": "^7.29.8", "debug": "^4.3.1" } }, "sha512-B3lYAs2nkKskbgQ1nfy8Ma9ao9Q1rntTAQHrzzyDuj+TSO+X3le6PfWwqDvodsb+OumE10eMFfuMCTQSQ5iuIQ=="],
 
     "@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.7", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
+
+    "@catzoid/mcatzp-host": ["@catzoid/mcatzp-host@1.0.0", "", { "dependencies": { "@catzoid/mcatzp-protocol": "1.0.0", "ajv": "^8.17.1" } }, "sha512-pQc2xpTS4EoVN4+J/EsCTcvs8U8Pj/XrCo3TSxk7Ap9e1LDyIgzwXhpbf182JmgzxmOzn9Oo1wNyVUGnN5a7eg=="],
+
+    "@catzoid/mcatzp-protocol": ["@catzoid/mcatzp-protocol@1.0.0", "", {}, "sha512-sp6Py0xNkNqhgJln5paehXtX6uHS8htK8oTpFTtZul6QcUjSi5UWfrFia2P3QypwSDf2VaT8BpMggCG65cNTZw=="],
 
     "@electron-internal/extract-zip": ["@electron-internal/extract-zip@1.0.5", "", {}, "sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA=="],
 
