@@ -61,11 +61,11 @@ async function removeClient(t: McatzpTarget) {
 const cancelInstall = () => attempt(() => herd.mcatzpInstallCancel().then(() => true));
 
 const SECTIONS = [
+  { id: 'clients', label: 'Clients' },
   { id: 'access', label: 'Access' },
-  { id: 'clients', label: 'Approved clients' },
   { id: 'activity', label: 'Activity' },
 ] as const;
-const section = ref<(typeof SECTIONS)[number]['id']>('access');
+const section = ref<(typeof SECTIONS)[number]['id']>('clients');
 
 const activity = ref<McatzpActivity[]>([]);
 const load = async () => {
@@ -142,7 +142,7 @@ const groups = computed(() => {
         <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5" :checked="on" @change="save({ mcatzp: ($event.target as HTMLInputElement).checked })" />
         <span>
           Let AI assistants use DevCatz through MCatzP
-          <span class="block text-xs opacity-60">An MCP client you approve can read what you share below (secrets masked) and ask for changes, which DevCatz confirms with you first. It reaches DevCatz through a channel only your account on this {{ words.computer }} can open. What it reads goes to that assistant's model provider.</span>
+          <span class="block text-xs opacity-60">An MCP client you approve can read what you share (secrets masked) and ask for changes, which DevCatz confirms with you first. It reaches DevCatz through a channel only your account on this {{ words.computer }} can open. What it reads goes to that assistant's model provider.</span>
         </span>
       </label>
       <!-- Clients start this program, so it is what a client's setup points at. -->
@@ -172,34 +172,50 @@ const groups = computed(() => {
         <button v-else-if="outdated" class="btn btn-sm" @click="installMcatzp">Update to {{ setup?.latest }}</button>
       </div>
 
-      <div v-if="targets.length" class="border-t border-base-300/50 pt-3">
-        <span class="label-caps mb-2 block">AI assistants</span>
-        <ul class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
-          <li v-for="t in targets" :key="t.id" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-            <span class="status status-sm shrink-0" :class="t.current ? 'status-success' : t.command !== null ? 'status-warning' : 'opacity-30'" />
-            <div class="min-w-0 flex-1 basis-48">
-              <span class="font-medium">{{ t.label }}</span>
-              <span v-if="!t.found" class="block text-xs opacity-60">Not found on this computer</span>
-              <span v-else-if="t.current" class="block text-xs opacity-60">Added, using this copy</span>
-              <span v-else-if="t.command !== null" class="block truncate text-xs opacity-60" :title="t.command">Runs another copy: {{ t.command }}</span>
-              <span v-else class="block text-xs opacity-60">Not added yet</span>
-            </div>
-            <button v-if="t.command !== null" class="btn btn-ghost btn-xs" :disabled="clientBusy === t.id" @click="removeClient(t)">Remove</button>
-            <button v-if="t.found && !t.current" class="btn btn-sm" :disabled="!setup?.path || clientBusy === t.id" :title="setup?.path ? '' : 'Install MCatzP first'" @click="addClient(t)">
-              <span v-if="clientBusy === t.id" class="loading loading-spinner loading-xs" />{{ t.command !== null ? 'Use this copy' : `Add to ${t.label}` }}
-            </button>
-          </li>
-        </ul>
-        <p v-if="clientChanged" class="mt-2 text-xs opacity-70">Start a new session in {{ clientChanged }} so it picks up the change.</p>
-      </div>
-
-
       <template v-if="on">
         <div role="tablist" class="seg self-start">
           <button v-for="t in SECTIONS" :key="t.id" role="tab" class="seg-item" :class="{ 'is-active': section === t.id }" @click="section = t.id">{{ t.label }}</button>
         </div>
 
-        <div v-if="section === 'access'" class="flex flex-col gap-3">
+        <div v-if="section === 'clients'" class="flex flex-col gap-4">
+          <div v-if="targets.length">
+            <span class="label-caps mb-2 block">AI assistants</span>
+            <ul class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
+              <li v-for="t in targets" :key="t.id" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                <span class="status status-sm shrink-0" :class="t.current ? 'status-success' : t.command !== null ? 'status-warning' : 'opacity-30'" />
+                <div class="min-w-0 flex-1 basis-48">
+                  <span class="font-medium">{{ t.label }}</span>
+                  <span v-if="!t.found" class="block text-xs opacity-60">Not found on this computer</span>
+                  <span v-else-if="t.current" class="block text-xs opacity-60">Added, using this copy</span>
+                  <span v-else-if="t.command !== null" class="block truncate text-xs opacity-60" :title="t.command">Runs another copy: {{ t.command }}</span>
+                  <span v-else class="block text-xs opacity-60">Not added yet</span>
+                </div>
+                <button v-if="t.command !== null" class="btn btn-ghost btn-xs" :disabled="clientBusy === t.id" @click="removeClient(t)">Remove</button>
+                <button v-if="t.found && !t.current" class="btn btn-sm" :disabled="!setup?.path || clientBusy === t.id" :title="setup?.path ? '' : 'Install MCatzP first'" @click="addClient(t)">
+                  <span v-if="clientBusy === t.id" class="loading loading-spinner loading-xs" />{{ t.command !== null ? 'Use this copy' : `Add to ${t.label}` }}
+                </button>
+              </li>
+            </ul>
+            <p v-if="clientChanged" class="mt-2 text-xs opacity-70">Start a new session in {{ clientChanged }} so it picks up the change.</p>
+          </div>
+
+          <div>
+            <span class="label-caps mb-2 block">Approved</span>
+            <p v-if="!s.mcatzpClients?.length" class="text-xs opacity-60">None yet. A client asks in DevCatz the first time it connects, and shows up here once you allow it.</p>
+            <ul v-else class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
+            <li v-for="c in clients" :key="c.name" class="flex items-center gap-3 px-3 py-2.5">
+              <span class="avatar-letter" aria-hidden="true">{{ c.name.slice(0, 1).toUpperCase() }}</span>
+              <div class="min-w-0 flex-1">
+                <p class="selectable truncate text-sm font-medium">{{ c.name }}</p>
+                <p class="truncate text-xs opacity-60">Approved {{ day(c.approvedAt) }}<template v-if="c.last"> · last call {{ when(c.last) }} · {{ c.calls }} {{ c.calls === 1 ? 'call' : 'calls' }}</template></p>
+              </div>
+              <button class="btn btn-sm" @click="revoke(c.name)">Revoke</button>
+            </li>
+          </ul>
+          </div>
+        </div>
+
+        <div v-else-if="section === 'access'" class="flex flex-col gap-3">
         <div>
           <span class="label-caps mb-2 block">Shared sites</span>
           <label class="flex cursor-pointer items-center gap-2 text-sm">
@@ -244,24 +260,6 @@ const groups = computed(() => {
             <input class="input input-sm min-w-0 flex-1 font-mono text-xs" :value="(s.mcatzpEnvSecret ?? []).join(', ')" placeholder="INTERNAL_URL, LICENSE" spellcheck="false" @change="saveNames('mcatzpEnvSecret', ($event.target as HTMLInputElement).value)" />
           </label>
         </div>
-        </div>
-
-        <div v-else-if="section === 'clients'">
-          <div v-if="!s.mcatzpClients?.length" class="empty">
-            <CatMood mood="info" class="size-14" />
-            <p class="font-medium">No approved clients yet</p>
-            <p class="text-xs opacity-60">A client asks here the first time it connects, and shows up once you allow it.</p>
-          </div>
-          <ul v-else class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
-            <li v-for="c in clients" :key="c.name" class="flex items-center gap-3 px-3 py-2.5">
-              <span class="avatar-letter" aria-hidden="true">{{ c.name.slice(0, 1).toUpperCase() }}</span>
-              <div class="min-w-0 flex-1">
-                <p class="selectable truncate text-sm font-medium">{{ c.name }}</p>
-                <p class="truncate text-xs opacity-60">Approved {{ day(c.approvedAt) }}<template v-if="c.last"> · last call {{ when(c.last) }} · {{ c.calls }} {{ c.calls === 1 ? 'call' : 'calls' }}</template></p>
-              </div>
-              <button class="btn btn-sm" @click="revoke(c.name)">Revoke</button>
-            </li>
-          </ul>
         </div>
 
         <div v-else>
