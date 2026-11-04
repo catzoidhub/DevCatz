@@ -799,6 +799,7 @@ function api(): HerdApi {
     openapiRemoveFile: (siteId, file) => herd.openapiRemoveFile(String(siteId), String(file)),
     openapiRemoveGenerator: (siteId) => herd.openapiRemoveGenerator(String(siteId)),
     openapiIgnore: (siteId, file) => herd.openapiIgnore(String(siteId), String(file)),
+    openapiUntrack: (siteId, file) => herd.openapiUntrack(String(siteId), String(file)),
     openapiUnignore: (siteId, file) => herd.openapiUnignore(String(siteId), String(file)),
     mcatzpAnswer: async (id, answer) => mcatzp.answer(String(id), answer === 'once' || answer === 'session' ? answer : 'deny'),
     createOpenApi: (siteId, format, app) => herd.createOpenApi(String(siteId), format === 'json' ? 'json' : 'yaml', typeof app === 'string' ? app : undefined),

@@ -58,11 +58,12 @@ const hasFile = (format: 'yaml' | 'json') => {
 const GENERATOR = { scramble: 'Scramble', 'nest-swagger': '@nestjs/swagger' } as const;
 
 // Remove: a file goes to the Trash; a generator DevCatz added comes out with its package.
-const removing = ref<{ kind: 'file'; file: string } | { kind: 'generator' } | null>(null);
+const removing = ref<{ kind: 'file'; file: string } | { kind: 'untrack'; file: string } | { kind: 'generator' } | null>(null);
 const removeBusy = ref(false);
 const removeText = computed(() => {
   const r = removing.value;
   if (!r) return null;
+  if (r.kind === 'untrack') return { title: `Stop tracking ${rel(r.file)} in Git?`, text: 'Runs git rm --cached. The file stays on this ' + words.computer + ' and leaves the repository when you commit the change (see the Git tab). Earlier commits still contain it.', button: 'Stop tracking' };
   if (r.kind === 'file') return { title: `Remove ${rel(r.file)}?`, text: `The file goes to the ${words.trash}. DialCatz can no longer import routes from it.`, button: 'Move to ' + words.trash };
   const g = info.value?.generator;
   return { title: `Remove ${g ? GENERATOR[g] : ''}?`, text: g === 'scramble' ? 'Runs composer remove dedoc/scramble --dev; the site stops serving its document. Output in Logs.' : 'Takes out the lines DevCatz added to src/main.ts, then uninstalls @nestjs/swagger. Output in Logs.', button: 'Remove' };
@@ -72,10 +73,10 @@ async function remove() {
   if (!r) return;
   removeBusy.value = true;
   if (r.kind === 'generator') emit('logs');
-  const ok = await attempt(() => (r.kind === 'file' ? herd.openapiRemoveFile(props.site.id, r.file) : herd.openapiRemoveGenerator(props.site.id)).then(() => true));
+  const ok = await attempt(() => (r.kind === 'file' ? herd.openapiRemoveFile(props.site.id, r.file) : r.kind === 'untrack' ? herd.openapiUntrack(props.site.id, r.file) : herd.openapiRemoveGenerator(props.site.id)).then(() => true));
   removeBusy.value = false;
   removing.value = null;
-  if (ok) notify('success', r.kind === 'file' ? `Moved to the ${words.trash}` : 'Removed');
+  if (ok) notify('success', r.kind === 'file' ? `Moved to the ${words.trash}` : r.kind === 'untrack' ? 'Git stopped tracking it: commit the change in the Git tab' : 'Removed');
   await load(running.value);
 }
 async function ignore(file: string) {
@@ -133,6 +134,7 @@ async function add() {
             <button class="btn btn-ghost btn-xs" @click="herd.openapiReveal(site.id, s.file!)">{{ words.revealIn }}</button>
             <button v-if="s.ignored === false" class="btn btn-ghost btn-xs" @click="ignore(s.file!)">Add to .gitignore</button>
             <button v-else-if="s.ignored" class="btn btn-ghost btn-xs" @click="unignore(s.file!)">Remove from .gitignore</button>
+            <button v-if="s.ignored && s.tracked" class="btn btn-ghost btn-xs" title="Already committed, so .gitignore alone does not take it out of the repository" @click="removing = { kind: 'untrack', file: s.file! }">Stop tracking in Git</button>
             <button class="btn btn-ghost btn-xs text-error" @click="removing = { kind: 'file', file: s.file! }">Remove</button>
           </template>
         </div>
@@ -142,7 +144,7 @@ async function add() {
           <button class="btn btn-ghost btn-xs text-error" :disabled="!!site.dbTask" @click="removing = { kind: 'generator' }">Remove</button>
         </div>
         <p v-if="!laravel" class="text-xs opacity-60">DialCatz imports the routes from {{ info.specs.length === 1 ? 'this document' : 'these documents' }}.</p>
-        <p v-if="info.specs.some((s) => s.file)" class="text-xs opacity-60">Open URL on a file is for local development only: DevCatz serves it on this {{ words.computer }}, never in production. If a file should not ship to production, add it to .gitignore or remove it. A file already committed stays in Git until you also run <code>git rm --cached &lt;file&gt;</code>.</p>
+        <p v-if="info.specs.some((s) => s.file)" class="text-xs opacity-60">Open URL on a file is for local development only: DevCatz serves it on this {{ words.computer }}, never in production. If a file should not ship to production, add it to .gitignore or remove it. A file already committed stays in Git until you also choose Stop tracking in Git.</p>
       </template>
 
       <template v-else-if="info">

@@ -380,6 +380,17 @@ export class GitService {
     await this.refresh(id);
   }
 
+  /** Whether Git tracks a file of the site (it stays in the repository even when ignored); false without a repository. */
+  async isTracked(id: string, abs: string): Promise<boolean> {
+    const root = await g.repoRoot(this.h.project(id).path);
+    return !!root && (await g.git(root, ['ls-files', '--error-unmatch', '--', abs])).code === 0;
+  }
+
+  /** `git rm --cached`: Git stops tracking the file, which stays on disk; the removal waits for a commit. */
+  async untrackFile(id: string, abs: string): Promise<void> {
+    await this.op(id, ['rm', '--cached', '--quiet', '--', abs]);
+  }
+
   /** Takes one file of the site out of .gitignore. */
   async unignoreFile(id: string, abs: string): Promise<void> {
     await g.removeIgnore(await this.root(id), abs);

@@ -176,6 +176,8 @@ export interface SiteOpenApi {
     docUrl?: string;
     /** A file: already in .gitignore; null when the site has no Git repository. */
     ignored?: boolean | null;
+    /** A file: Git tracks it, so it stays in the repository even when ignored. */
+    tracked?: boolean;
   }[];
   /** What DevCatz can add when there is none: Scramble (Laravel), @nestjs/swagger (NestJS). */
   install: 'scramble' | 'nest-swagger' | null;
@@ -2710,6 +2712,8 @@ export interface HerdApi {
   openapiRemoveGenerator(siteId: string): Promise<void>;
   /** Adds one of the site's OpenAPI files to .gitignore. */
   openapiIgnore(siteId: string, file: string): Promise<void>;
+  /** `git rm --cached` on one of the site's OpenAPI files: it stays on disk and leaves the repository with the next commit. */
+  openapiUntrack(siteId: string, file: string): Promise<void>;
   /** Takes one of the site's OpenAPI files out of .gitignore; refused when a broader rule ignores it. */
   openapiUnignore(siteId: string, file: string): Promise<void>;
   /** The answer to the question in state.mcatzpAsk. */
@@ -3262,7 +3266,7 @@ export interface HerdApi {
 
 export const API_METHODS: (keyof HerdApi)[] = [
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
-  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'mcatzpAnswer', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
+  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',

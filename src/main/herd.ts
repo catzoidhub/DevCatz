@@ -1496,7 +1496,7 @@ export class Herd extends EventEmitter {
       ...(await Promise.all(
         specFiles(p, stack).map(async (f) => {
           const domain = stack?.apps.find((a) => a.dir === f.app && a.domain)?.domain ?? stack?.apps.find((a) => a.domain)?.domain;
-          return { app: f.app, file: f.file, ...(domain ? { docUrl: this.urlFor(p, domain) + OPENAPI_FILE_PREFIX + this.specRel(p, f.file).split('/').map(encodeURIComponent).join('/') } : {}), ignored: await this.git.isIgnored(id, f.file) };
+          return { app: f.app, file: f.file, ...(domain ? { docUrl: this.urlFor(p, domain) + OPENAPI_FILE_PREFIX + this.specRel(p, f.file).split('/').map(encodeURIComponent).join('/') } : {}), ignored: await this.git.isIgnored(id, f.file), tracked: await this.git.isTracked(id, f.file) };
         }),
       )),
       ...(this.openapiUrls.get(id) ?? []),
@@ -1550,6 +1550,11 @@ export class Herd extends EventEmitter {
   async openapiIgnore(id: string, file: string): Promise<void> {
     await this.git.ignoreFile(id, this.specFile(id, file));
     this.processes.log(id, 'sys', `[openapi] ${this.specRel(this.project(id), file)} added to .gitignore`);
+  }
+
+  async openapiUntrack(id: string, file: string): Promise<void> {
+    await this.git.untrackFile(id, this.specFile(id, file));
+    this.processes.log(id, 'sys', `[openapi] git rm --cached ${this.specRel(this.project(id), file)}: commit it to take the file out of the repository`);
   }
 
   async openapiUnignore(id: string, file: string): Promise<void> {
