@@ -206,6 +206,8 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
 
 /** A change: what its dialog shows comes from the real site or service, never from the assistant's words. */
 export interface ChangeAction extends ActionDef {
+  /** Only stops work and throws its leftovers away: runs at once, since a dialog would hold up the stopping. Still logged. */
+  noDialog?: boolean;
   /** `page`: where DevCatz opens once the user allows it, so they watch it happen (a navigation target of App.vue). */
   preview(args: Record<string, unknown>): Promise<{ title: string; facts: Extract<McatzpAsk, { kind: 'change' }>['facts']; page: string }>;
 }
@@ -222,11 +224,12 @@ interface Service {
   installed: boolean;
   status: string;
   page: string;
+  busy?: boolean;
   act(action: StorageAction): Promise<void>;
 }
 
 function servicesOf(s: AppState, api: HerdApi): Service[] {
-  const named = (x: { kind: string; name: string; installed: boolean; status: string; config: { version?: string | null; port?: number } | null }, kind: string, page: string, act: Service['act']): Service => ({ ref: x.kind, name: x.name, kind, version: x.config?.version ?? null, port: x.config?.port ?? null, installed: x.installed, status: x.status, page, act });
+  const named = (x: { kind: string; name: string; installed: boolean; status: string; task: TaskProgress | null; config: { version?: string | null; port?: number } | null }, kind: string, page: string, act: Service['act']): Service => ({ busy: !!taskProgress(x.task), ref: x.kind, name: x.name, kind, version: x.config?.version ?? null, port: x.config?.port ?? null, installed: x.installed, status: x.status, page, act });
   return [
     ...s.databases.filter((d) => !d.pending && d.engine !== 'sqlite').map((d): Service => ({ ref: d.id, name: d.name, engine: d.engine, kind: `${d.engineName} database`, version: d.version, port: d.port, installed: true, status: d.status, page: `db:${d.id}`, act: (a) => api.dbAction(d.id, a) })),
     ...s.searchEngines.map((x) => named(x, 'Search engine', `services:${x.kind}`, (a) => api.searchAction(x.kind, a))),
@@ -239,13 +242,13 @@ function servicesOf(s: AppState, api: HerdApi): Service[] {
 }
 
 /** One service by what list_services shows, or a database by its engine when only one runs it; never a guess. */
-export function findService<T extends Pick<Service, 'ref' | 'name' | 'engine' | 'installed'>>(list: T[], ref: string): T {
+export function findService<T extends Pick<Service, 'ref' | 'name' | 'engine' | 'installed'> & { busy?: boolean }>(list: T[], ref: string): T {
   const r = ref.trim().toLowerCase();
   const exact = list.filter((x) => x.ref.toLowerCase() === r || x.name.toLowerCase() === r);
   const found = exact.length ? exact : list.filter((x) => x.engine?.toLowerCase() === r);
   if (found.length > 1) throw new Error(`${found.length} services match ${ref}: use one of ${found.map((x) => x.ref).join(', ')} (list_services)`);
   if (!found.length) throw new Error(`No service ${ref} (list_services shows them)`);
-  if (!found[0].installed) throw new Error(`${found[0].name} is not installed: install it in DevCatz first`);
+  if (!found[0].installed) throw new Error(found[0].busy ? `${found[0].name} is being installed: cancel_install stops that` : `${found[0].name} is not installed: install_service installs it`);
   return found[0];
 }
 
@@ -351,6 +354,42 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           },
         },
       ];
+  const cancels: ChangeAction[] = !scopes.services
+    ? []
+    : [
+        {
+          name: 'cancel_install',
+          title: 'Cancel an install',
+          description: 'Stops a service, database service or runtime that is being installed or created, and throws away what it got so far. Runs at once, without a dialog. `what` is its kind or name from list_services, or the runtime (node, bun, go, python, php).',
+          tier: 'change',
+          noDialog: true,
+          input: OBJECT({ what: { type: 'string', minLength: 1, maxLength: 60 } }, ['what']),
+          preview: async ({ what }) => ({ title: `Cancel ${String(what)}?`, facts: [], page: '' }),
+          run: async ({ what }) => {
+            const s = await api.getState();
+            const r = String(what).trim().toLowerCase();
+            const same = (...names: string[]) => names.some((n) => n.toLowerCase() === r);
+            const stop = async (name: string, go: () => Promise<void>) => {
+              await go();
+              return reply({ cancelled: name });
+            };
+            if (r in RUNTIME_NAMES && runtimeProgress(s[r as Runtime].installing)) return stop(RUNTIME_NAMES[r as Runtime], () => api.installCancel(r));
+            const db = s.databases.find((d) => d.pending && taskProgress(d.task) && same(d.id, d.name, d.engine));
+            if (db) return stop(db.name, () => api.dbCancelCreate(db.id));
+            const search = s.searchEngines.find((x) => taskProgress(x.task) && same(x.kind, x.name));
+            if (search) return stop(search.name, () => api.searchCancelInstall(search.kind));
+            const ws = s.websockets.find((x) => taskProgress(x.task) && same(x.kind, x.name));
+            if (ws) return stop(ws.name, () => api.wsCancelInstall(ws.kind));
+            const st = s.storage.find((x) => taskProgress(x.task) && same(x.kind, x.name));
+            if (st) return stop(st.name, () => api.storageCancelInstall(st.kind));
+            const gw = s.gateways.find((x) => taskProgress(x.task) && same(x.kind, x.name));
+            if (gw) return stop(gw.name, () => api.gwCancelInstall(gw.kind));
+            const wa = s.whatsapp.find((x) => taskProgress(x.task) && same(x.engine, x.name));
+            if (wa) return stop(wa.name, () => api.waCancelInstall(wa.engine));
+            throw new Error(`Nothing called ${String(what)} is being installed`);
+          },
+        },
+      ];
   const lifecycle = VERBS.flatMap(({ action, verb, done }): ChangeAction[] => [
     {
       name: `${action}_site`,
@@ -391,7 +430,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
       },
     } satisfies ChangeAction]),
   ]);
-  return [...lifecycle, ...creates, ...installs];
+  return [...lifecycle, ...creates, ...installs, ...cancels];
 }
 
 const RUNTIME_NAMES: Record<Runtime, string> = { node: 'Node.js', bun: 'Bun', go: 'Go', python: 'Python', php: 'PHP' };

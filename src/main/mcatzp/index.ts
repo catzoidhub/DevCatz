@@ -51,6 +51,7 @@ export class Mcatzp {
       confirm: async (req) => {
         const change = this.changes().find((c) => c.name === req.action.name);
         if (!change) return 'deny';
+        if (change.noDialog) return 'once';
         let preview: Awaited<ReturnType<typeof change.preview>>;
         try {
           preview = await change.preview(req.args);
