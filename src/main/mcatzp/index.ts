@@ -29,6 +29,7 @@ export class Mcatzp {
   constructor(
     api: HerdApi,
     private readonly show: (ask: McatzpAsk | null) => void,
+    private readonly open: (page: string) => void,
   ) {
     this.api = api;
     this.host = new McatzpHost({
@@ -57,7 +58,11 @@ export class Mcatzp {
           // The site or service does not exist: nothing to ask, and run() answers with the same error, changing nothing.
           return 'once';
         }
-        return this.ask({ id: randomUUID(), kind: 'change', client: req.client, allowSession: req.allowSession, ...preview }, CHANGE_WAIT_MS);
+        const { page, ...question } = preview;
+        const answer = await this.ask({ id: randomUUID(), kind: 'change', client: req.client, allowSession: req.allowSession, ...question }, CHANGE_WAIT_MS);
+        // The user is right here and just said yes: take them to what is happening. Not for allowed-for-the-session calls.
+        if (answer !== 'deny') this.open(page);
+        return answer;
       },
       log: (e) => this.activity.add(e),
     });

@@ -1203,7 +1203,7 @@ app.whenReady().then(async () => {
     herd.mcatzpAsk = ask;
     if (ask) showWindow();
     herd.emit('change');
-  });
+  }, showWindow);
   void mcatzp.set(store.settings.mcatzp === true).catch(() => undefined);
   void migrateAiToShared()
     .then(() => herd.emit('change'))

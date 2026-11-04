@@ -206,7 +206,8 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
 
 /** A change: what its dialog shows comes from the real site or service, never from the assistant's words. */
 export interface ChangeAction extends ActionDef {
-  preview(args: Record<string, unknown>): Promise<{ title: string; facts: Extract<McatzpAsk, { kind: 'change' }>['facts'] }>;
+  /** `page`: where DevCatz opens once the user allows it, so they watch it happen (a navigation target of App.vue). */
+  preview(args: Record<string, unknown>): Promise<{ title: string; facts: Extract<McatzpAsk, { kind: 'change' }>['facts']; page: string }>;
 }
 
 interface Service {
@@ -220,19 +221,20 @@ interface Service {
   port: number | null;
   installed: boolean;
   status: string;
+  page: string;
   act(action: StorageAction): Promise<void>;
 }
 
 function servicesOf(s: AppState, api: HerdApi): Service[] {
-  const named = (x: { kind: string; name: string; installed: boolean; status: string; config: { version?: string | null; port?: number } | null }, kind: string, act: Service['act']): Service => ({ ref: x.kind, name: x.name, kind, version: x.config?.version ?? null, port: x.config?.port ?? null, installed: x.installed, status: x.status, act });
+  const named = (x: { kind: string; name: string; installed: boolean; status: string; config: { version?: string | null; port?: number } | null }, kind: string, page: string, act: Service['act']): Service => ({ ref: x.kind, name: x.name, kind, version: x.config?.version ?? null, port: x.config?.port ?? null, installed: x.installed, status: x.status, page, act });
   return [
-    ...s.databases.filter((d) => !d.pending && d.engine !== 'sqlite').map((d): Service => ({ ref: d.id, name: d.name, engine: d.engine, kind: `${d.engineName} database`, version: d.version, port: d.port, installed: true, status: d.status, act: (a) => api.dbAction(d.id, a) })),
-    ...s.searchEngines.map((x) => named(x, 'Search engine', (a) => api.searchAction(x.kind, a))),
-    ...s.websockets.map((x) => named(x, 'WebSocket server', (a) => api.wsAction(x.kind, a))),
-    ...s.storage.map((x) => named(x, 'Object storage', (a) => api.storageAction(x.kind, a))),
-    ...s.gateways.map((x) => named(x, 'Gateway', (a) => api.gwAction(x.kind, a))),
-    ...s.whatsapp.map((w) => named({ ...w, kind: w.engine }, 'WhatsApp gateway', (a) => api.waAction(w.engine, a))),
-    { ref: 'mail', name: 'Mail catcher', kind: 'Mail catcher', version: null, port: s.mail.port, installed: true, status: s.mail.running ? 'running' : 'stopped', act: (a) => api.mailAction(a) },
+    ...s.databases.filter((d) => !d.pending && d.engine !== 'sqlite').map((d): Service => ({ ref: d.id, name: d.name, engine: d.engine, kind: `${d.engineName} database`, version: d.version, port: d.port, installed: true, status: d.status, page: `db:${d.id}`, act: (a) => api.dbAction(d.id, a) })),
+    ...s.searchEngines.map((x) => named(x, 'Search engine', `services:${x.kind}`, (a) => api.searchAction(x.kind, a))),
+    ...s.websockets.map((x) => named(x, 'WebSocket server', 'websocket', (a) => api.wsAction(x.kind, a))),
+    ...s.storage.map((x) => named(x, 'Object storage', 'storage', (a) => api.storageAction(x.kind, a))),
+    ...s.gateways.map((x) => named(x, 'Gateway', `gateways:${x.kind}`, (a) => api.gwAction(x.kind, a))),
+    ...s.whatsapp.map((w) => named({ ...w, kind: w.engine }, 'WhatsApp gateway', `gateways:${w.engine}`, (a) => api.waAction(w.engine, a))),
+    { ref: 'mail', name: 'Mail catcher', kind: 'Mail catcher', version: null, port: s.mail.port, installed: true, status: s.mail.running ? 'running' : 'stopped', page: 'mail', act: (a) => api.mailAction(a) },
   ];
 }
 
@@ -288,6 +290,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
                 ...(input.port ? [{ label: 'Port', value: String(input.port) }] : []),
                 { label: 'Data', value: input.dataDir || "DevCatz's data folder" },
               ],
+              page: 'database',
             };
           },
           run: async (args, ctx) => {
@@ -303,7 +306,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           input: OBJECT({ service: DB_SERVICE, name: { type: 'string', minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$', description: 'Letters, digits, _ and -.' } }, ['service', 'name']),
           preview: async ({ service, name }) => {
             const d = databaseOf(await api.getState(), service);
-            return { title: `Create the database ${String(name)}?`, facts: [{ label: 'Service', value: `${d.name} (${d.engineName} ${d.version})` }, ...(d.port ? [{ label: 'Port', value: String(d.port) }] : []), { label: 'Now', value: d.status }] };
+            return { title: `Create the database ${String(name)}?`, facts: [{ label: 'Service', value: `${d.name} (${d.engineName} ${d.version})` }, ...(d.port ? [{ label: 'Port', value: String(d.port) }] : []), { label: 'Now', value: d.status }], page: `db:${d.id}` };
           },
           run: async ({ service, name }) => {
             const d = databaseOf(await api.getState(), service);
@@ -323,7 +326,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           input: OBJECT({ service: { type: 'string', minLength: 1, maxLength: 60, description: 'A kind or name from list_services that is not installed yet, such as meilisearch.' } }, ['service']),
           preview: async ({ service }) => {
             const x = await installable(api, service);
-            return { title: `Install ${x.name}?`, facts: [{ label: 'Service', value: x.what }, ...(x.version ? [{ label: 'Version', value: x.version }] : []), { label: 'Port', value: String(x.port) }, { label: 'Domain', value: x.domain }] };
+            return { title: `Install ${x.name}?`, facts: [{ label: 'Service', value: x.what }, ...(x.version ? [{ label: 'Version', value: x.version }] : []), { label: 'Port', value: String(x.port) }, { label: 'Domain', value: x.domain }], page: x.page };
           },
           run: async ({ service }, ctx) => {
             const x = await installable(api, service);
@@ -338,7 +341,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           input: OBJECT({ runtime: RUNTIME, version: { type: 'string', minLength: 1, maxLength: 40 } }, ['runtime', 'version']),
           preview: async ({ runtime, version }) => {
             const v = await runtimeVersionOf(api, runtime as Runtime, version);
-            return { title: `Install ${RUNTIME_NAMES[runtime as Runtime]} ${v}?`, facts: [{ label: 'Runtime', value: RUNTIME_NAMES[runtime as Runtime] }, { label: 'Version', value: v }] };
+            return { title: `Install ${RUNTIME_NAMES[runtime as Runtime]} ${v}?`, facts: [{ label: 'Runtime', value: RUNTIME_NAMES[runtime as Runtime] }, { label: 'Version', value: v }], page: runtime as Runtime };
           },
           run: async ({ runtime, version }, ctx) => {
             const r = runtime as Runtime;
@@ -358,7 +361,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
       input: OBJECT({ site: SITE }, ['site']),
       preview: async ({ site: ref }) => {
         const p = await siteOf(ref);
-        return { title: `${verb} the site ${p.name}?`, facts: [{ label: 'Domain', value: p.domain }, { label: 'Folder', value: p.path }, { label: 'Now', value: p.status }] };
+        return { title: `${verb} the site ${p.name}?`, facts: [{ label: 'Domain', value: p.domain }, { label: 'Folder', value: p.path }, { label: 'Now', value: p.status }], page: `site:${p.id}` };
       },
       run: async ({ site: ref }) => {
         const p = await siteOf(ref);
@@ -378,6 +381,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
         return {
           title: `${verb} ${x.name}?`,
           facts: [{ label: 'Service', value: `${x.kind}${x.version ? ` ${x.version}` : ''}` }, ...(x.port ? [{ label: 'Port', value: String(x.port) }] : []), { label: 'Now', value: x.status }],
+          page: x.page,
         };
       },
       run: async ({ service: ref }: Record<string, unknown>) => {
@@ -440,11 +444,11 @@ async function installable(api: HerdApi, ref: unknown) {
     return out;
   };
   const all = [
-    ...s.searchEngines.map((x) => ({ ref: x.kind, name: x.name, what: 'Search engine', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.searchInstall(x.kind, x.fields.key ? fill(x.defaults, ['key']) : x.defaults) })),
-    ...s.websockets.map((x) => ({ ref: x.kind, name: x.name, what: 'WebSocket server', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.wsInstall(x.kind, fill(x.defaults, [...(x.fields.key ? (['key'] as const) : []), ...(x.fields.secret ? (['secret'] as const) : [])])) })),
-    ...s.storage.map((x) => ({ ref: x.kind, name: x.name, what: 'Object storage', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.apiPort, domain: x.defaults.apiDomain, install: () => api.storageInstall(x.kind, x.defaults) })),
-    ...s.gateways.map((x) => ({ ref: x.kind, name: x.name, what: 'Gateway', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.gwInstall(x.kind, fill(x.defaults, ['password'])) })),
-    ...s.whatsapp.map((x) => ({ ref: x.engine as string, name: x.name, what: 'WhatsApp gateway', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.waInstall(x.engine, fill(x.defaults, ['apiKey'])) })),
+    ...s.searchEngines.map((x) => ({ ref: x.kind, name: x.name, what: 'Search engine', page: `services:${x.kind}`, busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.searchInstall(x.kind, x.fields.key ? fill(x.defaults, ['key']) : x.defaults) })),
+    ...s.websockets.map((x) => ({ ref: x.kind, name: x.name, what: 'WebSocket server', page: 'websocket', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.wsInstall(x.kind, fill(x.defaults, [...(x.fields.key ? (['key'] as const) : []), ...(x.fields.secret ? (['secret'] as const) : [])])) })),
+    ...s.storage.map((x) => ({ ref: x.kind, name: x.name, what: 'Object storage', page: 'storage', busy: !!x.task && !x.task.error, installed: x.installed, unavailable: x.unavailable, version: x.defaults.version ?? null, port: x.defaults.apiPort, domain: x.defaults.apiDomain, install: () => api.storageInstall(x.kind, x.defaults) })),
+    ...s.gateways.map((x) => ({ ref: x.kind, name: x.name, what: 'Gateway', page: `gateways:${x.kind}`, busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.gwInstall(x.kind, fill(x.defaults, ['password'])) })),
+    ...s.whatsapp.map((x) => ({ ref: x.engine as string, name: x.name, what: 'WhatsApp gateway', page: `gateways:${x.engine}`, busy: !!x.task && !x.task.error, installed: x.installed, unavailable: null as string | null, version: x.defaults.version || null, port: x.defaults.port, domain: x.defaults.domain, install: () => api.waInstall(x.engine, fill(x.defaults, ['apiKey'])) })),
   ];
   const r = String(ref).trim().toLowerCase();
   const x = all.find((a) => a.ref.toLowerCase() === r || a.name.toLowerCase() === r);
