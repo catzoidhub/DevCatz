@@ -142,7 +142,7 @@ async function add() {
           <button class="btn btn-ghost btn-xs text-error" :disabled="!!site.dbTask" @click="removing = { kind: 'generator' }">Remove</button>
         </div>
         <p v-if="!laravel" class="text-xs opacity-60">DialCatz imports the routes from {{ info.specs.length === 1 ? 'this document' : 'these documents' }}.</p>
-        <p v-if="info.specs.some((s) => s.file)" class="text-xs opacity-60">Open URL on a file is for local development only: DevCatz serves it on this {{ words.computer }}, never in production. If a file should not ship to production, add it to .gitignore or remove it.</p>
+        <p v-if="info.specs.some((s) => s.file)" class="text-xs opacity-60">Open URL on a file is for local development only: DevCatz serves it on this {{ words.computer }}, never in production. If a file should not ship to production, add it to .gitignore or remove it. A file already committed stays in Git until you also run <code>git rm --cached &lt;file&gt;</code>.</p>
       </template>
 
       <template v-else-if="info">
