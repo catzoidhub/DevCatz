@@ -44,6 +44,10 @@ const EDITORS = isWin
 let herd: Herd;
 let mcatzp: Mcatzp;
 let mcatzpInstalling: AbortController | null = null;
+const clientId = (id: unknown) => {
+  if (id !== 'claude-code' && id !== 'zcode') throw new Error('Unknown client');
+  return id;
+};
 let win: BrowserWindow | null = null;
 let tray: HerdTray | null = null;
 let quitting = false;
@@ -808,7 +812,7 @@ function api(): HerdApi {
     mcatzpActivity: async () => mcatzp.activity.list(),
     mcatzpClearActivity: async () => mcatzp.activity.clear(),
     mcatzpRevoke: (name) => mcatzp.revoke(String(name)),
-    mcatzpSetup: () => mcatzpSetup.setupState(),
+    mcatzpSetup: (askSite) => mcatzpSetup.setupState(askSite !== false),
     mcatzpInstall: async () => {
       if (mcatzpInstalling) throw new Error('MCatzP is being installed');
       mcatzpInstalling = new AbortController();
@@ -829,6 +833,15 @@ function api(): HerdApi {
       return mcatzpSetup.setupState();
     },
     mcatzpInstallCancel: async () => mcatzpInstalling?.abort(),
+    mcatzpTargets: () => mcatzpSetup.targets(),
+    mcatzpAddToClient: async (id) => {
+      await mcatzpSetup.addToClient(clientId(id));
+      return mcatzpSetup.targets();
+    },
+    mcatzpRemoveFromClient: async (id) => {
+      await mcatzpSetup.removeFromClient(clientId(id));
+      return mcatzpSetup.targets();
+    },
     mcatzpAnswer: async (id, answer, typed) => mcatzp.answer(String(id), answer === 'once' || answer === 'session' ? answer : 'deny', typeof typed === 'string' ? typed : undefined),
     createOpenApi: (siteId, format, app) => herd.createOpenApi(String(siteId), format === 'json' ? 'json' : 'yaml', typeof app === 'string' ? app : undefined),
     dialcatzOpen: (siteId) => {

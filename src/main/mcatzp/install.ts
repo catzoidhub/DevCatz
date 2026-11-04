@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { McatzpInstallProgress, McatzpSetup } from '@shared/types';
+import type { McatzpInstallProgress, McatzpSetup, McatzpTarget } from '@shared/types';
+import { stream } from '../database';
 import { downloadVerified } from '../download';
 import { getShellEnv, run } from '../env';
 import { brewBin } from '../php';
@@ -59,11 +60,12 @@ async function latest(platform: string): Promise<Latest | null> {
   return { version: body.version, sha256: body.sha256.toLowerCase() };
 }
 
-export async function setupState(): Promise<McatzpSetup> {
+/** `askSite` false: what is on this computer, at once; the site can take seconds to answer, or never. */
+export async function setupState(askSite = true): Promise<McatzpSetup> {
   const found = await findInstalled();
   const platform = platformName();
-  const base = { ...found, latest: null, noBuild: !platform, error: null };
-  if (!platform) return base;
+  const base = { ...found, latest: null, noBuild: !platform, error: null, checked: askSite };
+  if (!platform || !askSite) return base;
   try {
     const l = await latest(platform);
     return { ...base, latest: l?.version ?? null, noBuild: !l };
@@ -104,4 +106,102 @@ export async function install(progress: (p: McatzpInstallProgress) => void, sign
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+/**
+ * Add to <client> (MCatzP TODO #14, group 1): a client's entry pointing at the copy in use. The path always comes from
+ * what is found on this computer. An entry named mcatzp in any case is the same entry, so a client never lists two.
+ */
+const isEntry = (name: string) => name.toLowerCase() === 'mcatzp';
+const entryOf = (servers: unknown): [string, { command?: string }] | null => {
+  if (!servers || typeof servers !== 'object') return null;
+  const hit = Object.entries(servers as Record<string, { command?: string }>).find(([k]) => isEntry(k));
+  return hit ?? null;
+};
+const readJson = (file: string): Record<string, unknown> | null => {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+const claudeFile = () => join(homedir(), '.claude.json');
+const zcodeDir = () => join(homedir(), '.zcode');
+const zcodeFile = () => join(zcodeDir(), 'cli', 'config.json');
+const quoted = (path: string) => `"${path}"`;
+
+async function claudeCli(args: string): Promise<{ code: number; output: string }> {
+  let output = '';
+  const code = await stream(homedir(), `claude mcp ${args}`, (t) => (output += `${t}\n`));
+  return { code, output: output.replace(/^\$ .*\n/, '').trim() };
+}
+
+const hasClaudeCli = () => {
+  const env = getShellEnv();
+  return splitPath(env[pathKey(env)]).some((d) => ['claude', 'claude.exe', 'claude.cmd'].some((n) => existsSync(join(d, n))));
+};
+
+export async function targets(): Promise<McatzpTarget[]> {
+  const { path } = await findInstalled();
+  const row = (id: McatzpTarget['id'], label: string, found: boolean, servers: unknown): McatzpTarget => {
+    const entry = entryOf(servers);
+    const command = entry ? (entry[1].command ?? '') : null;
+    return { id, label, found, command, current: command !== null && !!path && command === path };
+  };
+  return [
+    row('claude-code', 'Claude Code', hasClaudeCli(), readJson(claudeFile())?.mcpServers),
+    row('zcode', 'ZCode', existsSync(zcodeDir()), (readJson(zcodeFile())?.mcp as { servers?: unknown } | undefined)?.servers),
+  ];
+}
+
+/** ZCode's file with `change` applied to its servers: a copy of the old file beside it, written in one step. */
+function editZcode(change: (servers: Record<string, unknown>) => void): void {
+  const file = zcodeFile();
+  const exists = existsSync(file);
+  const conf = exists ? readJson(file) : {};
+  // Never over a file that could not be read: what it holds would be lost.
+  if (!conf) throw new Error(`Could not read ${file}: fix it or remove it, then try again`);
+  const mcp = (conf.mcp ?? {}) as { servers?: Record<string, unknown> };
+  const servers = mcp.servers ?? {};
+  change(servers);
+  conf.mcp = { ...mcp, servers };
+  mkdirSync(dirname(file), { recursive: true });
+  if (exists) copyFileSync(file, `${file}.bak`);
+  const tmp = `${file}.${randomBytes(4).toString('hex')}`;
+  writeFileSync(tmp, `${JSON.stringify(conf, null, 2)}\n`);
+  renameSync(tmp, file);
+}
+
+/** Adds the entry, or points an existing one at the copy in use. */
+export async function addToClient(id: McatzpTarget['id']): Promise<void> {
+  const { path } = await findInstalled();
+  if (!path) throw new Error('Install MCatzP first');
+  if (id === 'zcode') {
+    editZcode((servers) => {
+      const name = entryOf(servers)?.[0] ?? 'mcatzp';
+      servers[name] = { type: 'stdio', command: path, args: [], env: {} };
+    });
+    return;
+  }
+  const name = entryOf(readJson(claudeFile())?.mcpServers)?.[0];
+  if (name) {
+    const removed = await claudeCli(`remove --scope user ${quoted(name)}`);
+    if (removed.code !== 0) throw new Error(removed.output || 'claude mcp remove failed');
+  }
+  const added = await claudeCli(`add --scope user ${quoted(name ?? 'mcatzp')} -- ${quoted(path)}`);
+  if (added.code !== 0) throw new Error(added.output || 'claude mcp add failed');
+}
+
+export async function removeFromClient(id: McatzpTarget['id']): Promise<void> {
+  if (id === 'zcode') {
+    editZcode((servers) => {
+      const name = entryOf(servers)?.[0];
+      if (name) delete servers[name];
+    });
+    return;
+  }
+  const name = entryOf(readJson(claudeFile())?.mcpServers)?.[0];
+  if (!name) return;
+  const removed = await claudeCli(`remove --scope user ${quoted(name)}`);
+  if (removed.code !== 0) throw new Error(removed.output || 'claude mcp remove failed');
 }

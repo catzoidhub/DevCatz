@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { words } from '@shared/platform';
-import type { McatzpActivity, McatzpSetup, Settings } from '@shared/types';
+import type { McatzpActivity, McatzpSetup, McatzpTarget, Settings } from '@shared/types';
 import mcatzpLogo from '../assets/logos/mcatzp.svg';
 import CatMood from './CatMood.vue';
 import { attempt, herd, state } from '../store';
@@ -34,6 +34,29 @@ const updateHow = { homebrew: 'Homebrew', other: 'how you installed it' } as con
 async function installMcatzp() {
   const next = await attempt(() => herd.mcatzpInstall());
   if (next) setup.value = next;
+  void loadTargets();
+}
+const targets = ref<McatzpTarget[]>([]);
+const clientBusy = ref<string | null>(null);
+const clientChanged = ref<string | null>(null);
+const loadTargets = async () => {
+  targets.value = (await attempt(() => herd.mcatzpTargets())) ?? targets.value;
+};
+async function addClient(t: McatzpTarget) {
+  if (t.command !== null && !confirm(`${t.label} already runs MCatzP as:\n${t.command}\n\nPoint it at this copy instead?`)) return;
+  clientBusy.value = t.id;
+  const next = await attempt(() => herd.mcatzpAddToClient(t.id));
+  clientBusy.value = null;
+  if (next) {
+    targets.value = next;
+    clientChanged.value = t.label;
+  }
+}
+async function removeClient(t: McatzpTarget) {
+  clientBusy.value = t.id;
+  const next = await attempt(() => herd.mcatzpRemoveFromClient(t.id));
+  clientBusy.value = null;
+  if (next) targets.value = next;
 }
 const cancelInstall = () => attempt(() => herd.mcatzpInstallCancel().then(() => true));
 
@@ -51,7 +74,10 @@ const load = async () => {
 // While this page is open only: calls come from outside DevCatz, with no state change to follow.
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
+  // What is on this computer first: the site may take a while.
+  void attempt(() => herd.mcatzpSetup(false)).then((r) => r && !setup.value && (setup.value = r));
   void attempt(() => herd.mcatzpSetup()).then((r) => r && (setup.value = r));
+  void loadTargets();
   void load();
   timer = setInterval(() => void load(), 3000);
 });
@@ -142,8 +168,29 @@ const groups = computed(() => {
           </template>
         </div>
         <button v-if="installing" class="btn btn-sm" :disabled="installing.phase === 'install'" @click="cancelInstall">Cancel</button>
-        <button v-else-if="setup && !setup.path" class="btn btn-primary btn-sm" :disabled="setup.noBuild" @click="installMcatzp">Install MCatzP</button>
+        <button v-else-if="setup && !setup.path" class="btn btn-primary btn-sm" :disabled="!setup.checked || setup.noBuild" @click="installMcatzp">Install MCatzP</button>
         <button v-else-if="outdated" class="btn btn-sm" @click="installMcatzp">Update to {{ setup?.latest }}</button>
+      </div>
+
+      <div v-if="targets.length" class="border-t border-base-300/50 pt-3">
+        <span class="label-caps mb-2 block">AI assistants</span>
+        <ul class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
+          <li v-for="t in targets" :key="t.id" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+            <span class="status status-sm shrink-0" :class="t.current ? 'status-success' : t.command !== null ? 'status-warning' : 'opacity-30'" />
+            <div class="min-w-0 flex-1 basis-48">
+              <span class="font-medium">{{ t.label }}</span>
+              <span v-if="!t.found" class="block text-xs opacity-60">Not found on this computer</span>
+              <span v-else-if="t.current" class="block text-xs opacity-60">Added, using this copy</span>
+              <span v-else-if="t.command !== null" class="block truncate text-xs opacity-60" :title="t.command">Runs another copy: {{ t.command }}</span>
+              <span v-else class="block text-xs opacity-60">Not added yet</span>
+            </div>
+            <button v-if="t.command !== null" class="btn btn-ghost btn-xs" :disabled="clientBusy === t.id" @click="removeClient(t)">Remove</button>
+            <button v-if="t.found && !t.current" class="btn btn-sm" :disabled="!setup?.path || clientBusy === t.id" :title="setup?.path ? '' : 'Install MCatzP first'" @click="addClient(t)">
+              <span v-if="clientBusy === t.id" class="loading loading-spinner loading-xs" />{{ t.command !== null ? 'Use this copy' : `Add to ${t.label}` }}
+            </button>
+          </li>
+        </ul>
+        <p v-if="clientChanged" class="mt-2 text-xs opacity-70">Start a new session in {{ clientChanged }} so it picks up the change.</p>
       </div>
 
 
