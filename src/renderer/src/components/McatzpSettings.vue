@@ -18,6 +18,8 @@ function toggleSite(id: string, yes: boolean) {
   void save({ mcatzpSites: [...next] });
 }
 
+const saveNames = (key: 'mcatzpEnvPublic' | 'mcatzpEnvSecret', text: string) => save({ [key]: text.split(/[\s,]+/).filter((n) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) });
+
 const activity = ref<McatzpActivity[]>([]);
 const load = async () => {
   if (on.value) activity.value = (await attempt(() => herd.mcatzpActivity())) ?? activity.value;
@@ -80,6 +82,19 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
           <label class="flex cursor-pointer items-start gap-2 text-sm">
             <input type="checkbox" class="checkbox checkbox-sm mt-0.5" :checked="s.mcatzpChanges !== false" @change="save({ mcatzpChanges: ($event.target as HTMLInputElement).checked })" />
             <span>Let clients ask for changes<span class="block text-xs opacity-60">Starting, stopping and restarting; creating a database service or a database; installing a service or a runtime. DevCatz shows you each request first. Off: clients can only read.</span></span>
+          </label>
+        </div>
+
+        <div class="space-y-2 border-t border-base-300/50 pt-3">
+          <span class="label-caps block">.env variables</span>
+          <p class="text-xs opacity-60">Names are always readable. Secret values only go out one at a time, after you allow it; other values are readable for shared sites. DevCatz tells them apart by the name. Correct it here, for every site, with names separated by commas.</p>
+          <label class="flex items-center gap-3 text-sm">
+            <span class="w-36 shrink-0 opacity-70">Not secret</span>
+            <input class="input input-sm min-w-0 flex-1 font-mono text-xs" :value="(s.mcatzpEnvPublic ?? []).join(', ')" placeholder="SESSION_DRIVER, AUTH_GUARD" spellcheck="false" @change="saveNames('mcatzpEnvPublic', ($event.target as HTMLInputElement).value)" />
+          </label>
+          <label class="flex items-center gap-3 text-sm">
+            <span class="w-36 shrink-0 opacity-70">Secret</span>
+            <input class="input input-sm min-w-0 flex-1 font-mono text-xs" :value="(s.mcatzpEnvSecret ?? []).join(', ')" placeholder="INTERNAL_URL, LICENSE" spellcheck="false" @change="saveNames('mcatzpEnvSecret', ($event.target as HTMLInputElement).value)" />
           </label>
         </div>
 

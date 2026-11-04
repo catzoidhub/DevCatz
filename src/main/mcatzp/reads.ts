@@ -1,6 +1,6 @@
 import type { ActionDef, CallResult } from '@catzoid/mcatzp-host';
 import type { GwKind, HerdApi, MonitorRange, RuntimeToolRuntime, SearchKind, StorageKind, WaEngine, WsKind } from '@shared/types';
-import { maskText, SECRET_KEY } from '../ai/devcatz';
+import { maskText } from '../ai/devcatz';
 import { maskDeep } from './mask';
 import { findSite, type Scopes } from './actions';
 
@@ -93,12 +93,13 @@ export function moreReads(api: HerdApi, scopes: Scopes): ActionDef[] {
     onSite('site_gitignore_suggestions', 'Suggested .gitignore lines', 'Files that probably should be ignored.', {}, [], async (id) => plain(await api.gitIgnoreSuggestions(id))),
     onSite('site_deps', 'Site dependencies on disk', 'The dependency folders of a site (node_modules, vendor …), their size and when it last ran.', {}, [], async (id) => plain(await api.siteDeps(id))),
     onSite('site_dep_commands', 'Dependency commands', 'The install and update commands DevCatz offers for a site.', {}, [], async (id) => plain(await api.depCommands(id))),
-    onSite('site_env_values', 'Site .env values', "A .env file of a site: every name, with the value of those that are not secret. Secret values stay hidden: the user sees them in DevCatz.", { file: S('The path from site_env_names, e.g. .env.') }, ['file'], async (id, a) => {
+    onSite('site_env_values', 'Site .env values', "A .env file of a site: every name, with the value of those that are not secret. A secret value only comes through env_show_secret, which asks the user each time.", { file: S('The path from site_env_names, e.g. .env.') }, ['file'], async (id, a) => {
       const { content } = await api.envRead(id, String(a.file));
       const out: Record<string, string> = {};
       for (const line of content.split(/\r?\n/)) {
         const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
-        if (m) out[m[1]] = SECRET_KEY.test(m[1]) ? '(secret, hidden)' : maskText(m[2].replace(/^(['"])(.*)\1$/, '$2'));
+        // Masked all the same: a name that looks harmless can hold a password in a URL (DATABASE_URL).
+        if (m) out[m[1]] = scopes.secretName(m[1]) ? '(secret, hidden)' : maskText(m[2].replace(/^(['"])(.*)\1$/, '$2'));
       }
       return plain(out);
     }),
@@ -115,7 +116,7 @@ export function moreReads(api: HerdApi, scopes: Scopes): ActionDef[] {
         : s.storage.some((x) => x.kind === r) ? await api.storageEnv(r as StorageKind, id, '')
         : null;
       if (!lines) throw new Error(`No service ${String(a.service)} (list_services shows them)`);
-      return plain(Object.fromEntries(Object.entries(lines).map(([k, v]) => [k, SECRET_KEY.test(k) ? '(secret, hidden)' : maskText(v)])));
+      return plain(Object.fromEntries(Object.entries(lines).map(([k, v]) => [k, scopes.secretName(k) ? '(secret, hidden)' : maskText(v)])));
     }),
     onSite('site_services', 'What a site uses', "A site's Search, Storage, WebSocket, Mail and Gateways tabs: libraries found, keys it reads (names), connections. Values masked.", {}, [], async (id) => {
       const p = (await state()).projects.find((x) => x.id === id)!;

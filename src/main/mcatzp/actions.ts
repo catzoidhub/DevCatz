@@ -85,6 +85,8 @@ export interface Scopes {
   site(id: string): boolean;
   services: boolean;
   changes: boolean;
+  /** Whether an .env name is secret: the name's look, unless the user says otherwise in Settings → MCatzP. */
+  secretName(name: string): boolean;
   /** Mail, SMS and WhatsApp content, and what came in through a share: personal, so off unless the user shares it. */
   messages: boolean;
   allSites: boolean;

@@ -6,7 +6,7 @@ import { attempt, herd, state } from '../store';
 
 /** MCatzP asks here: may this MCP client connect (the first time), and may it do this change. */
 const ask = computed(() => state.value?.mcatzpAsk ?? null);
-const CAN = ['The sites you share: status, Git, logs with secrets masked', '.env variable names of those sites, never values', 'Services and runtimes, when you share them'];
+const CAN = ['The sites you share: status, Git, logs with secrets masked', '.env of those sites: names and values that are not secret', 'Services and runtimes, when you share them'];
 const answer = (a: 'deny' | 'once' | 'session') => {
   const id = ask.value?.id;
   if (id) void attempt(() => herd.mcatzpAnswer(id, a).then(() => true));

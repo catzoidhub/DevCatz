@@ -34,7 +34,7 @@ export function devChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
     props?: Record<string, unknown>;
     required?: string[];
     allowSession?: boolean;
-    tab: 'git' | 'docker' | 'api';
+    tab: 'git' | 'docker' | 'api' | 'env';
     ask: (p: Awaited<ReturnType<typeof site>>, a: Record<string, unknown>) => Promise<{ title: string; facts: Fact[] }> | { title: string; facts: Fact[] };
     run: ChangeAction['run'] extends (...x: infer _) => unknown ? (p: Awaited<ReturnType<typeof site>>, a: Record<string, unknown>, ctx: Parameters<ChangeAction['run']>[1]) => ReturnType<ChangeAction['run']> : never;
   }): ChangeAction => ({
@@ -279,7 +279,8 @@ export function devChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
           required: ['file', 'content'],
           tab: 'docker',
           ask: async (p, a) => {
-            const was = await api.dockerReadFile(p.id, String(a.file)).catch(() => null);
+            if (String(a.content).includes('•••')) throw new Error('This holds a masked value (•••): it would replace the real secret. Leave that line out, or let the user edit it in DevCatz.');
+        const was = await api.dockerReadFile(p.id, String(a.file)).catch(() => null);
             const lines = String(a.content).split('\n').length;
             return { title: `${was === null ? 'Create' : 'Replace'} ${String(a.file)}?`, facts: [...fact('Was', was === null ? null : `${was.split('\n').length} lines`), { label: 'Now', value: `${lines} lines` }, { label: 'Starts', value: short(maskDeep(String(a.content)), 200) }] };
           },
@@ -387,5 +388,79 @@ export function devChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
     }),
   ];
 
-  return [...git, ...docker, ...openapi];
+  const ENTRIES = { type: 'object', minProperties: 1, maxProperties: 50, propertyNames: { pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }, additionalProperties: { type: 'string', maxLength: 5000, pattern: '^[^\\r\\n]*$' }, description: 'Variable names and their values, one line each. The client can set a secret without having read it.' };
+  const shown = (name: string, value: string) => (scopes.secretName(name) ? '•••' : short(value, 80));
+  const env: ChangeAction[] = [
+    onSite({
+      name: 'env_show_secret',
+      title: 'Show one secret .env value',
+      description: 'Shows the value of one secret variable. DevCatz asks the user every time; the answer can never be allowed for a session, and the value goes to this assistant\'s model provider. Prefer not to read secrets: env_write can set one unseen.',
+      props: { file: S('The path from site_env_names, e.g. .env.', 500), name: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_]*$', maxLength: 200 } },
+      required: ['file', 'name'],
+      tab: 'env',
+      ask: async (p, a) => {
+        const c = (await api.envRead(p.id, String(a.file))).content;
+        if (!new RegExp(`^\\s*(?:export\\s+)?${String(a.name)}\\s*=`, 'm').test(c)) throw new Error(`${String(a.name)} is not in ${String(a.file)}`);
+        return { title: `Show ${String(a.name)} once?`, facts: [{ label: 'File', value: String(a.file) }, { label: 'Goes to', value: "this assistant's model provider, and stays in its chat" }] };
+      },
+      run: async (p, a) => {
+        const m = (await api.envRead(p.id, String(a.file))).content.match(new RegExp(`^\\s*(?:export\\s+)?${String(a.name)}\\s*=\\s*(.*)$`, 'm'));
+        if (!m) throw new Error(`${String(a.name)} is not in ${String(a.file)}`);
+        return { text: m[1].replace(/^(['"])(.*)\1$/, '$2') };
+      },
+    }),
+    onSite({
+      name: 'env_write',
+      title: 'Set .env variables',
+      description: 'Sets variables in a .env file of the site; other lines stay. The dialog shows the difference, with secrets hidden. Restart the site to apply. To change or remove whole lines, the user edits the file in the Env tab.',
+      props: { file: S('The path from site_env_names, e.g. .env.', 500), set: ENTRIES },
+      required: ['file', 'set'],
+      tab: 'env',
+      ask: async (p, a) => {
+        const set = a.set as Record<string, string>;
+        if (Object.values(set).some((v) => v.includes('•••'))) throw new Error('A value holds ••• (a masked value): that would replace the real one');
+        const plan = await api.envMerge(p.id, String(a.file), set, '', false);
+        return {
+          title: `Change ${String(a.file)}?`,
+          facts: [
+            ...fact('Adds', plan.added.map((k) => `${k}=${shown(k, set[k])}`).join(', ')),
+            ...fact('Changes', plan.changed.map((c) => `${c.key}: ${shown(c.key, c.from)} → ${shown(c.key, c.to)}`).join(', ')),
+            ...fact('Same', plan.unchanged.join(', ')),
+          ],
+        };
+      },
+      run: async (p, a, ctx) => {
+        const set = a.set as Record<string, string>;
+        if (Object.values(set).some((v) => v.includes('•••'))) throw new Error('A value holds ••• (a masked value): that would replace the real one');
+        const plan = await api.envMerge(p.id, String(a.file), set, `Set by ${ctx.client} through MCatzP`, true);
+        return ok({ file: a.file, added: plan.added, changed: plan.changed.map((c) => c.key), unchanged: plan.unchanged });
+      },
+    }),
+    onSite({
+      name: 'env_create',
+      title: 'Create a .env file',
+      description: 'Creates a .env file of the site, from its .env.example when it has one (see site_env_names).',
+      props: { file: S('The path, e.g. .env.', 500) },
+      required: ['file'],
+      tab: 'env',
+      ask: (_p, a) => ({ title: `Create ${String(a.file)}?`, facts: [] }),
+      run: async (p, a) => (await api.envCreate(p.id, String(a.file)), ok({ file: a.file, result: 'Created' })),
+    }),
+    onSite({
+      name: 'env_generate_key',
+      title: 'Generate the app key',
+      description: "Generates the site's framework key (Laravel's APP_KEY) and writes it to .env. The key is not returned.",
+      tab: 'env',
+      ask: (p) => {
+        if (!p.stack.apps.some((x) => x.framework === 'laravel')) throw new Error('Not a Laravel site');
+        return { title: 'Generate a new app key?', facts: [{ label: 'Note', value: 'Data encrypted with the old key can no longer be read' }] };
+      },
+      run: async (p) => {
+        await api.envKeyGenerate(p.id);
+        return ok({ site: p.name, result: 'Generated' });
+      },
+    }),
+  ];
+
+  return [...git, ...docker, ...openapi, ...env];
 }

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import type { HerdApi, McatzpAsk } from '@shared/types';
 import { setBridgeMcatzp } from '../bridge';
+import { SECRET_KEY } from '../ai/devcatz';
 import { store } from '../store';
 import { type ChangeAction, changeActions, findSite, readActions, type Scopes } from './actions';
 import { ActivityLog } from './activity';
@@ -98,6 +99,12 @@ export class Mcatzp {
       services: s.mcatzpServices !== false,
       changes: s.mcatzpChanges !== false,
       messages: s.mcatzpMessages === true,
+      secretName: (name) => {
+        const n = name.toUpperCase();
+        if ((s.mcatzpEnvSecret ?? []).some((x) => x.toUpperCase() === n)) return true;
+        if ((s.mcatzpEnvPublic ?? []).some((x) => x.toUpperCase() === n)) return false;
+        return SECRET_KEY.test(name);
+      },
       allSites: s.mcatzpAllSites === true,
     };
   }

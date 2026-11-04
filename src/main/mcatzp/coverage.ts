@@ -38,6 +38,12 @@ export const MCATZP_COVERAGE = {
   dockerWrite: 'tool: docker_write',
   // tool: domain_owner
   domainOwner: 'tool: domain_owner',
+  // tool: env_create
+  envCreate: 'tool: env_create',
+  // tool: env_generate_key
+  envKeyGenerate: 'tool: env_generate_key',
+  // tool: env_write
+  envMerge: 'tool: env_write',
   // tool: expose_requests
   exposeRequests: 'tool: expose_requests',
   // tool: get_status
@@ -177,8 +183,8 @@ export const MCATZP_COVERAGE = {
   dockerServices: 'tool: site_docker_services',
   // tool: site_env_names
   envFiles: 'tool: site_env_names',
-  // tool: site_env_values
-  envRead: 'tool: site_env_values',
+  // tool: site_env_values, env_show_secret
+  envRead: 'tool: site_env_values, env_show_secret',
   // tool: site_free_port
   freePortFor: 'tool: site_free_port',
   // tool: site_git_branches
@@ -272,15 +278,11 @@ export const MCATZP_COVERAGE = {
   missingLocate: 'later: change',
   missingLocateApply: 'later: change',
   updateProject: 'later: change',
-  envKeyGenerate: 'later: change',
   dbImportOne: 'later: change',
   buildSite: 'later: change',
   setAppSubdomain: 'later: change',
   restartApp: 'later: change',
   setSitePort: 'later: change',
-  envWrite: 'later: change',
-  envCreate: 'later: change',
-  envMerge: 'later: change',
   rescan: 'later: change',
   refreshRuntimes: 'later: change',
   db: 'later: change',
@@ -378,6 +380,7 @@ export const MCATZP_COVERAGE = {
   setTld: 'later: change',
   restartDns: 'later: change',
   // later: destructive
+  envWrite: 'later: destructive',
   unparkFolder: 'later: destructive',
   missingRemove: 'later: destructive',
   removeProject: 'later: destructive',

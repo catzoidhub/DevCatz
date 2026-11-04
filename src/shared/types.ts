@@ -777,6 +777,9 @@ export interface Settings {
   mcatzpServices?: boolean;
   /** Caught mail and SMS, WhatsApp contacts and messages, requests through a share: personal, off by default. */
   mcatzpMessages?: boolean;
+  /** .env names to treat as not secret / as secret, against the heuristic (any site; case-insensitive). */
+  mcatzpEnvPublic?: string[];
+  mcatzpEnvSecret?: string[];
   /** Clients may ask for changes, each confirmed in a dialog (default on). */
   mcatzpChanges?: boolean;
   /** Clients the user approved, by the name they gave; revocable. */
