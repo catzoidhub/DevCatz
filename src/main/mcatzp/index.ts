@@ -7,6 +7,7 @@ import { setBridgeMcatzp } from '../bridge';
 import { store } from '../store';
 import { type ChangeAction, changeActions, findSite, readActions, type Scopes } from './actions';
 import { ActivityLog } from './activity';
+import { moreReads } from './reads';
 
 /** Unanswered questions lapse before MCatzP stops waiting (3 and 10 minutes), so a late Allow never runs for nobody. */
 const PAIR_WAIT_MS = 150_000;
@@ -35,7 +36,7 @@ export class Mcatzp {
     this.host = new McatzpHost({
       app: { id: 'devcatz', name: 'DevCatz', version: app.getVersion() },
       dataDir: app.getPath('userData'),
-      actions: () => [...readActions(api, this.scopes()), ...this.changes()],
+      actions: () => [...readActions(api, this.scopes()), ...moreReads(api, this.scopes()), ...this.changes()],
       isPaired: (name) => (store.settings.mcatzpClients ?? []).some((c) => c.name === name),
       onPaired: (name) => store.updateSettings({ mcatzpClients: [...(store.settings.mcatzpClients ?? []), { name, approvedAt: new Date().toISOString() }] }),
       // A site named in the call must be shared; one that does not exist answers with its own error in run().
@@ -95,6 +96,8 @@ export class Mcatzp {
       site: (id) => s.mcatzpAllSites === true || shared.has(id) || shared.has(store.projects.find((p) => p.id === id)?.worktreeOf ?? ''),
       services: s.mcatzpServices !== false,
       changes: s.mcatzpChanges !== false,
+      messages: s.mcatzpMessages === true,
+      allSites: s.mcatzpAllSites === true,
     };
   }
 

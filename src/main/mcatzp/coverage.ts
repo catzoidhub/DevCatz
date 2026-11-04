@@ -4,8 +4,7 @@ import type { HerdApi } from '@shared/types';
  * Every action DevCatz can do, and where it stands with MCatzP (scope: every action, user 2026-10-28). A new method in
  * HerdApi fails the typecheck here until it is placed, so nothing is left out unnoticed.
  * `tool: …` is done. `later: …` is still to do, in that tier. `not a tool`: it only makes sense in the window (a menu, a
- * file picker, this app's own updater or AI buttons). `ask the user`: credentials or the computer's security settings,
- * left out until the user decides.
+ * file picker, this app's own updater or AI buttons). `never: …`: left out on purpose, with why.
  */
 export const MCATZP_COVERAGE = {
   // tool: cancel_install
@@ -21,12 +20,22 @@ export const MCATZP_COVERAGE = {
   // tool: create_service
   dbDefaults: 'tool: create_service',
   dbCreate: 'tool: create_service',
+  // tool: deps_report
+  depsReport: 'tool: deps_report',
+  // tool: docker_status
+  dockerStatus: 'tool: docker_status',
+  // tool: domain_owner
+  domainOwner: 'tool: domain_owner',
+  // tool: expose_requests
+  exposeRequests: 'tool: expose_requests',
   // tool: install_runtime
   nodeInstall: 'tool: install_runtime',
   bunInstall: 'tool: install_runtime',
   goInstall: 'tool: install_runtime',
   pythonInstall: 'tool: install_runtime',
   phpInstall: 'tool: install_runtime',
+  // tool: install_runtime_tool
+  toolInstall: 'tool: install_runtime_tool',
   // tool: install_service
   searchInstall: 'tool: install_service',
   waInstall: 'tool: install_service',
@@ -39,6 +48,14 @@ export const MCATZP_COVERAGE = {
   dbEngines: 'tool: list_db_engines',
   // tool: list_db_versions
   dbVersions: 'tool: list_db_versions',
+  // tool: list_external_databases
+  dbDetect: 'tool: list_external_databases',
+  // tool: list_git_repos
+  gitRepos: 'tool: list_git_repos',
+  // tool: list_herd_sites
+  herdSites: 'tool: list_herd_sites',
+  // tool: list_runtime_tools
+  toolsState: 'tool: list_runtime_tools',
   // tool: list_runtime_versions
   nodeRemote: 'tool: list_runtime_versions',
   bunRemote: 'tool: list_runtime_versions',
@@ -47,18 +64,110 @@ export const MCATZP_COVERAGE = {
   phpRemote: 'tool: list_runtime_versions',
   // tool: list_sites, get_site, list_services, list_runtimes
   getState: 'tool: list_sites, get_site, list_services, list_runtimes',
+  // tool: list_ssh_keys
+  gitSshKeys: 'tool: list_ssh_keys',
+  // tool: mail_get
+  mailGet: 'tool: mail_get',
+  // tool: mail_list
+  mailList: 'tool: mail_list',
+  // tool: monitor_history
+  monitorHistory: 'tool: monitor_history',
+  // tool: monitor_snapshot
+  monitorSnapshot: 'tool: monitor_snapshot',
+  // tool: php_extensions
+  phpExtensions: 'tool: php_extensions',
+  // tool: php_ini
+  phpGetIni: 'tool: php_ini',
   // tool: restart_site
   restart: 'tool: restart_site',
+  // tool: rust_status
+  rustRemote: 'tool: rust_status',
+  // tool: search_backups
+  searchBackups: 'tool: search_backups',
+  // tool: search_indexes
+  searchIndexes: 'tool: search_indexes',
+  // tool: search_keys
+  searchKeys: 'tool: search_keys',
+  // tool: search_query
+  searchQuery: 'tool: search_query',
+  // tool: search_settings
+  searchGetSettings: 'tool: search_settings',
+  // tool: search_tasks
+  searchTasks: 'tool: search_tasks',
+  // tool: site_build_targets
+  buildTargets: 'tool: site_build_targets',
+  // tool: site_dep_commands
+  depCommands: 'tool: site_dep_commands',
+  // tool: site_deps
+  siteDeps: 'tool: site_deps',
+  // tool: site_docker_env
+  dockerDocatzEnv: 'tool: site_docker_env',
+  dockerComposeEnv: 'tool: site_docker_env',
+  // tool: site_docker_files
+  dockerFiles: 'tool: site_docker_files',
+  // tool: site_docker_list_files
+  dockerListFiles: 'tool: site_docker_list_files',
+  // tool: site_docker_preview
+  dockerDevPreview: 'tool: site_docker_preview',
+  // tool: site_docker_read
+  dockerReadFile: 'tool: site_docker_read',
+  // tool: site_docker_services
+  dockerServices: 'tool: site_docker_services',
   // tool: site_env_names
   envFiles: 'tool: site_env_names',
+  // tool: site_env_values
+  envRead: 'tool: site_env_values',
+  // tool: site_free_port
+  freePortFor: 'tool: site_free_port',
+  // tool: site_git_branches
+  gitBranches: 'tool: site_git_branches',
+  // tool: site_git_diff
+  gitDiff: 'tool: site_git_diff',
   // tool: site_git_log
   gitLog: 'tool: site_git_log',
+  // tool: site_git_pulls
+  gitPulls: 'tool: site_git_pulls',
+  // tool: site_git_show
+  gitShow: 'tool: site_git_show',
+  // tool: site_git_stashes
+  gitStashes: 'tool: site_git_stashes',
   // tool: site_git_status
   gitStatus: 'tool: site_git_status',
+  // tool: site_git_tags
+  gitTags: 'tool: site_git_tags',
+  // tool: site_gitignore
+  gitignoreRead: 'tool: site_gitignore',
+  // tool: site_gitignore_suggestions
+  gitIgnoreSuggestions: 'tool: site_gitignore_suggestions',
+  // tool: site_go_db
+  goDbInfo: 'tool: site_go_db',
+  // tool: site_laravel_log
+  laravelLog: 'tool: site_laravel_log',
   // tool: site_logs
   getLogs: 'tool: site_logs',
   // tool: site_openapi
   siteOpenApi: 'tool: site_openapi',
+  // tool: site_port_env
+  appPortEnv: 'tool: site_port_env',
+  // tool: site_port_use
+  sitePortUse: 'tool: site_port_use',
+  // tool: site_redis
+  redisDetails: 'tool: site_redis',
+  // tool: site_runtime_needs
+  siteRuntimeNeeds: 'tool: site_runtime_needs',
+  // tool: site_service_env
+  mailEnv: 'tool: site_service_env',
+  gwEnv: 'tool: site_service_env',
+  waEnv: 'tool: site_service_env',
+  searchEnv: 'tool: site_service_env',
+  storageEnv: 'tool: site_service_env',
+  wsEnv: 'tool: site_service_env',
+  reverbEnv: 'tool: site_service_env',
+  // tool: site_worktrees
+  worktreeList: 'tool: site_worktrees',
+  worktreeCheck: 'tool: site_worktrees',
+  // tool: sms_list
+  gwSms: 'tool: sms_list',
   // tool: start/stop/restart_service
   dbAction: 'tool: start/stop/restart_service',
   searchAction: 'tool: start/stop/restart_service',
@@ -71,6 +180,22 @@ export const MCATZP_COVERAGE = {
   start: 'tool: start_site',
   // tool: stop_site
   stop: 'tool: stop_site',
+  // tool: storage_buckets
+  s3Buckets: 'tool: storage_buckets',
+  // tool: storage_list
+  s3List: 'tool: storage_list',
+  // tool: websocket_stats
+  wsStats: 'tool: websocket_stats',
+  // tool: whatsapp_contacts
+  waContacts: 'tool: whatsapp_contacts',
+  // tool: whatsapp_deliveries
+  waDeliveries: 'tool: whatsapp_deliveries',
+  // tool: whatsapp_groups
+  waGroups: 'tool: whatsapp_groups',
+  // tool: whatsapp_hooks
+  waHooks: 'tool: whatsapp_hooks',
+  // tool: whatsapp_messages
+  waMessages: 'tool: whatsapp_messages',
   // later: change
   clearLogs: 'later: change',
   linkProject: 'later: change',
@@ -111,7 +236,6 @@ export const MCATZP_COVERAGE = {
   rustTargetAdd: 'later: change',
   rustToolInstall: 'later: change',
   rustInstallLinker: 'later: change',
-  toolInstall: 'later: change',
   repairElectron: 'later: change',
   uvInstall: 'later: change',
   pythonSetDefault: 'later: change',
@@ -204,6 +328,20 @@ export const MCATZP_COVERAGE = {
   waUpgrade: 'later: change',
   searchUpgrade: 'later: change',
   storageUpgrade: 'later: change',
+  inspectFolder: 'later: change',
+  dbImportList: 'later: change',
+  rustToolsCheck: 'later: change',
+  checkUpdates: 'later: change',
+  exposeCheckUpdates: 'later: change',
+  waCheckUpdates: 'later: change',
+  gwCheckUpdates: 'later: change',
+  servicesCheckUpdates: 'later: change',
+  searchExport: 'later: change',
+  scoutCommand: 'later: change',
+  setLaunchAtLogin: 'later: change',
+  shimPathSet: 'later: change',
+  setTld: 'later: change',
+  restartDns: 'later: change',
   // later: destructive
   unparkFolder: 'later: destructive',
   missingRemove: 'later: destructive',
@@ -249,114 +387,37 @@ export const MCATZP_COVERAGE = {
   s3DeleteBucket: 'later: destructive',
   s3Delete: 'later: destructive',
   deleteGroup: 'later: destructive',
-  // later: read
-  inspectFolder: 'later: read',
-  siteRuntimeNeeds: 'later: read',
-  runtimePick: 'later: read',
-  dbImportList: 'later: read',
-  domainOwner: 'later: read',
-  buildTargets: 'later: read',
-  appPortEnv: 'later: read',
-  freePortFor: 'later: read',
-  gitignoreRead: 'later: read',
-  siteDeps: 'later: read',
-  depsReport: 'later: read',
-  sitePortUse: 'later: read',
-  envRead: 'later: read',
-  redisDetails: 'later: read',
-  depCommands: 'later: read',
-  rustRemote: 'later: read',
-  rustToolsCheck: 'later: read',
-  toolsState: 'later: read',
-  phpGetIni: 'later: read',
-  phpExtensions: 'later: read',
-  checkUpdates: 'later: read',
-  goDbInfo: 'later: read',
-  dbDetect: 'later: read',
-  monitorSnapshot: 'later: read',
-  monitorHistory: 'later: read',
-  searchIndexes: 'later: read',
-  searchGetSettings: 'later: read',
-  searchQuery: 'later: read',
-  mailList: 'later: read',
-  mailGet: 'later: read',
-  mailRaw: 'later: read',
-  mailAttachmentData: 'later: read',
-  mailForwardConfig: 'later: read',
-  mailEnv: 'later: read',
-  exposeCheckUpdates: 'later: read',
-  exposeRequests: 'later: read',
-  waCheckUpdates: 'later: read',
-  gwCheckUpdates: 'later: read',
-  gwEnv: 'later: read',
-  gwSms: 'later: read',
-  waSessionQr: 'later: read',
-  waContacts: 'later: read',
-  waGroups: 'later: read',
-  waMessages: 'later: read',
-  waHooks: 'later: read',
-  waDeliveries: 'later: read',
-  waEnv: 'later: read',
-  gitDiff: 'later: read',
-  gitShow: 'later: read',
-  gitBranches: 'later: read',
-  worktreeList: 'later: read',
-  worktreeCheck: 'later: read',
-  gitStashes: 'later: read',
-  gitTags: 'later: read',
-  gitIgnoreSuggestions: 'later: read',
-  gitPulls: 'later: read',
-  gitRepos: 'later: read',
-  gitSshKeys: 'later: read',
-  servicesCheckUpdates: 'later: read',
-  searchTasks: 'later: read',
-  searchBackups: 'later: read',
-  searchExport: 'later: read',
-  searchKeys: 'later: read',
-  searchEnv: 'later: read',
-  storageEnv: 'later: read',
-  scoutCommand: 'later: read',
-  wsStats: 'later: read',
-  wsClientAuth: 'later: read',
-  wsEnv: 'later: read',
-  reverbEnv: 'later: read',
-  s3Buckets: 'later: read',
-  s3List: 'later: read',
-  dockerStatus: 'later: read',
-  dockerFiles: 'later: read',
-  dockerServices: 'later: read',
-  dockerListFiles: 'later: read',
-  dockerDevPreview: 'later: read',
-  dockerDocatzEnv: 'later: read',
-  dockerComposeEnv: 'later: read',
-  dockerReadFile: 'later: read',
-  laravelLog: 'later: read',
-  herdSites: 'later: read',
-  // ask the user
-  uninstallPlan: 'ask the user',
-  uninstall: 'ask the user',
-  updateSettings: 'ask the user',
-  trustCa: 'ask the user',
-  untrustCa: 'ask the user',
-  setLaunchAtLogin: 'ask the user',
-  shimPathSet: 'ask the user',
-  mailSetForwardConfig: 'ask the user',
-  exposeCloudflareLogin: 'ask the user',
-  exposeCloudflareLogout: 'ask the user',
-  exposeSetAccount: 'ask the user',
-  aiSetKey: 'ask the user',
-  gitSetIdentity: 'ask the user',
-  gitAddAccount: 'ask the user',
-  gitRemoveAccount: 'ask the user',
-  gitSshGenerate: 'ask the user',
-  gitSshAddToAccount: 'ask the user',
-  setTld: 'ask the user',
-  installResolver: 'ask the user',
-  uninstallResolver: 'ask the user',
-  restartDns: 'ask the user',
-  installCleanUrls: 'ask the user',
-  uninstallCleanUrls: 'ask the user',
+  mailForwardConfig: 'tool: get_status',
+  // never: a QR logs in a WhatsApp account
+  waSessionQr: 'never: a QR logs in a WhatsApp account',
+  // never: credentials (user, 2026-11-04)
+  mailSetForwardConfig: 'never: credentials (user, 2026-11-04)',
+  exposeCloudflareLogin: 'never: credentials (user, 2026-11-04)',
+  exposeCloudflareLogout: 'never: credentials (user, 2026-11-04)',
+  exposeSetAccount: 'never: credentials (user, 2026-11-04)',
+  aiSetKey: 'never: credentials (user, 2026-11-04)',
+  gitSetIdentity: 'never: credentials (user, 2026-11-04)',
+  gitAddAccount: 'never: credentials (user, 2026-11-04)',
+  gitRemoveAccount: 'never: credentials (user, 2026-11-04)',
+  gitSshGenerate: 'never: credentials (user, 2026-11-04)',
+  gitSshAddToAccount: 'never: credentials (user, 2026-11-04)',
+  // never: signs with the server secret
+  wsClientAuth: 'never: signs with the server secret',
+  // never: system security, needs an administrator (user, 2026-11-04)
+  trustCa: 'never: system security, needs an administrator (user, 2026-11-04)',
+  untrustCa: 'never: system security, needs an administrator (user, 2026-11-04)',
+  installResolver: 'never: system security, needs an administrator (user, 2026-11-04)',
+  uninstallResolver: 'never: system security, needs an administrator (user, 2026-11-04)',
+  installCleanUrls: 'never: system security, needs an administrator (user, 2026-11-04)',
+  uninstallCleanUrls: 'never: system security, needs an administrator (user, 2026-11-04)',
+  // never: the app itself (user, 2026-11-04)
+  uninstallPlan: 'never: the app itself (user, 2026-11-04)',
+  uninstall: 'never: the app itself (user, 2026-11-04)',
+  updateSettings: 'never: the app itself (user, 2026-11-04)',
   // not a tool
+  runtimePick: 'not a tool',
+  mailRaw: 'tool: mail_raw',
+  mailAttachmentData: 'not a tool',
   pickFolder: 'not a tool',
   aboutInfo: 'not a tool',
   appUpdateCheck: 'not a tool',

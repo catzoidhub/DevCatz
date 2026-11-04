@@ -773,6 +773,8 @@ export interface Settings {
   mcatzpSites?: string[];
   /** Services and runtimes are readable (default on; they hold no secrets here). */
   mcatzpServices?: boolean;
+  /** Caught mail and SMS, WhatsApp contacts and messages, requests through a share: personal, off by default. */
+  mcatzpMessages?: boolean;
   /** Clients may ask for changes, each confirmed in a dialog (default on). */
   mcatzpChanges?: boolean;
   /** Clients the user approved, by the name they gave; revocable. */

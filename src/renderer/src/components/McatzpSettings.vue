@@ -74,6 +74,10 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
             <span>Services and runtimes<span class="block text-xs opacity-60">Which databases, search engines and other services exist and whether they run; no passwords or keys.</span></span>
           </label>
           <label class="flex cursor-pointer items-start gap-2 text-sm">
+            <input type="checkbox" class="checkbox checkbox-sm mt-0.5" :checked="s.mcatzpMessages === true" @change="save({ mcatzpMessages: ($event.target as HTMLInputElement).checked })" />
+            <span>Messages<span class="block text-xs opacity-60">Caught mail and SMS, WhatsApp contacts and messages, requests through a public share. They can hold personal data, which then goes to the assistant's model provider. Off by default.</span></span>
+          </label>
+          <label class="flex cursor-pointer items-start gap-2 text-sm">
             <input type="checkbox" class="checkbox checkbox-sm mt-0.5" :checked="s.mcatzpChanges !== false" @change="save({ mcatzpChanges: ($event.target as HTMLInputElement).checked })" />
             <span>Let clients ask for changes<span class="block text-xs opacity-60">Starting, stopping and restarting; creating a database service or a database; installing a service or a runtime. DevCatz shows you each request first. Off: clients can only read.</span></span>
           </label>

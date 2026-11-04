@@ -38,7 +38,7 @@ import { needFeature } from './settings';
 
 // ---------------------------------------------------------------- masking
 
-const SECRET_KEY = /(pass(word)?|secret|token|api[_-]?key|private|credential|auth|signature|cookie|session|dsn|salt|_key$|^key$)/i;
+export const SECRET_KEY = /(pass(word)?|secret|token|api[_-]?key|private|credential|auth|signature|cookie|session|dsn|salt|_key$|^key$)/i;
 
 /** Masks what looks secret in free text (log lines, payloads): KEY=value secrets, bearer tokens, keys, URL passwords. */
 export function maskText(text: string): string {
