@@ -10,6 +10,7 @@ import { type ChangeAction, changeActions, findSite, readActions, type Scopes } 
 import { ActivityLog } from './activity';
 import { devChanges } from './devchanges';
 import { moreReads } from './reads';
+import { serviceChanges } from './servicechanges';
 import { siteChanges } from './sitechanges';
 
 /** Unanswered questions lapse before MCatzP stops waiting (3 and 10 minutes), so a late Allow never runs for nobody. */
@@ -106,7 +107,7 @@ export class Mcatzp {
   }
 
   private changes(): ChangeAction[] {
-    return [...changeActions(this.api, this.scopes()), ...devChanges(this.api, this.scopes()), ...siteChanges(this.api, this.scopes())];
+    return [...changeActions(this.api, this.scopes()), ...devChanges(this.api, this.scopes()), ...siteChanges(this.api, this.scopes()), ...serviceChanges(this.api, this.scopes())];
   }
 
   /** What is shared changed: connected clients get the new list of tools. */

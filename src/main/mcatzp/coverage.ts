@@ -57,8 +57,17 @@ export const MCATZP_COVERAGE = {
   envKeyGenerate: 'tool: env_generate_key',
   // tool: env_write
   envMerge: 'tool: env_write',
+  // tool: expose_cancel_install
+  exposeCancelInstall: 'tool: expose_cancel_install',
+  // tool: expose_install
+  exposeInstall: 'tool: expose_install',
+  exposeUpgrade: 'tool: expose_install',
+  // tool: expose_replay
+  exposeReplay: 'tool: expose_replay',
   // tool: expose_requests
   exposeRequests: 'tool: expose_requests',
+  // tool: gateway_send
+  gwSend: 'tool: gateway_send',
   // tool: get_status
   mailForwardConfig: 'tool: get_status',
   // tool: git_add_remote
@@ -97,6 +106,9 @@ export const MCATZP_COVERAGE = {
   gitTag: 'tool: git_tag (delete: later, destructive)',
   // tool: git_unstage
   gitUnstage: 'tool: git_unstage',
+  // tool: import_databases
+  dbImportOne: 'tool: import_databases',
+  dbImportList: 'tool: import_databases',
   // tool: install_composer
   composerInstall: 'tool: install_composer',
   // tool: install_deps
@@ -122,6 +134,8 @@ export const MCATZP_COVERAGE = {
   storageInstall: 'tool: install_service',
   // tool: install_uv
   uvInstall: 'tool: install_uv',
+  // tool: laravel_broadcast_test
+  laravelTestBroadcast: 'tool: laravel_broadcast_test',
   // tool: link_site
   linkProject: 'tool: link_site',
   inspectFolder: 'tool: link_site',
@@ -151,12 +165,18 @@ export const MCATZP_COVERAGE = {
   gitSshKeys: 'tool: list_ssh_keys',
   // tool: locate_missing_site
   missingLocateApply: 'tool: locate_missing_site',
+  // tool: mail_forward
+  mailForward: 'tool: mail_forward',
   // tool: mail_get
   mailGet: 'tool: mail_get',
   // tool: mail_list
   mailList: 'tool: mail_list',
+  // tool: mail_mark_read
+  mailMarkRead: 'tool: mail_mark_read',
   // tool: mail_raw
   mailRaw: 'tool: mail_raw',
+  // tool: mail_send_test
+  mailSendTest: 'tool: mail_send_test',
   // tool: monitor_history
   monitorHistory: 'tool: monitor_history',
   // tool: monitor_snapshot
@@ -213,14 +233,28 @@ export const MCATZP_COVERAGE = {
   rustToolchainInstall: 'tool: rust_toolchain',
   rustSetDefault: 'tool: rust_toolchain',
   rustTargetAdd: 'tool: rust_toolchain',
+  // tool: scout_command (flush: later, destructive)
+  scoutCommand: 'tool: scout_command (flush: later, destructive)',
+  // tool: search_add_documents
+  searchUpsert: 'tool: search_add_documents',
   // tool: search_backups
   searchBackups: 'tool: search_backups',
+  // tool: search_cancel_tasks
+  searchCancelTasks: 'tool: search_cancel_tasks',
+  // tool: search_create_backup
+  searchCreateBackup: 'tool: search_create_backup',
+  // tool: search_create_index
+  searchCreateIndex: 'tool: search_create_index',
+  // tool: search_create_key
+  searchCreateKey: 'tool: search_create_key',
   // tool: search_indexes
   searchIndexes: 'tool: search_indexes',
   // tool: search_keys
   searchKeys: 'tool: search_keys',
   // tool: search_query
   searchQuery: 'tool: search_query',
+  // tool: search_save_settings
+  searchSaveSettings: 'tool: search_save_settings',
   // tool: search_settings
   searchGetSettings: 'tool: search_settings',
   // tool: search_tasks
@@ -249,6 +283,10 @@ export const MCATZP_COVERAGE = {
   setFavorite: 'tool: set_site_favorite',
   // tool: set_site_group
   setSiteGroup: 'tool: set_site_group',
+  // tool: share_site
+  exposeStart: 'tool: share_site',
+  // tool: site_broadcast
+  laravelBroadcast: 'tool: site_broadcast',
   // tool: site_build_targets
   buildTargets: 'tool: site_build_targets',
   // tool: site_database
@@ -343,16 +381,45 @@ export const MCATZP_COVERAGE = {
   start: 'tool: start_site',
   // tool: stop_all_sites
   stopAll: 'tool: stop_all_sites',
+  // tool: stop_share
+  exposeStop: 'tool: stop_share',
   // tool: stop_site
   stop: 'tool: stop_site',
   // tool: storage_buckets
   s3Buckets: 'tool: storage_buckets',
+  // tool: storage_cancel_upload
+  s3CancelUpload: 'tool: storage_cancel_upload',
+  // tool: storage_create_bucket
+  s3CreateBucket: 'tool: storage_create_bucket',
   // tool: storage_list
   s3List: 'tool: storage_list',
+  // tool: storage_make_folder
+  s3MkDir: 'tool: storage_make_folder',
+  // tool: storage_set_public
+  s3SetPublic: 'tool: storage_set_public',
+  // tool: storage_upload
+  s3Upload: 'tool: storage_upload',
   // tool: update_runtime
   runtimeUpdate: 'tool: update_runtime',
+  // tool: update_service
+  dbUpdate: 'tool: update_service',
+  searchUpdate: 'tool: update_service',
+  waUpdate: 'tool: update_service',
+  gwUpdate: 'tool: update_service',
+  gwSetAutoStart: 'tool: update_service',
+  serviceSetAutoStart: 'tool: update_service',
+  wsUpdate: 'tool: update_service',
+  storageUpdate: 'tool: update_service',
   // tool: update_site
   updateProject: 'tool: update_site',
+  // tool: upgrade_service
+  wsUpgrade: 'tool: upgrade_service',
+  gwUpgrade: 'tool: upgrade_service',
+  waUpgrade: 'tool: upgrade_service',
+  searchUpgrade: 'tool: upgrade_service',
+  storageUpgrade: 'tool: upgrade_service',
+  // tool: websocket_publish
+  wsPublish: 'tool: websocket_publish',
   // tool: websocket_stats
   wsStats: 'tool: websocket_stats',
   // tool: whatsapp_contacts
@@ -365,63 +432,22 @@ export const MCATZP_COVERAGE = {
   waHooks: 'tool: whatsapp_hooks',
   // tool: whatsapp_messages
   waMessages: 'tool: whatsapp_messages',
+  // tool: whatsapp_replay
+  waReplay: 'tool: whatsapp_replay',
+  // tool: whatsapp_send
+  waSend: 'tool: whatsapp_send',
+  // tool: whatsapp_session
+  waSessionStart: 'tool: whatsapp_session',
+  waSessionLogout: 'tool: whatsapp_session',
+  // tool: whatsapp_set_hook
+  waSetHook: 'tool: whatsapp_set_hook',
   // tool: worktree_add
   worktreeAdd: 'tool: worktree_add',
   // tool: worktree_create
   worktreeCreate: 'tool: worktree_create',
-  // later: change
-  dbImportOne: 'later: change',
-  dbUpdate: 'later: change',
-  dbBuildAction: 'later: change',
-  searchUpdate: 'later: change',
-  searchCreateIndex: 'later: change',
-  searchSaveSettings: 'later: change',
-  searchUpsert: 'later: change',
-  searchImportFile: 'later: change',
-  mailMarkRead: 'later: change',
-  mailSaveAttachment: 'later: change',
-  mailForward: 'later: change',
-  mailSendTest: 'later: change',
-  exposeInstall: 'later: change',
-  exposeCancelInstall: 'later: change',
-  exposeStart: 'later: change',
-  exposeStop: 'later: change',
-  exposeReplay: 'later: change',
-  waUpdate: 'later: change',
-  gwUpdate: 'later: change',
-  gwSetAutoStart: 'later: change',
-  gwSend: 'later: change',
-  waSessionStart: 'later: change',
-  waSessionLogout: 'later: change',
-  waSend: 'later: change',
-  waSetHook: 'later: change',
-  waReplay: 'later: change',
-  wsUpgrade: 'later: change',
-  serviceSetAutoStart: 'later: change',
-  searchCancelTasks: 'later: change',
-  searchCreateBackup: 'later: change',
-  searchRestoreBackup: 'later: change',
-  searchCreateKey: 'later: change',
-  wsUpdate: 'later: change',
-  wsPublish: 'later: change',
-  laravelBroadcast: 'later: change',
-  laravelTestBroadcast: 'later: change',
-  storageUpdate: 'later: change',
-  s3CreateBucket: 'later: change',
-  s3SetPublic: 'later: change',
-  s3Upload: 'later: change',
-  s3CancelUpload: 'later: change',
-  s3Download: 'later: change',
-  s3MkDir: 'later: change',
-  exposeUpgrade: 'later: change',
-  gwUpgrade: 'later: change',
-  waUpgrade: 'later: change',
-  searchUpgrade: 'later: change',
-  storageUpgrade: 'later: change',
-  dbImportList: 'later: change',
-  searchExport: 'later: change',
-  scoutCommand: 'later: change',
   // later: destructive
+  dbBuildAction: 'later: destructive',
+  searchRestoreBackup: 'later: destructive',
   envWrite: 'later: destructive',
   unparkFolder: 'later: destructive',
   missingRemove: 'later: destructive',
@@ -493,6 +519,10 @@ export const MCATZP_COVERAGE = {
   uninstall: 'never: the app itself (user, 2026-11-04)',
   updateSettings: 'never: the app itself (user, 2026-11-04)',
   // not a tool
+  searchImportFile: 'not a tool',
+  mailSaveAttachment: 'not a tool',
+  s3Download: 'not a tool',
+  searchExport: 'not a tool',
   missingLocate: 'not a tool',
   runtimePick: 'not a tool',
   mailAttachmentData: 'not a tool',

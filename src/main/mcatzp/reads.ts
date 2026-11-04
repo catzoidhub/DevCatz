@@ -122,6 +122,7 @@ export function moreReads(api: HerdApi, scopes: Scopes): ActionDef[] {
       const p = (await state()).projects.find((x) => x.id === id)!;
       return masked({ search: p.search, storage: p.s3, realtime: p.realtime, reverb: p.reverbEndpoint, mail: p.mailInfo, whatsapp: p.waInfo, gateways: p.gwInfo });
     }),
+    onSite('site_broadcast', 'Laravel broadcasting', "A Laravel site's broadcast connection, events and channels, and what is missing. Values masked.", {}, [], async (id) => masked(await api.laravelBroadcast(id))),
     onSite('site_git_diff', 'Git diff of a file', 'The change in one file of a site, secrets masked.', { file: S('The path from site_git_status.', 500), staged: { type: 'boolean' } }, ['file'], async (id, a) => masked(await api.gitDiff(id, String(a.file), a.staged === true))),
     onSite('site_git_show', 'A commit', 'One commit of a site with its changes, secrets masked.', { sha: { type: 'string', pattern: '^[0-9a-fA-F]{4,64}$' } }, ['sha'], async (id, a) => masked(await api.gitShow(id, String(a.sha)))),
     onSite('site_git_branches', 'Git branches', 'The branches of a site.', {}, [], async (id) => plain(await api.gitBranches(id))),
