@@ -6,6 +6,11 @@ import { siteBase } from '../shared';
 const options = (): SetupOptions => ({ site: siteBase(), env: getShellEnv() });
 
 export const approvals = (): McatzpApproval[] => approvalsAcrossApps(options());
+/** The version to update to: only a copy these apps installed, a Homebrew or npm copy updates its own way. Null when up to date. */
+export async function availableUpdate(): Promise<string | null> {
+  const { source, version, latest } = await setupState();
+  return source === 'catzoid' && version && latest && version.localeCompare(latest, undefined, { numeric: true }) < 0 ? latest : null;
+}
 export const setupState = (askSite = true): Promise<McatzpSetup> => state(options(), askSite);
 export const install = (progress: (p: McatzpInstallProgress) => void, signal: AbortSignal): Promise<void> => run(options(), progress, signal);
 export const targets = (): Promise<McatzpTarget[]> => list(options());

@@ -1527,6 +1527,8 @@ export interface AppState {
   mcatzpAsk: McatzpAsk | null;
   /** Install MCatzP running in Settings. */
   mcatzpInstalling: McatzpInstallProgress | null;
+  /** The MCatzP version to update to, for the badges in Settings; null when up to date. */
+  mcatzpUpdate: string | null;
   projects: ProjectState[];
   /** Linked sites whose folder is gone (deleted or moved outside DevCatz): their settings wait until removed or located. */
   missingSites: { id: string; name: string; path: string; domain: string }[];

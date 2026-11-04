@@ -45,6 +45,14 @@ const EDITORS = isWin
 let herd: Herd;
 let mcatzp: Mcatzp;
 let mcatzpInstalling: AbortController | null = null;
+/** Settings' MCatzP badge: asked once a day while the switch is on, and whenever the page or an install has news. */
+const MCATZP_UPDATE_EVERY_MS = 24 * 3600_000;
+async function checkMcatzpUpdate(): Promise<void> {
+  const next = store.settings.mcatzp === true ? await mcatzpSetup.availableUpdate().catch(() => herd.mcatzpUpdate) : null;
+  if (next === herd.mcatzpUpdate) return;
+  herd.mcatzpUpdate = next;
+  herd.emit('change');
+}
 const clientId = (id: unknown) => {
   const known = MCATZP_TARGETS.find((t) => t === id);
   if (!known) throw new Error('Unknown client');
@@ -814,7 +822,10 @@ function api(): HerdApi {
     mcatzpActivity: async () => mcatzp.activity.list(),
     mcatzpClearActivity: async () => mcatzp.activity.clear(),
     mcatzpRevoke: (name) => mcatzp.revoke(String(name)),
-    mcatzpSetup: (askSite) => mcatzpSetup.setupState(askSite !== false),
+    mcatzpSetup: async (askSite) => {
+      if (askSite !== false) void checkMcatzpUpdate();
+      return mcatzpSetup.setupState(askSite !== false);
+    },
     mcatzpInstall: async () => {
       if (mcatzpInstalling) throw new Error('MCatzP is being installed');
       mcatzpInstalling = new AbortController();
@@ -832,6 +843,7 @@ function api(): HerdApi {
         mcatzpInstalling = null;
         report(null);
       }
+      void checkMcatzpUpdate();
       return mcatzpSetup.setupState();
     },
     mcatzpInstallCancel: async () => mcatzpInstalling?.abort(),
@@ -899,7 +911,10 @@ function api(): HerdApi {
     db: (id, action, arg) => herd.db(id, action, arg),
     updateSettings: async (patch) => {
       await herd.updateSettings(patch);
-      if (patch.mcatzp !== undefined) await mcatzp.set(patch.mcatzp);
+      if (patch.mcatzp !== undefined) {
+        await mcatzp.set(patch.mcatzp);
+        void checkMcatzpUpdate();
+      }
       if (Object.keys(patch).some((k) => k.startsWith('mcatzp'))) mcatzp.scopesChanged();
       // Native parts (vibrancy, dialogs, menus) follow the chosen theme too; the other Catzoid apps follow it.
       if (patch.theme) {
@@ -1247,6 +1262,8 @@ app.whenReady().then(async () => {
     herd.emit('change');
   }, showWindow);
   void mcatzp.set(store.settings.mcatzp === true).catch(() => undefined);
+  setTimeout(() => void checkMcatzpUpdate(), 30_000);
+  setInterval(() => void checkMcatzpUpdate(), MCATZP_UPDATE_EVERY_MS);
   void migrateAiToShared()
     .then(() => herd.emit('change'))
     .catch((e) => console.warn('AI settings migration:', e.message));

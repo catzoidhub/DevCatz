@@ -209,7 +209,7 @@ const groups = computed(() => {
         </div>
         <button v-if="installing" class="btn btn-sm" :disabled="installing.phase === 'install'" @click="cancelInstall">Cancel</button>
         <button v-else-if="setup && !setup.path" class="btn btn-primary btn-sm" :disabled="!setup.checked || setup.noBuild" @click="installMcatzp">Install MCatzP</button>
-        <button v-else-if="outdated" class="btn btn-sm" @click="installMcatzp">Update to {{ setup?.latest }}</button>
+        <button v-else-if="outdated" class="btn btn-sm mcatzp-update" @click="installMcatzp">Update to {{ setup?.latest }}</button>
       </div>
 
       <template v-if="on">

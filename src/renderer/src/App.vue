@@ -649,6 +649,7 @@ async function park() {
         <span class="rail-icon"><svg class="size-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS.cog" /></svg></span>
         Settings
         <span v-if="updateDot" class="absolute top-1.5 right-4 size-2 rounded-full bg-primary ring-2 ring-base-200" :title="`DevCatz ${state?.appUpdate.version} is available`" />
+        <span v-else-if="state?.mcatzpUpdate" class="mcatzp-dot absolute top-1.5 right-4 ring-2 ring-base-200" :title="`MCatzP ${state?.mcatzpUpdate} is available`" />
         <span v-else-if="state?.cert.caTrusted === false" class="absolute top-1.5 right-4 size-2 rounded-full bg-warning ring-2 ring-base-200" title="HTTPS certificate not trusted" />
       </button>
     </nav>

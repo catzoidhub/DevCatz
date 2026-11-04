@@ -250,7 +250,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
   <div class="no-drag border-b border-base-300/60 px-6 py-3">
     <!-- A narrow window wraps the tabs onto a second row instead of running past the edge. -->
     <div role="tablist" class="seg max-w-full flex-wrap">
-      <a v-for="t in TABS" :key="t.id" role="tab" class="seg-item" :class="{ 'is-active': tab === t.id }" @click="tab = t.id">{{ t.label }}</a>
+      <a v-for="t in TABS" :key="t.id" role="tab" class="seg-item" :class="{ 'is-active': tab === t.id }" @click="tab = t.id">{{ t.label }}<span v-if="t.id === 'mcatzp' && state?.mcatzpUpdate" class="mcatzp-pill" :title="`MCatzP ${state.mcatzpUpdate} is available`">Update</span></a>
     </div>
   </div>
   <section class="site-tab">
