@@ -138,7 +138,8 @@ function serverPort(dir: string, root: string, lib: string | null): { port: numb
     src.match(/"(?:[\w.\-[\]]*):(\d{2,5})"/)?.[1] ?? // "0.0.0.0:3000", "127.0.0.1:8080", ":3000"
     src.match(/\(\s*\[\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\]\s*,\s*(\d{2,5})\s*\)/)?.[1] ?? // warp: ([127, 0, 0, 1], 3030)
     src.match(/\(\s*"[\w.:]+"\s*,\s*(\d{2,5})\s*\)/)?.[1] ?? // actix: .bind(("127.0.0.1", 8080))
-    src.match(/unwrap_or\(\s*"?(\d{4,5})"?\s*\)/)?.[1]; // env var with a default: .unwrap_or("3000")
+    src.match(/unwrap_or\(\s*"?(\d{4,5})"?\s*\)/)?.[1] ?? // env var with a default: .unwrap_or("3000")
+    src.match(/unwrap_or_else\(\s*\|_\|\s*"?(\d{4,5})"?/)?.[1]; // .unwrap_or_else(|_| "3000".into())
   return { port: literal ? Number(literal) : (DEFAULT_PORT[lib ?? ''] ?? 8080), vars };
 }
 
@@ -210,6 +211,11 @@ export function detectRustApp(dir: string, root: string, domain: string, manifes
     // A model behind a web server (Burn / Candle with Axum …): named after the model, built optimised.
     const ml = (manifest?.deps ?? []).some((d) => d === 'burn') ? 'burn' : (manifest?.deps ?? []).some((d) => /^candle-/.test(d)) ? 'candle' : null;
     return ml ? app('api', 'cargo run --release', port, { library: ml, portVars: vars }) : app('api', 'cargo run', port, { portVars: vars });
+  }
+  // No framework at all: the standard library's listener (or tiny_http) makes it a server on its own.
+  if (manifest?.isPackage && (!lib || !['bevy', 'burn', 'candle'].includes(lib)) && /\bTcpListener::bind\b|\bServer::http\(/.test(sources(dir))) {
+    const { port, vars } = serverPort(dir, root, null);
+    return app('api', 'cargo run', port, { portVars: vars });
   }
   // Bevy, Burn, Candle, a CLI: no server. Machine learning is unbearably slow in debug builds.
   const command = lib === 'burn' || lib === 'candle' ? 'cargo run --release' : manifest?.isPackage ? 'cargo run' : null;

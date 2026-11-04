@@ -24,6 +24,30 @@ import type { RuntimeDriver } from './types';
 
 const isPackage = (dir: string) => existsSync(join(dir, 'package.json'));
 
+/** Where a project with no framework and no dev script starts, in the order they are usually named. */
+const PLAIN_ENTRIES = ['server', 'index', 'app', 'main'].flatMap((n) => ['js', 'mjs', 'cjs', 'ts'].map((x) => `${n}.${x}`));
+const LISTENS = /\b(?:createServer|Bun\.serve|Deno\.serve)\s*\(|\.listen\s*\(/;
+
+/** The file of `dir` that starts a server by itself (package.json's `main` first); null when none does. */
+function plainEntry(dir: string, main?: string): string | null {
+  const names = main ? [main.replace(/^\.\//, ''), ...PLAIN_ENTRIES] : PLAIN_ENTRIES;
+  return names.find((f) => LISTENS.test(readText(join(dir, f)) ?? '')) ?? null;
+}
+
+/** A plain server's command: the runtime its code is written for, restarting on changes. */
+function plainCommand(dir: string, entry: string): string {
+  const text = readText(join(dir, entry)) ?? '';
+  if (/\bDeno\.serve\s*\(/.test(text)) return `deno run --watch --allow-net --allow-env --allow-read ${entry}`;
+  return /\bBun\.serve\s*\(/.test(text) ? `bun --watch ${entry}` : `node --watch ${entry}`;
+}
+
+/** The port a plain server's runtime picks when the code names none (Deno.serve(handler), Bun.serve({ fetch })). */
+const plainDefaults = (text: string): PortInfo | null =>
+  /\bBun\.serve\s*\(/.test(text) ? { port: 3000, vars: ['PORT'] } : /\bDeno\.serve\s*\(/.test(text) ? { port: 8000, vars: [] } : null;
+
+/** A folder with only a server file: no package.json, and not a Go module with one beside it. */
+const isLoneServer = (dir: string) => !existsSync(join(dir, 'go.mod')) && plainEntry(dir) !== null;
+
 /**
  * Expands workspace patterns of the form `dir`, `dir/*` (no deep globs) to the folders holding a package.json —
  * or, with `all`, to every folder they match: a PHP / Python project under apps/ has no package.json but is a
@@ -99,7 +123,7 @@ function sourceAt(root: string, file: string, text: string, index: number): NonN
   return { file: relative(root, file) || file, line, code: (text.split('\n')[line - 1] ?? '').trim().slice(0, 140) };
 }
 
-const envRefs = (expr: string) => [...expr.matchAll(/process\.env\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
+const envRefs = (expr: string) => [...expr.matchAll(/(?:process\.env\.|Bun\.env\.|Deno\.env\.get\(\s*["'])([A-Za-z0-9_]+)/g)].map((m) => m[1]);
 
 /** Port variables of backing services, never the app's own listen port. */
 const SERVICE_PORT = /REDIS|DB_|DATABASE|PG|POSTGRES|MYSQL|MARIA|SMTP|MAIL|S3|MINIO|RABBIT|AMQP|KAFKA|MONGO|ELASTIC|MEILI|PROXY/i;
@@ -233,9 +257,15 @@ function hasPrisma(dir: string, pkg: PackageJson): boolean {
 /** An Electron app: `electron` in its dependencies (electron-vite, Electron Forge, or plain `electron .`). */
 const isElectron = (pkg: PackageJson) => Boolean(pkg.dependencies?.electron || pkg.devDependencies?.electron);
 
+/** A lone server file has no lockfile to go by: Bun.serve needs Bun, anything else runs on Node. */
+function plainPm(root: string): PackageManager {
+  const entry = plainEntry(root);
+  return entry && /\bBun\.serve\s*\(/.test(readText(join(root, entry)) ?? '') ? 'bun' : 'npm';
+}
+
 function detectNodeStack(root: string, domain: string): StackInfo {
   const rootPkg = readJson<PackageJson>(join(root, 'package.json'));
-  const pm = detectPackageManager(root, rootPkg);
+  const pm = rootPkg ? detectPackageManager(root, rootPkg) : plainPm(root);
   const wsDirs = workspaceDirs(root, rootPkg);
   const monorepo = wsDirs.length > 0;
   // PHP / Python members have no package.json: the patterns' other folders, when they are such projects.
@@ -260,14 +290,20 @@ function detectNodeStack(root: string, domain: string): StackInfo {
         continue;
       }
     }
-    const pkg = readJson<PackageJson>(join(dir, 'package.json'));
+    // At the root a lone server file (no package.json at all) is a project too.
+    const pkg = readJson<PackageJson>(join(dir, 'package.json')) ?? (dir === root && !monorepo && isLoneServer(dir) ? {} : null);
     if (!pkg) continue;
     const prisma = hasPrisma(dir, pkg);
     if (prisma && prismaDir === null) prismaDir = relative(root, dir) || '.';
     // Electron Forge starts with `start` (no dev script).
     const electronScript = isElectron(pkg) ? (pkg.scripts?.dev ? 'dev' : pkg.scripts?.start ? 'start' : null) : null;
     const script = devScriptName(pkg);
-    if (!script && !electronScript) {
+    // No dev script, no framework's CLI: `"start": "node server.js"`, or just a file that listens (not in a workspace,
+    // where such a package is more often a library's example).
+    const startFile = pkg.scripts?.start?.match(/^\s*(?:node|bun)\s+(?:--\S+\s+)*((?:\.\/)?[\w./-]+\.(?:m?[jt]s|cjs))\s*$/)?.[1];
+    const entry = !script && !electronScript && !monorepo ? (startFile ?? plainEntry(dir, pkg.main)) : null;
+    const plainRun = startFile && entry ? runScriptCommand(pm, 'start') : entry ? plainCommand(dir, entry) : null;
+    if (!script && !electronScript && !plainRun) {
       if (monorepo && pkg.scripts?.build) libs.push({ dir: relative(root, dir), name: pkg.name ?? basename(dir), build: true, dev: false });
       continue;
     }
@@ -279,10 +315,13 @@ function detectNodeStack(root: string, domain: string): StackInfo {
       apps.push({ dir: relative(root, dir) || '.', name: pkg.name ?? basename(dir), framework, library: 'electron', kind: 'web', devScript: pkg.scripts![electronScript], command, port: null, configuredPort: null, portVars: [], managedPort: false, portSource: null, portFlag: false, flagCommand: null, prisma, domain: '' });
       continue;
     }
-    const { port, vars, source } = detectPort(dir, root, pkg, framework);
+    const found = detectPort(dir, root, entry ? { ...pkg, main: entry } : pkg, framework);
+    const { vars, source } = found.port === null && !found.vars.length && entry ? (plainDefaults(readText(join(dir, entry)) ?? '') ?? found) : found;
+    // Read from a variable with no fallback in the code (`.listen(process.env.PORT)`): DevCatz passes one, so it is a server.
+    const port = (found.port === null && !found.vars.length && entry ? plainDefaults(readText(join(dir, entry)) ?? '')?.port : found.port) ?? (vars.length ? 3000 : null);
     // An app that reads no port variable gets its own port on the command line: in a monorepo every app defaults to
     // the same one, and so do two worktrees (or two copies) of one Astro / Vite site.
-    const flagCommand = !vars.length ? portFlagCommand(pm, script!, pkg.scripts![script!]) : null;
+    const flagCommand = !vars.length && script ? portFlagCommand(pm, script, pkg.scripts![script]) : null;
     // A workspace without a server (e.g. `tsc --watch` in packages/shared-types)
     // still runs as part of the root dev script, but gets no domain.
     if (framework === 'node' && port === null) {
@@ -293,11 +332,11 @@ function detectNodeStack(root: string, domain: string): StackInfo {
       dir: relative(root, dir) || '.',
       name: pkg.name ?? basename(dir),
       framework,
-      library: framework === 'express' ? detectServer(pkg) : null,
+      library: framework === 'express' ? detectServer(pkg) : plainRun?.startsWith('deno ') ? 'deno' : plainRun?.startsWith('bun ') ? 'bun' : null,
       kind: ['nestjs', 'express', 'node'].includes(framework) ? 'api' : 'web',
-      devScript: pkg.scripts![script!],
+      devScript: plainRun ?? pkg.scripts![script!],
       // Run app by app, a NestJS app starts with `start:dev`, not `dev` (which `<pm> run dev` would look for).
-      command: script !== 'dev' ? runScriptCommand(pm, script!) : null,
+      command: plainRun ?? (script !== 'dev' ? runScriptCommand(pm, script!) : null),
       port,
       configuredPort: port,
       portVars: vars,
@@ -338,6 +377,8 @@ function detectNodeStack(root: string, domain: string): StackInfo {
   }
   // Electron Forge at the root: `start`.
   if (!devCommand && apps.length === 1 && apps[0].library === 'electron' && apps[0].dir === '.') devCommand = apps[0].command ?? null;
+  // A plain server: its own file, there being no dev script to run.
+  if (!devCommand && !monorepo && apps.length === 1 && apps[0].dir === '.') devCommand = apps[0].command ?? null;
 
   const nvmrc = readText(join(root, '.nvmrc'))?.trim() || readText(join(root, '.node-version'))?.trim();
 
@@ -352,7 +393,8 @@ function detectNodeStack(root: string, domain: string): StackInfo {
     prismaDir,
     node: nvmrc || rootPkg?.engines?.node || null,
     runtime: 'node',
-    depsMissing: !hasDependencies(root),
+    // Nothing declared (a plain server on the standard library): nothing to install.
+    depsMissing: !hasDependencies(root) && (monorepo || Object.keys({ ...rootPkg?.dependencies, ...rootPkg?.devDependencies }).length > 0),
     ...(hasDependencies(root) ? nodeDepIssues(root, candidates) : {}),
     warnings: [...portClashes(apps), ...warnings],
     libs,
@@ -411,6 +453,6 @@ export function portClashes(apps: AppInfo[]): string[] {
 
 export const nodeDriver: RuntimeDriver = {
   id: 'node',
-  matches: isPackage,
+  matches: (dir) => isPackage(dir) || isLoneServer(dir),
   detect: detectNodeStack,
 };

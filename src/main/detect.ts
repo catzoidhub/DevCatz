@@ -99,6 +99,7 @@ export const DEFAULT_PORTS: Record<Framework, number | null> = {
   nestjs: 3000,
   express: 3000,
   node: null,
+  static: 8080,
   go: 8080,
   rust: 8080,
   mix: null,

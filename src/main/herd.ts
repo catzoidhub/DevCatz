@@ -1,4 +1,4 @@
-import { shell } from 'electron';
+import { app, shell } from 'electron';
 import { probeOpenApi, specFiles, writeBridge, type BridgeGateway, type BridgeSite } from './bridge';
 import { depFolders, isRealDirInside, lastActivity, sizeOf } from './depclean';
 import { EventEmitter } from 'node:events';
@@ -164,6 +164,9 @@ const RUST_NEED_LABEL: Record<RustChoice['needs'][number], string> = {
   'sea-orm-cli': 'the SeaORM CLI',
   'diesel-cli': 'the Diesel CLI',
 };
+/** The site needs Node to run: not with Bun, not a static site (DevCatz serves it), not Deno. */
+const needsNode = (stack: StackInfo) => stack.runtime === 'node' && stack.packageManager !== 'bun' && !stack.apps.every((a) => a.framework === 'static' || a.library === 'deno');
+
 const NO_NODE = 'Node.js is not installed. Install it from the site\'s Overview (Install Node.js) or the Node.js page (sidebar), then try again.';
 
 const LTS_NAMES = new Map([
@@ -1253,11 +1256,17 @@ export class Herd extends EventEmitter {
     }
     if (stack.runtime === 'python') {
       const py = this.pythonChoice(p, stack);
+      // A plain script has no venv to bring its Python: say so instead of "python: command not found".
+      if (!py.version && !stack.python?.venv && !p.devCommand) {
+        const msg = 'Python is not installed. Install it on the Python page (sidebar), then Start again.';
+        this.processes.log(id, 'sys', msg);
+        throw new Error(msg);
+      }
       this.processes.log(id, 'sys', `Using Python ${py.version ?? '?'} (${py.reason === 'venv' ? `${stack.python?.venv}` : py.reason})`);
     } else {
       const node = this.nodeChoice(p);
       // Nothing to run npm / pnpm / yarn with: say so instead of "npm: command not found".
-      if (!node.version && stack.runtime === 'node' && stack.packageManager !== 'bun') {
+      if (!node.version && needsNode(stack)) {
         this.processes.log(id, 'sys', NO_NODE);
         throw new Error(NO_NODE);
       }
@@ -1297,6 +1306,9 @@ export class Herd extends EventEmitter {
       this.processes.log(id, 'sys', `Using Bun ${bun.version} (${bun.reason})`);
     }
     const base = this.runtimeEnv(p);
+    // A static site runs on DevCatz's own Electron, as Node.
+    const servesStatic = !p.devCommand && stack.apps.length === 1 && stack.apps[0].framework === 'static';
+    if (servesStatic) base.ELECTRON_RUN_AS_NODE = '1';
     const perApp = this.perAppMode(p, stack) && (stack.layout === 'folders' || stack.apps.some((a) => a.managedPort));
     const ports = this.portEnv(p, stack, perApp);
     if (ports.summary) this.processes.log(id, 'sys', ports.summary);
@@ -1314,7 +1326,16 @@ export class Herd extends EventEmitter {
       // A single Astro / Vite app reads no port variable: its managed port goes on the command line, so worktrees
       // and copies of one site run side by side.
       const only = stack.apps.length === 1 ? stack.apps[0] : null;
-      const run = !p.devCommand && only?.managedPort && only.flagCommand && only.port ? only.flagCommand.replace('{port}', String(only.port)) : command;
+      // A plain Python script: no venv puts `python` on the Path, so the chosen Python by its own path.
+      const noVenv = !p.devCommand && stack.runtime === 'python' && !stack.python?.venv;
+      const python = noVenv ? this.installedPythons.find((i) => i.version === this.pythonChoice(p, stack).version)?.path : null;
+      const run = python && command
+        ? command.replace(/^python\b/, `"${python}"`)
+        : servesStatic
+          ? `"${process.execPath}" "${join(app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources'), 'static-server.cjs')}"`
+          : !p.devCommand && only?.managedPort && only.flagCommand && only.port
+            ? only.flagCommand.replace('{port}', String(only.port))
+            : command;
       this.processes.start(id, p.path, run, env);
     } else {
       const pm = stack.packageManager ?? 'npm';
@@ -2725,7 +2746,7 @@ export class Herd extends EventEmitter {
       const c = this.phpChoice(p);
       if (!c.version || c.missing) await add('php', c.spec, c.version, c.spec ? 'composer.json' : null);
     }
-    if (stack.runtime === 'node' && stack.packageManager !== 'bun') {
+    if (needsNode(stack)) {
       const c = this.nodeChoice(p);
       if (!c.version || c.missing) await add('node', c.spec, c.version, c.spec ? '.nvmrc / package.json engines' : null);
     }

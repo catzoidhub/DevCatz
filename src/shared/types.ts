@@ -17,6 +17,8 @@ export type Framework =
   | 'nestjs'
   | 'express'
   | 'node'
+  // A folder of plain HTML, CSS and JS, served by DevCatz (no runtime to install).
+  | 'static'
   | 'go'
   // Rust (cargo run, trunk, dx …; the web framework in `library`)
   | 'rust'

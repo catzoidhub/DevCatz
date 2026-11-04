@@ -16,10 +16,15 @@ import { isWin } from '../platform';
  */
 
 const has = (root: string, f: string) => existsSync(join(root, f));
+const ENTRIES = ['main.py', 'app.py', 'server.py', 'run.py'];
+/** A script with no manifest that serves something; one that only computes is not a site. */
+const SERVES = /\b(?:http\.server|socketserver|wsgiref|aiohttp|tornado|bottle)\b|\b(?:from|import)\s+(?:flask|fastapi|uvicorn)\b|\bserve_forever\(/;
+const loneScript = (dir: string) => !has(dir, 'package.json') && ENTRIES.some((f) => SERVES.test(readText(join(dir, f)) ?? ''));
 const isPython = (dir: string) =>
-  ['manage.py', 'pyproject.toml', 'requirements.txt', 'Pipfile', 'setup.py'].some((f) => has(dir, f)) &&
-  // A JS app with a pyproject for tooling stays a JS app, unless it is clearly a Python web app.
-  (!has(dir, 'package.json') || has(dir, 'manage.py') || Boolean(webFramework(dependencies(dir))));
+  (['manage.py', 'pyproject.toml', 'requirements.txt', 'Pipfile', 'setup.py'].some((f) => has(dir, f)) &&
+    // A JS app with a pyproject for tooling stays a JS app, unless it is clearly a Python web app.
+    (!has(dir, 'package.json') || has(dir, 'manage.py') || Boolean(webFramework(dependencies(dir))))) ||
+  loneScript(dir);
 
 /** Lower-cased distribution names the project depends on. */
 /** Package names the project depends on (requirements*.txt, pyproject, Pipfile), lower-case. */
@@ -189,7 +194,7 @@ function detectPythonStack(root: string, domain: string): StackInfo {
     command = `python -m sanic ${target} --dev --host 127.0.0.1 --port \${PORT:-${port}}`;
   } else {
     // Tornado, aiohttp, Pyramid, Bottle, plain scripts: run the entry file; it should read PORT.
-    const entry = ['main.py', 'app.py', 'server.py', 'run.py'].find((f) => has(root, f));
+    const entry = ENTRIES.find((f) => has(root, f));
     command = entry ? `python ${entry}` : null;
   }
   // Alembic (SQLAlchemy / SQLModel), wherever the app is.
@@ -241,7 +246,8 @@ function detectPythonStack(root: string, domain: string): StackInfo {
     prismaDir: null,
     node: null,
     runtime: 'python',
-    depsMissing: !venv.dir || venv.broken,
+    // A plain script on the standard library declares nothing: nothing to install, the installed Python runs it.
+    depsMissing: (!venv.dir && deps.size > 0) || venv.broken,
     warnings,
     libs: [],
     tasks,

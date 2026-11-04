@@ -4,6 +4,7 @@ import { phpDriver } from './php';
 import { nodeDriver } from './node';
 import { pythonDriver } from './python';
 import { rustDriver } from './rust';
+import { staticDriver } from './static';
 import type { RuntimeDriver } from './types';
 import { withDataLibs } from './datalibs';
 import { detectFolders, projectFolders, siblingApps } from './folders';
@@ -14,7 +15,7 @@ import { detectFolders, projectFolders, siblingApps } from './folders';
  * in a Django app); Rust (Cargo.toml) before Node too, since Leptos / Yew / Anchor projects keep a package.json for
  * Tailwind or tests; a Go module with a package.json (frontend tooling) is treated as a Node project.
  */
-export const DRIVERS: RuntimeDriver[] = [phpDriver, pythonDriver, rustDriver, nodeDriver, goDriver];
+export const DRIVERS: RuntimeDriver[] = [phpDriver, pythonDriver, rustDriver, nodeDriver, goDriver, staticDriver];
 
 export function isProjectDir(dir: string): boolean {
   return DRIVERS.some((d) => d.matches(dir));
@@ -30,7 +31,9 @@ export function isLinkableDir(dir: string): boolean {
 
 export function detectStack(root: string, domain: string): StackInfo {
   const driver = DRIVERS.find((d) => d.matches(root));
-  const base = driver ? driver.detect(root, domain) : null;
+  let base = driver ? driver.detect(root, domain) : null;
+  // A package.json only for tooling (Prettier, a linter) beside an index.html: the page is the site.
+  if (base?.runtime === 'node' && !base.apps.length && !base.monorepo && staticDriver.matches(root)) base = staticDriver.detect(root, domain);
   // A root that runs nothing itself (no manifest, a tooling-only package.json) but holds sibling projects
   // (frontend/ + backend/ …): every folder becomes an app. A JS workspace keeps its own detection.
   if (!base || (!base.apps.length && !base.monorepo) || ((base.runtime === 'go' || base.runtime === 'rust') && !base.monorepo)) {

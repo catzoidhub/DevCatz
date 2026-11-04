@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
-import type { AppInfo, StackInfo } from '@shared/types';
+import type { AppInfo, StackInfo, StackTask } from '@shared/types';
 import { DEFAULT_PORTS, detectDatabase, firstExisting, readEnvFiles, readText } from '../detect';
 import { detectRedis } from '../redis';
 import type { RuntimeDriver } from './types';
@@ -34,10 +34,18 @@ export function detectGoApp(dir: string, root: string, domain: string): AppInfo 
     port = literal ? Number(literal[1]) : DEFAULT_PORTS.go;
   }
   const library = goWebFramework(goMod);
+  // Goravel keeps its address in config/http.go: APP_HOST and APP_PORT, 3000 unless they say otherwise.
+  if (library === 'goravel') {
+    vars.splice(0, vars.length, 'APP_PORT');
+    port = Number(env.APP_PORT) || Number((readText(join(dir, 'config', 'http.go')) ?? '').match(/Env\(\s*"APP_PORT"\s*,\s*"(\d+)"/)?.[1]) || 3000;
+  }
   const airTool = /^\s*tool\s+github\.com\/(air-verse|cosmtrek)\/air\b/m.test(goMod) || /^tool\s*\([^)]*github\.com\/(air-verse|cosmtrek)\/air/ms.test(goMod);
   const mainRel = mainFile ? relative(dir, mainFile) : null;
   const runTarget = !mainRel || mainRel === 'main.go' ? '.' : `./${mainRel.replace(/\/main\.go$/, '')}`;
-  const command = airTool ? 'go tool air' : existsSync(join(dir, '.air.toml')) ? 'air' : mainFile ? `go run ${runTarget}` : null;
+  // A lone main.go has no module for `go run .` to find.
+  const runnable = goMod ? `go run ${runTarget}` : 'go run main.go';
+  // Goravel's starter ships an .air.toml whether or not air is installed: only an air the module requires counts.
+  const command = airTool ? 'go tool air' : existsSync(join(dir, '.air.toml')) && library !== 'goravel' ? 'air' : mainFile ? runnable : null;
   return {
     dir: relative(root, dir) || '.',
     name,
@@ -89,8 +97,23 @@ export function findGoModules(root: string): string[] {
   return dirs;
 }
 
+/** Goravel's Artisan, run through the module itself. */
+const goravelTasks = (): StackTask[] =>
+  [
+    { id: 'key-generate', label: 'key:generate', command: 'key:generate' },
+    { id: 'migrate', label: 'migrate', command: 'migrate' },
+    { id: 'migrate-rollback', label: 'migrate:rollback', command: 'migrate:rollback', danger: true },
+    { id: 'seed', label: 'db:seed', command: 'db:seed' },
+    { id: 'route-list', label: 'route:list', command: 'route:list' },
+    { id: 'make-migration', label: 'make:migration…', command: 'make:migration {name}', needsName: true, namePlaceholder: 'create_posts_table' },
+    { id: 'make-model', label: 'make:model…', command: 'make:model {name}', needsName: true, namePlaceholder: 'Post' },
+    { id: 'make-controller', label: 'make:controller…', command: 'make:controller {name}', needsName: true, namePlaceholder: 'PostController' },
+  ].map((t) => ({ ...t, id: `goravel-${t.id}`, tool: 'Goravel', command: `go run . artisan ${t.command}`, cwd: '.' }));
+
 function detectGoStack(root: string, domain: string): StackInfo {
   const app = detectGoApp(root, root, domain);
+  const goravel = app.library === 'goravel';
+  const noEnv = goravel && !existsSync(join(root, '.env'));
   return {
     packageManager: null,
     detectedPackageManager: null,
@@ -103,14 +126,18 @@ function detectGoStack(root: string, domain: string): StackInfo {
     node: null,
     runtime: 'go',
     depsMissing: false,
-    warnings: [],
+    warnings: noEnv ? ['No .env yet: copy .env.example to .env, then run key:generate on the Database tab.'] : [],
     libs: [],
+    ...(goravel ? { tasks: goravelTasks() } : {}),
   };
 }
 
+/** A main.go with no go.mod that serves something; a script that only prints is not a site. */
+const loneServer = (dir: string) => /\bnet\/http\b|\bnet\.Listen\(/.test(readText(join(dir, 'main.go')) ?? '');
+
 export const goDriver: RuntimeDriver = {
   id: 'go',
-  matches: (dir) => existsSync(join(dir, 'go.mod')),
+  matches: (dir) => existsSync(join(dir, 'go.mod')) || loneServer(dir),
   detect: detectGoStack,
 };
 
@@ -119,6 +146,8 @@ export const goDriver: RuntimeDriver = {
  * the first of these found. Null for net/http and anything else.
  */
 const GO_WEB: [RegExp, string][] = [
+  // First: Goravel requires Gin (and others) itself.
+  [/github\.com\/goravel\/framework\b/, 'goravel'],
   [/github\.com\/gin-gonic\/gin\b/, 'gin'],
   [/github\.com\/labstack\/echo\b/, 'echo'],
   [/github\.com\/gofiber\/fiber\b/, 'fiber'],

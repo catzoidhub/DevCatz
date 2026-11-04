@@ -17,7 +17,7 @@ export interface RuntimeRow {
 const appName = (dir: string, name: string) => (dir === '.' ? name : dir.split('/').pop()!);
 
 export const usesJs = (stack: StackInfo) =>
-  (stack.runtime === 'node' && stack.apps.some((a) => a.framework !== 'go' && a.framework !== 'rust')) || ((stack.runtime === 'php' || stack.runtime === 'python') && stack.apps.some((a) => a.kind === 'assets'));
+  (stack.runtime === 'node' && stack.apps.some((a) => a.framework !== 'go' && a.framework !== 'rust' && a.framework !== 'static' && a.library !== 'deno')) || ((stack.runtime === 'php' || stack.runtime === 'python') && stack.apps.some((a) => a.kind === 'assets'));
 export const usesPhp = (stack: StackInfo) => stack.runtime === 'php';
 export const usesPython = (stack: StackInfo) => stack.runtime === 'python';
 
@@ -165,6 +165,7 @@ const TAGS: Record<string, [string, string]> = {
   vite: ['Vite', 'vite'],
   express: ['Express', 'express'],
   node: ['Node.js', 'nodedotjs'],
+  static: ['HTML', 'html5'],
   django: ['Django', 'django'],
   flask: ['Flask', 'flask'],
   fastapi: ['FastAPI', 'fastapi'],
@@ -178,6 +179,7 @@ const TAGS: Record<string, [string, string]> = {
  * httprouter has none and keeps the Go mark).
  */
 const LIBRARIES: Record<string, [string, string]> = {
+  goravel: ['Goravel', 'goravel'],
   gin: ['Gin', 'gin'],
   echo: ['Echo', 'echo'],
   fiber: ['Fiber', 'fiber'],
@@ -224,6 +226,8 @@ const LIBRARIES: Record<string, [string, string]> = {
   hono: ['Hono', 'hono'],
   koa: ['Koa', 'koa'],
   express: ['Express', 'express'],
+  bun: ['Bun', 'bun'],
+  deno: ['Deno', 'deno'],
 };
 
 /** The name and mark of a framework; a Go / Python app's own web framework (`library`) wins when known. */

@@ -66,11 +66,13 @@ function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' |
   }
   const pkg = readJson<PackageJson>(join(dir, 'package.json'));
   const script = devScriptName(pkg);
-  if (!pkg || !script) return null;
+  if (!pkg) return null;
   const s = nodeDriver.detect(dir, '');
   const app = s.apps[0];
   if (!app || !s.packageManager) return null;
   const pm = s.packageManager;
+  // A plain server: no dev script, its own command.
+  if (!script) return app.command ? { runtime: 'node', depsMissing: s.depsMissing, warnings: s.warnings, app: { ...app, dir: rel, domain: '' } } : null;
   // A nested JS monorepo runs as one process with its own dev script (its apps keep their own ports).
   const flagCommand = !s.monorepo && !app.portVars.length ? portFlagCommand(pm, script, pkg.scripts![script]) : null;
   return {

@@ -11,6 +11,9 @@ extraResources:
   - from: resources
     to: .
     filter: ['*.png']
+  # the server of a static site (a folder of plain HTML), run with the app's own Electron as Node
+  - from: resources/static-server.cjs
+    to: static-server.cjs
   # the licences of the open-source packages inside (Catzoid #66), opened from About → Third-party licences
   - from: resources/third-party-licenses.txt
     to: third-party-licenses.txt

@@ -128,3 +128,4 @@ Rust frameworks (Simple Icons 13.21.0 for Rust, Actix, Rocket, Tauri, Leptos, Be
 - seaorm.png — https://github.com/SeaQL.png (SeaQL, the organisation behind SeaORM)
 - sqlx.png — https://github.com/launchbadge.png (LaunchBadge, the company behind SQLx; SQLx has no logo of its own)
 - silo.svg — https://github.com/pgsty/silo/blob/main/.github/silo.svg (the SILO emblem from its repository)
+- goravel.svg — https://www.goravel.dev/logo.svg (the Goravel logo from its site)

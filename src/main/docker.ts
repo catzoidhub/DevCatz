@@ -294,7 +294,7 @@ interface Ctx {
 }
 
 const INTERNAL_PORT: Record<string, number> = { go: 8080, laravel: 8080, php: 8080, django: 8000, flask: 8000, fastapi: 8000, litestar: 8000, python: 8000 };
-const STATIC = new Set(['vite-vue', 'vite-react', 'vite-svelte', 'vite', 'astro']);
+const STATIC = new Set(['vite-vue', 'vite-react', 'vite-svelte', 'vite', 'astro', 'static']);
 /** Rust WebAssembly frontends built by trunk: static files behind nginx. */
 const rustStatic = (a: AppInfo) => a.framework === 'rust' && !!a.command?.startsWith('trunk');
 const portOf = (a: AppInfo) => (STATIC.has(a.framework) || rustStatic(a) ? 80 : a.framework === 'rust' ? 8080 : (INTERNAL_PORT[a.framework] ?? 3000));
@@ -487,6 +487,11 @@ function goCommands(modDir: string, a: AppInfo): { all: string[]; server: string
  * before the API; an uploads/ folder is created for the user (a volume in compose). Local `replace` directives
  * come in as extra build contexts (compose `additional_contexts`).
  */
+/** A folder of plain HTML, CSS and JS: nginx with the files, nothing to build. */
+function staticDockerfile(a: AppInfo): string {
+  return [GENERATED_MARK + ` for ${a.name} (static files). Build context: the project root.`, 'FROM nginx:1-alpine', 'COPY . /usr/share/nginx/html', 'EXPOSE 80', ''].join('\n');
+}
+
 function goDockerfile(ctx: Ctx, a: AppInfo): string {
   const v = ctx.goVersion?.split('.').slice(0, 2).join('.') ?? '1';
   const dir = a.dir === '.' ? '.' : a.dir;
@@ -501,7 +506,8 @@ function goDockerfile(ctx: Ctx, a: AppInfo): string {
   const bin = many ? server : 'app';
   const pkg = a.command?.match(/go run (\.\/[\w./-]+)/)?.[1] ?? (server ? `./cmd/${server}` : '.');
   const cache = '--mount=type=cache,target=/go/pkg/mod';
-  const portEnv = [...new Set(['PORT', ...a.portVars])].map((x) => `${x}=8080`).join(' ');
+  const goravel = a.library === 'goravel';
+  const portEnv = [...new Set(['PORT', ...a.portVars])].map((x) => `${x}=8080`).join(' ') + (goravel ? ' APP_HOST=0.0.0.0' : '');
   return [
     GENERATED_MARK + ` for ${a.name} (Go). Build context: the project root.`,
     ...(ctx.opts.mrcatzDatatable ? ['# MrCatz DataTable: see https://datatable.catzoid.tech/docs/deployment/docker'] : []),
@@ -521,6 +527,8 @@ function goDockerfile(ctx: Ctx, a: AppInfo): string {
     'RUN apk add --no-cache ca-certificates tzdata && addgroup -S app && adduser -S app -G app',
     'WORKDIR /app',
     'COPY --from=build /out/ /usr/local/bin/',
+    // Goravel reads these beside the binary at run time; its .env comes from compose.
+    ...(goravel ? ['COPY --from=build /src/public ./public', 'COPY --from=build /src/resources ./resources'] : []),
     ...(uploads ? ['RUN mkdir -p uploads && chown -R app:app uploads'] : []),
     'USER app',
     `ENV ${/gin-gonic\/gin/.test(goMod) ? 'GIN_MODE=release ' : ''}${portEnv}`,
@@ -1160,7 +1168,7 @@ export function generate(
     let content =
       a.library === 'electron'
         ? [GENERATED_MARK + ` for ${a.name} (Electron).`, '# An Electron app is a desktop app: electron-builder / Electron Forge make its installers, not a container.', 'FROM scratch', ''].join('\n')
-        : a.framework === 'go' ? goDockerfile(actx, a) : a.framework === 'rust' ? rustDockerfile(actx, a) : php ? phpDockerfile(actx, a) : isPythonFramework(a.framework) ? pythonDockerfile(actx, a) : jsDockerfile(actx, a);
+        : a.framework === 'static' ? staticDockerfile(a) : a.framework === 'go' ? goDockerfile(actx, a) : a.framework === 'rust' ? rustDockerfile(actx, a) : php ? phpDockerfile(actx, a) : isPythonFramework(a.framework) ? pythonDockerfile(actx, a) : jsDockerfile(actx, a);
     if (sqlite && !local) content = withSqliteFolder(content, sqlite.file, php);
     if (folders) content = content.replace('Build context: the project root.', `Build context: this folder (${app.dir}/), as docker-compose.yml at the project root builds it.`);
     files.push({ path: dockerfile, content });
