@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import type { ActionDef, CallResult } from '@catzoid/mcatzp-host';
-import type { AppState, DbEngine, DbEngineInfo, HerdApi, McatzpAsk, ProjectState, StorageAction } from '@shared/types';
+import type { ActionContext, ActionDef, CallResult } from '@catzoid/mcatzp-host';
+import type { AppState, DbEngine, DbEngineInfo, HerdApi, McatzpAsk, ProjectState, RuntimeInstallProgress, StorageAction, TaskProgress } from '@shared/types';
 import { maskText } from '../ai/devcatz';
 
 /**
@@ -18,6 +18,23 @@ const DB_SERVICE = { type: 'string', minLength: 1, maxLength: 200, description: 
 const RUNTIME = { type: 'string', enum: ['node', 'bun', 'go', 'python', 'php'] };
 type Runtime = 'node' | 'bun' | 'go' | 'python' | 'php';
 
+const mb = (n: number) => Math.round(n / 1024 / 1024);
+
+/** A running job for the client: one line, and how far the whole job is. Paths in the detail never go out. */
+function taskProgress(t: TaskProgress | null | undefined): { message: string; percent: number } | null {
+  if (!t || t.error || t.done || !t.steps.length) return null;
+  const part = t.total ? Math.min(1, (t.received ?? 0) / t.total) : 0;
+  const step = t.steps[Math.min(t.step, t.steps.length - 1)];
+  return { message: t.total ? `${step} ${Math.round(part * 100)}% (${mb(t.received ?? 0)} of ${mb(t.total)} MB)` : step, percent: Math.round(((t.step + part) / t.steps.length) * 100) };
+}
+
+function runtimeProgress(r: RuntimeInstallProgress | null | undefined): { message: string; percent: number } | null {
+  if (!r || r.error || r.phase === 'done') return null;
+  const part = r.total ? Math.min(1, r.received / r.total) : 0;
+  if (r.phase === 'extract') return { message: `Unpacking ${r.version}`, percent: 90 };
+  return { message: r.total ? `Downloading ${r.version} ${Math.round(part * 100)}% (${mb(r.received)} of ${mb(r.total)} MB)` : `Installing ${r.version}`, percent: Math.round(part * 90) };
+}
+
 const reply = (data: unknown): CallResult => ({ text: JSON.stringify(data, null, 2), data });
 
 const appsOf = (p: ProjectState) => p.stack.apps.map((a) => ({ dir: a.dir, name: a.name, framework: a.framework, library: a.library ?? null, kind: a.kind, port: a.port }));
@@ -33,8 +50,10 @@ export function findSite(projects: Pick<ProjectState, 'id' | 'name' | 'domain'>[
   return named[0].id;
 }
 
-function runtimeVersions(api: HerdApi, r: Runtime): Promise<{ version: string }[]> {
-  return r === 'node' ? api.nodeRemote() : r === 'bun' ? api.bunRemote() : r === 'go' ? api.goRemote() : r === 'python' ? api.pythonRemote() : api.phpRemote();
+/** Installable versions: a pre-release (v27.0.0-alpha) is listed by its source but cannot be installed. */
+async function runtimeVersions(api: HerdApi, r: Runtime): Promise<{ version: string }[]> {
+  const list: { version: string }[] = await (r === 'node' ? api.nodeRemote() : r === 'bun' ? api.bunRemote() : r === 'go' ? api.goRemote() : r === 'python' ? api.pythonRemote() : api.phpRemote());
+  return list.filter((v) => !/-(alpha|beta|rc|canary|nightly)/i.test(v.version));
 }
 
 async function engineOf(api: HerdApi, engine: unknown): Promise<DbEngineInfo> {
@@ -150,9 +169,9 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
     }),
     ...(!scopes.services ? [] : [read('list_services', 'List services', 'The services DevCatz runs and whether they are up: databases, search engines, WebSocket servers, object storage, gateways, the mail catcher. No passwords or keys.', OBJECT(), async () => {
       const s = await state();
-      const svc = (x: { kind: string; name: string; installed: boolean; status: string; error: string | null; task: { error?: string | null } | null; config: { version?: string | null } | null }) => ({ kind: x.kind, name: x.name, installed: x.installed, status: x.task && !x.task.error ? 'installing' : x.status, error: x.task?.error ?? x.error, version: x.config?.version ?? null });
+      const svc = (x: { kind: string; name: string; installed: boolean; status: string; error: string | null; task: TaskProgress | null; config: { version?: string | null } | null }) => ({ kind: x.kind, name: x.name, installed: x.installed, status: taskProgress(x.task) ? 'installing' : x.status, progress: taskProgress(x.task), error: x.task?.error ?? x.error, version: x.config?.version ?? null });
       return reply({
-        databases: s.databases.map((d) => ({ id: d.id, name: d.name, engine: d.engine, version: d.version, port: d.port, status: d.pending ? 'creating' : d.status, error: d.task?.error ?? d.error, favorite: s.settings.dbFavorites.includes(d.id), group: s.settings.dbGroups.find((g) => g.sites.includes(d.id))?.name ?? null, linkedSites: d.linkedSites })),
+        databases: s.databases.map((d) => ({ id: d.id, name: d.name, engine: d.engine, version: d.version, port: d.port, status: d.pending ? 'creating' : d.status, progress: taskProgress(d.task), error: d.task?.error ?? d.error, favorite: s.settings.dbFavorites.includes(d.id), group: s.settings.dbGroups.find((g) => g.sites.includes(d.id))?.name ?? null, linkedSites: d.linkedSites })),
         search: s.searchEngines.map(svc),
         websockets: s.websockets.map(svc),
         storage: s.storage.map(svc),
@@ -179,7 +198,7 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
     }),
     read('list_runtimes', 'List runtimes', 'The installed versions of Node.js, Bun, Go, Python and PHP, and the default of each.', OBJECT(), async () => {
       const s = await state();
-      const rt = (r: { installed: { version: string }[]; defaultVersion: string | null; installing: { version: string; error?: string } | null }) => ({ installed: r.installed.map((v) => v.version), default: r.defaultVersion, installing: r.installing && !r.installing.error ? r.installing.version : null, error: r.installing?.error ?? null });
+      const rt = (r: { installed: { version: string }[]; defaultVersion: string | null; installing: RuntimeInstallProgress | null }) => ({ installed: r.installed.map((v) => v.version), default: r.defaultVersion, installing: runtimeProgress(r.installing) ? r.installing!.version : null, progress: runtimeProgress(r.installing), error: r.installing?.error ?? null });
       return reply({ node: rt(s.node), bun: rt(s.bun), go: rt(s.go), python: rt(s.python), php: rt(s.php) });
     })]),
   ];
@@ -248,7 +267,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
         {
           name: 'create_service',
           title: 'Create a database service',
-          description: 'Creates a database service and starts it, downloading the version first when it is not on this computer. Answers while that goes on: list_services shows it as creating, then its status or error. Its password is never returned. DevCatz asks the user first.',
+          description: 'Creates a database service and starts it, downloading the version first when it is not on this computer. It may answer while that goes on: then call list_services for its progress, then its status or error, and tell the user how far it is. Its password is never returned. DevCatz asks the user first.',
           tier: 'change',
           input: OBJECT(
             {
@@ -271,9 +290,9 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
               ],
             };
           },
-          run: async (args) => {
+          run: async (args, ctx) => {
             const { input } = await planService(api, args);
-            return inBackground(api.dbCreate(input), { service: input.name }, 'Created', 'Creating: list_services shows its progress');
+            return inBackground(api, ctx, api.dbCreate(input), { service: input.name }, 'Created', 'Still creating: list_services shows its progress', (s) => taskProgress(s.databases.find((d) => d.pending && d.name === input.name)?.task));
           },
         },
         {
@@ -299,33 +318,33 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
         {
           name: 'install_service',
           title: 'Install a service',
-          description: 'Installs a search engine, WebSocket server, object storage or gateway with DevCatz\'s defaults, the same as its install form. Answers while that goes on: list_services shows it as installing, then its status or error. Keys and passwords are never returned. DevCatz asks the user first.',
+          description: 'Installs a search engine, WebSocket server, object storage or gateway with DevCatz\'s defaults, the same as its install form. It may answer while that goes on: then call list_services for its progress, then its status or error, and tell the user how far it is. Keys and passwords are never returned. DevCatz asks the user first.',
           tier: 'change',
           input: OBJECT({ service: { type: 'string', minLength: 1, maxLength: 60, description: 'A kind or name from list_services that is not installed yet, such as meilisearch.' } }, ['service']),
           preview: async ({ service }) => {
             const x = await installable(api, service);
             return { title: `Install ${x.name}?`, facts: [{ label: 'Service', value: x.what }, ...(x.version ? [{ label: 'Version', value: x.version }] : []), { label: 'Port', value: String(x.port) }, { label: 'Domain', value: x.domain }] };
           },
-          run: async ({ service }) => {
+          run: async ({ service }, ctx) => {
             const x = await installable(api, service);
-            return inBackground(x.install(), { service: x.name }, 'Installed', 'Installing: list_services shows its progress');
+            return inBackground(api, ctx, x.install(), { service: x.name }, 'Installed', 'Still installing: list_services shows its progress', (s) => taskProgress([...s.searchEngines, ...s.websockets, ...s.storage, ...s.gateways].find((t) => t.kind === x.ref)?.task ?? s.whatsapp.find((t) => t.engine === x.ref)?.task));
           },
         },
         {
           name: 'install_runtime',
           title: 'Install a runtime',
-          description: 'Installs a version of Node.js, Bun, Go, Python or PHP from list_runtime_versions. Answers while that goes on: list_runtimes shows it as installing. DevCatz asks the user first.',
+          description: 'Installs a version of Node.js, Bun, Go, Python or PHP from list_runtime_versions. It may answer while that goes on: then call list_runtimes for its progress and tell the user how far it is. DevCatz asks the user first.',
           tier: 'change',
           input: OBJECT({ runtime: RUNTIME, version: { type: 'string', minLength: 1, maxLength: 40 } }, ['runtime', 'version']),
           preview: async ({ runtime, version }) => {
             const v = await runtimeVersionOf(api, runtime as Runtime, version);
             return { title: `Install ${RUNTIME_NAMES[runtime as Runtime]} ${v}?`, facts: [{ label: 'Runtime', value: RUNTIME_NAMES[runtime as Runtime] }, { label: 'Version', value: v }] };
           },
-          run: async ({ runtime, version }) => {
+          run: async ({ runtime, version }, ctx) => {
             const r = runtime as Runtime;
             const v = await runtimeVersionOf(api, r, version);
             const go = r === 'node' ? api.nodeInstall(v) : r === 'bun' ? api.bunInstall(v) : r === 'go' ? api.goInstall(v) : r === 'python' ? api.pythonInstall(v) : api.phpInstall(v);
-            return inBackground(go, { runtime: r, version: v }, 'Installed', 'Installing: list_runtimes shows its progress');
+            return inBackground(api, ctx, go, { runtime: r, version: v }, 'Installed', 'Still installing: list_runtimes shows its progress', (s) => runtimeProgress(s[r].installing));
           },
         },
       ];
@@ -379,11 +398,34 @@ async function runtimeVersionOf(api: HerdApi, r: Runtime, version: unknown): Pro
   return found.version;
 }
 
-/** A wrong value fails at once; a download goes on, shown in DevCatz and in the list actions. */
-async function inBackground(work: Promise<unknown>, about: Record<string, unknown>, done: string, going: string): Promise<CallResult> {
-  const quick = await Promise.race([work.then(() => true), new Promise<false>((r) => setTimeout(() => r(false), 1500))]);
-  if (!quick) work.catch((e) => console.warn('MCatzP:', (e as Error).message));
-  return reply({ ...about, result: quick ? done : going });
+/**
+ * A wrong value fails at once; a download goes on, shown in DevCatz and in the list actions. A client that asked for
+ * progress gets it for up to WATCH_MS, then the answer: many clients give up on a call after a minute whatever arrives.
+ */
+const WATCH_MS = 50_000;
+
+async function inBackground(api: HerdApi, ctx: ActionContext, work: Promise<unknown>, about: Record<string, unknown>, done: string, going: string, watch: (s: AppState) => { message: string; percent: number } | null): Promise<CallResult> {
+  let ended = false;
+  const finished = work.then(() => (ended = true));
+  const wait = ctx.progress ? WATCH_MS : 1500;
+  let sent = '';
+  const timer = ctx.progress
+    ? setInterval(() => {
+        void api.getState().then((s) => {
+          const p = watch(s);
+          if (!p || ended || `${p.message}` === sent) return;
+          sent = p.message;
+          ctx.progress!(p);
+        });
+      }, 1000)
+    : undefined;
+  try {
+    await Promise.race([finished, new Promise((r) => setTimeout(r, wait))]);
+  } finally {
+    clearInterval(timer);
+  }
+  if (!ended) work.catch((e) => console.warn('MCatzP:', (e as Error).message));
+  return reply({ ...about, result: ended ? done : going });
 }
 
 /** A key the form would ask for: generated here, so the assistant never sets or sees one. */
