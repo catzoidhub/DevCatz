@@ -1497,6 +1497,7 @@ export class Herd extends EventEmitter {
 
   /** An MCP client waiting for the user's approval, shown as a dialog (mcatzp/index.ts). */
   mcatzpAsk: AppState['mcatzpAsk'] = null;
+  mcatzpInstalling: AppState['mcatzpInstalling'] = null;
 
   /** OpenAPI URLs the sites' running apps answered with, by site (kept until the next probe). */
   private openapiUrls = new Map<string, { app: string; url: string }[]>();
@@ -5071,6 +5072,7 @@ export class Herd extends EventEmitter {
   snapshot(editors: string[], login: { launchAtLogin: boolean; packaged: boolean }): AppState {
     return {
       mcatzpAsk: this.mcatzpAsk,
+      mcatzpInstalling: this.mcatzpInstalling,
       projects: this.projects.map((p) => this.state(p)),
       missingSites: this.missingSites(),
       settings: store.settings,

@@ -1483,9 +1483,29 @@ export type McatzpAsk =
   | { id: string; kind: 'pair'; client: string; version: string | null }
   | { id: string; kind: 'change'; client: string; title: string; facts: { label: string; value: string }[]; allowSession: boolean; /** Destructive: this must be typed to allow it. */ typeName?: string };
 
+/** The MCatzP program on this computer and what the site offers it (Settings → MCatzP). */
+export interface McatzpSetup {
+  path: string | null;
+  version: string | null;
+  /** `catzoid`: installed from here, updated from here. Others update their own way (Homebrew, npm). */
+  source: 'catzoid' | 'homebrew' | 'other' | null;
+  latest: string | null;
+  /** The site has no build for this computer. */
+  noBuild: boolean;
+  /** The site could not be asked. */
+  error: string | null;
+}
+export interface McatzpInstallProgress {
+  phase: 'download' | 'install';
+  received: number;
+  total: number;
+}
+
 export interface AppState {
   /** A question from an MCP client waiting for the user (MCatzP), the oldest first. */
   mcatzpAsk: McatzpAsk | null;
+  /** Install MCatzP running in Settings. */
+  mcatzpInstalling: McatzpInstallProgress | null;
   projects: ProjectState[];
   /** Linked sites whose folder is gone (deleted or moved outside DevCatz): their settings wait until removed or located. */
   missingSites: { id: string; name: string; path: string; domain: string }[];
@@ -2749,6 +2769,11 @@ export interface HerdApi {
   mcatzpClearActivity(): Promise<void>;
   /** Forgets an approved client and closes its connection; it asks again next time. */
   mcatzpRevoke(name: string): Promise<void>;
+  /** Whether MCatzP is on this computer, and the version the site offers. */
+  mcatzpSetup(): Promise<McatzpSetup>;
+  /** Installs or updates MCatzP; progress in state.mcatzpInstalling. */
+  mcatzpInstall(): Promise<McatzpSetup>;
+  mcatzpInstallCancel(): Promise<void>;
   /** The answer to the question in state.mcatzpAsk. */
   mcatzpAnswer(id: string, answer: 'deny' | 'once' | 'session', typed?: string): Promise<void>;
   /** Opens DialCatz's import for a site (dialcatz://open?site=<id>); false when DialCatz is not installed. */
@@ -3298,6 +3323,7 @@ export interface HerdApi {
 }
 
 export const API_METHODS: (keyof HerdApi)[] = [
+  'mcatzpSetup', 'mcatzpInstall', 'mcatzpInstallCancel',
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
   'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',

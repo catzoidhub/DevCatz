@@ -20,6 +20,7 @@ import { SearchManager } from './search';
 import * as gitHosts from './githosts';
 import { MIGRATION_FLAG } from './migrate';
 import { Mcatzp } from './mcatzp';
+import * as mcatzpSetup from './mcatzp/install';
 import { setGithubToken } from './github';
 import { githubToken } from './githosts';
 import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3UploadProgress, type Settings, type TaskProgress, type GwKind, type SearchKind, type StorageKind, type WaEngine, type WsKind } from '@shared/types';
@@ -42,6 +43,7 @@ const EDITORS = isWin
 
 let herd: Herd;
 let mcatzp: Mcatzp;
+let mcatzpInstalling: AbortController | null = null;
 let win: BrowserWindow | null = null;
 let tray: HerdTray | null = null;
 let quitting = false;
@@ -806,6 +808,27 @@ function api(): HerdApi {
     mcatzpActivity: async () => mcatzp.activity.list(),
     mcatzpClearActivity: async () => mcatzp.activity.clear(),
     mcatzpRevoke: (name) => mcatzp.revoke(String(name)),
+    mcatzpSetup: () => mcatzpSetup.setupState(),
+    mcatzpInstall: async () => {
+      if (mcatzpInstalling) throw new Error('MCatzP is being installed');
+      mcatzpInstalling = new AbortController();
+      const report = (p: typeof herd.mcatzpInstalling) => {
+        herd.mcatzpInstalling = p;
+        herd.emit('change');
+      };
+      try {
+        report({ phase: 'download', received: 0, total: 0 });
+        await mcatzpSetup.install(report, mcatzpInstalling.signal);
+      } catch (e) {
+        // Cancel is an answer, not a failure.
+        if (!mcatzpInstalling?.signal.aborted) throw e;
+      } finally {
+        mcatzpInstalling = null;
+        report(null);
+      }
+      return mcatzpSetup.setupState();
+    },
+    mcatzpInstallCancel: async () => mcatzpInstalling?.abort(),
     mcatzpAnswer: async (id, answer, typed) => mcatzp.answer(String(id), answer === 'once' || answer === 'session' ? answer : 'deny', typeof typed === 'string' ? typed : undefined),
     createOpenApi: (siteId, format, app) => herd.createOpenApi(String(siteId), format === 'json' ? 'json' : 'yaml', typeof app === 'string' ? app : undefined),
     dialcatzOpen: (siteId) => {

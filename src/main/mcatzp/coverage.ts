@@ -585,6 +585,10 @@ export const MCATZP_COVERAGE = {
   mcatzpActivity: 'never: a client must not answer its own questions or clear its trail',
   mcatzpClearActivity: 'never: a client must not answer its own questions or clear its trail',
   mcatzpRevoke: 'never: a client must not answer its own questions or clear its trail',
+  // never: what runs a client on this computer is the user's to install
+  mcatzpSetup: "never: what runs a client on this computer is the user's to install",
+  mcatzpInstall: "never: what runs a client on this computer is the user's to install",
+  mcatzpInstallCancel: "never: what runs a client on this computer is the user's to install",
   // never: credentials (user, 2026-11-04)
   mailSetForwardConfig: 'never: credentials (user, 2026-11-04)',
   exposeCloudflareLogin: 'never: credentials (user, 2026-11-04)',
