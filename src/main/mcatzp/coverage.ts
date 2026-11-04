@@ -7,6 +7,8 @@ import type { HerdApi } from '@shared/types';
  * file picker, this app's own updater or AI buttons). `never: …`: left out on purpose, with why.
  */
 export const MCATZP_COVERAGE = {
+  // tool: build_site
+  buildSite: 'tool: build_site',
   // tool: cancel_install
   installCancel: 'tool: cancel_install',
   dbCancelCreate: 'tool: cancel_install',
@@ -15,6 +17,15 @@ export const MCATZP_COVERAGE = {
   gwCancelInstall: 'tool: cancel_install',
   wsCancelInstall: 'tool: cancel_install',
   storageCancelInstall: 'tool: cancel_install',
+  // tool: check_updates
+  rustToolsCheck: 'tool: check_updates',
+  checkUpdates: 'tool: check_updates',
+  exposeCheckUpdates: 'tool: check_updates',
+  waCheckUpdates: 'tool: check_updates',
+  gwCheckUpdates: 'tool: check_updates',
+  servicesCheckUpdates: 'tool: check_updates',
+  // tool: clear_site_logs
+  clearLogs: 'tool: clear_site_logs',
   // tool: create_database
   dbCreateDatabase: 'tool: create_database',
   // tool: create_service
@@ -84,6 +95,10 @@ export const MCATZP_COVERAGE = {
   gitTag: 'tool: git_tag (delete: later, destructive)',
   // tool: git_unstage
   gitUnstage: 'tool: git_unstage',
+  // tool: install_composer
+  composerInstall: 'tool: install_composer',
+  // tool: install_deps
+  installDeps: 'tool: install_deps',
   // tool: install_runtime
   nodeInstall: 'tool: install_runtime',
   bunInstall: 'tool: install_runtime',
@@ -92,12 +107,22 @@ export const MCATZP_COVERAGE = {
   phpInstall: 'tool: install_runtime',
   // tool: install_runtime_tool
   toolInstall: 'tool: install_runtime_tool',
+  // tool: install_rust
+  rustInstall: 'tool: install_rust',
+  // tool: install_rust_tool
+  rustToolInstall: 'tool: install_rust_tool',
+  rustInstallLinker: 'tool: install_rust_tool',
   // tool: install_service
   searchInstall: 'tool: install_service',
   waInstall: 'tool: install_service',
   gwInstall: 'tool: install_service',
   wsInstall: 'tool: install_service',
   storageInstall: 'tool: install_service',
+  // tool: install_uv
+  uvInstall: 'tool: install_uv',
+  // tool: link_site
+  linkProject: 'tool: link_site',
+  inspectFolder: 'tool: link_site',
   // tool: list_databases
   dbList: 'tool: list_databases',
   // tool: list_db_engines
@@ -122,6 +147,8 @@ export const MCATZP_COVERAGE = {
   getState: 'tool: list_sites, get_site, list_services, list_runtimes',
   // tool: list_ssh_keys
   gitSshKeys: 'tool: list_ssh_keys',
+  // tool: locate_missing_site
+  missingLocateApply: 'tool: locate_missing_site',
   // tool: mail_get
   mailGet: 'tool: mail_get',
   // tool: mail_list
@@ -140,14 +167,50 @@ export const MCATZP_COVERAGE = {
   openapiIgnore: 'tool: openapi_gitignore',
   openapiUnignore: 'tool: openapi_gitignore',
   openapiUntrack: 'tool: openapi_gitignore',
+  // tool: park_folder
+  parkFolder: 'tool: park_folder',
+  // tool: park_restore
+  parkRestore: 'tool: park_restore',
+  // tool: php_extension
+  phpExtInstall: 'tool: php_extension',
+  phpExtSetEnabled: 'tool: php_extension',
   // tool: php_extensions
   phpExtensions: 'tool: php_extensions',
   // tool: php_ini
   phpGetIni: 'tool: php_ini',
+  // tool: php_set_ini
+  phpSetIni: 'tool: php_set_ini',
+  // tool: redis_write_env
+  redisWriteEnv: 'tool: redis_write_env',
+  // tool: refresh_runtimes
+  rescan: 'tool: refresh_runtimes',
+  refreshRuntimes: 'tool: refresh_runtimes',
+  // tool: rename_db_group (delete: later, destructive)
+  dbGroupAction: 'tool: rename_db_group (delete: later, destructive)',
+  // tool: rename_site_group
+  renameGroup: 'tool: rename_site_group',
+  // tool: repair_electron
+  repairElectron: 'tool: repair_electron',
+  // tool: restart_app
+  restartApp: 'tool: restart_app',
+  // tool: restart_dns
+  restartDns: 'tool: restart_dns',
+  // tool: restart_php
+  restartServices: 'tool: restart_php',
   // tool: restart_site
   restart: 'tool: restart_site',
+  // tool: run_dep_command
+  depRun: 'tool: run_dep_command',
+  // tool: run_go_db_task
+  goDbTask: 'tool: run_go_db_task',
+  // tool: run_stack_task
+  stackTask: 'tool: run_stack_task',
   // tool: rust_status
   rustRemote: 'tool: rust_status',
+  // tool: rust_toolchain
+  rustToolchainInstall: 'tool: rust_toolchain',
+  rustSetDefault: 'tool: rust_toolchain',
+  rustTargetAdd: 'tool: rust_toolchain',
   // tool: search_backups
   searchBackups: 'tool: search_backups',
   // tool: search_indexes
@@ -160,8 +223,34 @@ export const MCATZP_COVERAGE = {
   searchGetSettings: 'tool: search_settings',
   // tool: search_tasks
   searchTasks: 'tool: search_tasks',
+  // tool: set_app_port
+  setSitePort: 'tool: set_app_port',
+  // tool: set_app_subdomain
+  setAppSubdomain: 'tool: set_app_subdomain',
+  // tool: set_db_favorite
+  dbSetFavorite: 'tool: set_db_favorite',
+  // tool: set_db_group
+  dbSetGroup: 'tool: set_db_group',
+  // tool: set_default_domain
+  setTld: 'tool: set_default_domain',
+  // tool: set_default_runtime
+  nodeSetDefault: 'tool: set_default_runtime',
+  bunSetDefault: 'tool: set_default_runtime',
+  goSetDefault: 'tool: set_default_runtime',
+  pythonSetDefault: 'tool: set_default_runtime',
+  phpSetDefault: 'tool: set_default_runtime',
+  // tool: set_launch_at_login
+  setLaunchAtLogin: 'tool: set_launch_at_login',
+  // tool: set_shim_path
+  shimPathSet: 'tool: set_shim_path',
+  // tool: set_site_favorite
+  setFavorite: 'tool: set_site_favorite',
+  // tool: set_site_group
+  setSiteGroup: 'tool: set_site_group',
   // tool: site_build_targets
   buildTargets: 'tool: site_build_targets',
+  // tool: site_database
+  db: 'tool: site_database',
   // tool: site_dep_commands
   depCommands: 'tool: site_dep_commands',
   // tool: site_deps
@@ -244,16 +333,24 @@ export const MCATZP_COVERAGE = {
   gwAction: 'tool: start/stop/restart_service',
   wsAction: 'tool: start/stop/restart_service',
   storageAction: 'tool: start/stop/restart_service',
+  // tool: start_all_sites
+  startAll: 'tool: start_all_sites',
   // tool: start_docker_engine
   startEngine: 'tool: start_docker_engine',
   // tool: start_site
   start: 'tool: start_site',
+  // tool: stop_all_sites
+  stopAll: 'tool: stop_all_sites',
   // tool: stop_site
   stop: 'tool: stop_site',
   // tool: storage_buckets
   s3Buckets: 'tool: storage_buckets',
   // tool: storage_list
   s3List: 'tool: storage_list',
+  // tool: update_runtime
+  runtimeUpdate: 'tool: update_runtime',
+  // tool: update_site
+  updateProject: 'tool: update_site',
   // tool: websocket_stats
   wsStats: 'tool: websocket_stats',
   // tool: whatsapp_contacts
@@ -271,47 +368,7 @@ export const MCATZP_COVERAGE = {
   // tool: worktree_create
   worktreeCreate: 'tool: worktree_create',
   // later: change
-  clearLogs: 'later: change',
-  linkProject: 'later: change',
-  parkFolder: 'later: change',
-  parkRestore: 'later: change',
-  missingLocate: 'later: change',
-  missingLocateApply: 'later: change',
-  updateProject: 'later: change',
   dbImportOne: 'later: change',
-  buildSite: 'later: change',
-  setAppSubdomain: 'later: change',
-  restartApp: 'later: change',
-  setSitePort: 'later: change',
-  rescan: 'later: change',
-  refreshRuntimes: 'later: change',
-  db: 'later: change',
-  startAll: 'later: change',
-  stopAll: 'later: change',
-  redisWriteEnv: 'later: change',
-  installDeps: 'later: change',
-  depRun: 'later: change',
-  nodeSetDefault: 'later: change',
-  bunSetDefault: 'later: change',
-  goSetDefault: 'later: change',
-  rustInstall: 'later: change',
-  rustToolchainInstall: 'later: change',
-  rustSetDefault: 'later: change',
-  rustTargetAdd: 'later: change',
-  rustToolInstall: 'later: change',
-  rustInstallLinker: 'later: change',
-  repairElectron: 'later: change',
-  uvInstall: 'later: change',
-  pythonSetDefault: 'later: change',
-  phpSetDefault: 'later: change',
-  phpSetIni: 'later: change',
-  composerInstall: 'later: change',
-  phpExtInstall: 'later: change',
-  phpExtSetEnabled: 'later: change',
-  restartServices: 'later: change',
-  runtimeUpdate: 'later: change',
-  goDbTask: 'later: change',
-  stackTask: 'later: change',
   dbUpdate: 'later: change',
   dbBuildAction: 'later: change',
   searchUpdate: 'later: change',
@@ -354,31 +411,14 @@ export const MCATZP_COVERAGE = {
   s3CancelUpload: 'later: change',
   s3Download: 'later: change',
   s3MkDir: 'later: change',
-  setFavorite: 'later: change',
-  setSiteGroup: 'later: change',
-  renameGroup: 'later: change',
-  dbSetFavorite: 'later: change',
-  dbSetGroup: 'later: change',
-  dbGroupAction: 'later: change',
   exposeUpgrade: 'later: change',
   gwUpgrade: 'later: change',
   waUpgrade: 'later: change',
   searchUpgrade: 'later: change',
   storageUpgrade: 'later: change',
-  inspectFolder: 'later: change',
   dbImportList: 'later: change',
-  rustToolsCheck: 'later: change',
-  checkUpdates: 'later: change',
-  exposeCheckUpdates: 'later: change',
-  waCheckUpdates: 'later: change',
-  gwCheckUpdates: 'later: change',
-  servicesCheckUpdates: 'later: change',
   searchExport: 'later: change',
   scoutCommand: 'later: change',
-  setLaunchAtLogin: 'later: change',
-  shimPathSet: 'later: change',
-  setTld: 'later: change',
-  restartDns: 'later: change',
   // later: destructive
   envWrite: 'later: destructive',
   unparkFolder: 'later: destructive',
@@ -452,6 +492,7 @@ export const MCATZP_COVERAGE = {
   uninstall: 'never: the app itself (user, 2026-11-04)',
   updateSettings: 'never: the app itself (user, 2026-11-04)',
   // not a tool
+  missingLocate: 'not a tool',
   runtimePick: 'not a tool',
   mailAttachmentData: 'not a tool',
   pickFolder: 'not a tool',

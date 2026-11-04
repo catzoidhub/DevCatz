@@ -10,6 +10,7 @@ import { type ChangeAction, changeActions, findSite, readActions, type Scopes } 
 import { ActivityLog } from './activity';
 import { devChanges } from './devchanges';
 import { moreReads } from './reads';
+import { siteChanges } from './sitechanges';
 
 /** Unanswered questions lapse before MCatzP stops waiting (3 and 10 minutes), so a late Allow never runs for nobody. */
 const PAIR_WAIT_MS = 150_000;
@@ -55,13 +56,8 @@ export class Mcatzp {
         const change = this.changes().find((c) => c.name === req.action.name);
         if (!change) return 'deny';
         if (change.noDialog) return 'once';
-        let preview: Awaited<ReturnType<typeof change.preview>>;
-        try {
-          preview = await change.preview(req.args);
-        } catch {
-          // The site or service does not exist: nothing to ask, and run() answers with the same error, changing nothing.
-          return 'once';
-        }
+        // If this throws, the action never runs: its error goes to the client instead of a question.
+        const preview = await change.preview(req.args);
         const { page, ...question } = preview;
         const answer = await this.ask({ id: randomUUID(), kind: 'change', client: req.client, allowSession: req.allowSession, ...question }, CHANGE_WAIT_MS, req.signal);
         // The user is right here and just said yes: take them to what is happening. Not for allowed-for-the-session calls.
@@ -110,7 +106,7 @@ export class Mcatzp {
   }
 
   private changes(): ChangeAction[] {
-    return [...changeActions(this.api, this.scopes()), ...devChanges(this.api, this.scopes())];
+    return [...changeActions(this.api, this.scopes()), ...devChanges(this.api, this.scopes()), ...siteChanges(this.api, this.scopes())];
   }
 
   /** What is shared changed: connected clients get the new list of tools. */
