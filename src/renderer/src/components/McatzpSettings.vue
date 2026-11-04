@@ -75,7 +75,7 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
           </label>
           <label class="flex cursor-pointer items-start gap-2 text-sm">
             <input type="checkbox" class="checkbox checkbox-sm mt-0.5" :checked="s.mcatzpChanges !== false" @change="save({ mcatzpChanges: ($event.target as HTMLInputElement).checked })" />
-            <span>Let clients ask for changes<span class="block text-xs opacity-60">Starting, stopping and restarting. DevCatz shows you each request first. Off: clients can only read.</span></span>
+            <span>Let clients ask for changes<span class="block text-xs opacity-60">Starting, stopping and restarting, creating a database service or a database. DevCatz shows you each request first. Off: clients can only read.</span></span>
           </label>
         </div>
 

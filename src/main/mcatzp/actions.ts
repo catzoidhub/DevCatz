@@ -1,5 +1,5 @@
 import type { ActionDef, CallResult } from '@catzoid/mcatzp-host';
-import type { AppState, HerdApi, McatzpAsk, ProjectState, StorageAction } from '@shared/types';
+import type { AppState, DbEngine, DbEngineInfo, HerdApi, McatzpAsk, ProjectState, StorageAction } from '@shared/types';
 import { maskText } from '../ai/devcatz';
 
 /**
@@ -10,6 +10,9 @@ import { maskText } from '../ai/devcatz';
  */
 const OBJECT = (properties: Record<string, unknown> = {}, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const SITE = { type: 'string', minLength: 1, maxLength: 200, description: "The site's id, name or domain (see list_sites)." };
+
+const ENGINE = { type: 'string', minLength: 1, maxLength: 40, description: 'A database engine from list_db_engines, such as mysql or postgresql.' };
+const DB_SERVICE = { type: 'string', minLength: 1, maxLength: 200, description: "A database service's id or name from list_services, or its engine when only one service runs it." };
 
 const reply = (data: unknown): CallResult => ({ text: JSON.stringify(data, null, 2), data });
 
@@ -24,6 +27,19 @@ export function findSite(projects: Pick<ProjectState, 'id' | 'name' | 'domain'>[
   if (named.length > 1) throw new Error(`${named.length} sites are called ${ref}: use the id or domain (list_sites)`);
   if (!named.length) throw new Error(`No site ${ref} (list_sites shows them)`);
   return named[0].id;
+}
+
+async function engineOf(api: HerdApi, engine: unknown): Promise<DbEngineInfo> {
+  const engines = await api.dbEngines();
+  const e = engines.find((x) => x.engine === engine);
+  if (!e) throw new Error(`No database engine ${String(engine)}: one of ${engines.map((x) => x.engine).join(', ')}`);
+  return e;
+}
+
+/** A database service that exists (not one still being created). */
+function databaseOf(s: AppState, ref: unknown) {
+  const list = s.databases.filter((d) => !d.pending).map((d) => ({ ref: d.id, name: d.name, engine: d.engine as string, installed: true, d }));
+  return findService(list, String(ref)).d;
 }
 
 /** The variable names of a .env file; the values stay here. */
@@ -128,7 +144,7 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
       const s = await state();
       const svc = (x: { kind: string; name: string; installed: boolean; status: string; config: { version?: string | null } | null }) => ({ kind: x.kind, name: x.name, installed: x.installed, status: x.status, version: x.config?.version ?? null });
       return reply({
-        databases: s.databases.filter((d) => !d.pending).map((d) => ({ id: d.id, name: d.name, engine: d.engine, version: d.version, port: d.port, status: d.status, favorite: s.settings.dbFavorites.includes(d.id), group: s.settings.dbGroups.find((g) => g.sites.includes(d.id))?.name ?? null, linkedSites: d.linkedSites })),
+        databases: s.databases.map((d) => ({ id: d.id, name: d.name, engine: d.engine, version: d.version, port: d.port, status: d.pending ? 'creating' : d.status, error: d.task?.error ?? d.error, favorite: s.settings.dbFavorites.includes(d.id), group: s.settings.dbGroups.find((g) => g.sites.includes(d.id))?.name ?? null, linkedSites: d.linkedSites })),
         search: s.searchEngines.map(svc),
         websockets: s.websockets.map(svc),
         storage: s.storage.map(svc),
@@ -136,6 +152,19 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
         whatsapp: s.whatsapp.map((w) => ({ kind: w.engine, name: w.name, installed: w.installed, status: w.status, version: w.config?.version ?? null })),
         mail: { running: s.mail.running, count: s.mail.count, unread: s.mail.unread },
       });
+    }),
+    read('list_db_engines', 'List database engines', 'The database engines DevCatz can run, their default port, the versions already on this computer, and anything missing to install them.', OBJECT(), async () => {
+      const engines = await api.dbEngines();
+      return reply(engines.map((e) => ({ engine: e.engine, name: e.name, defaultPort: e.defaultPort, installed: e.installed.map((b) => b.version), missing: e.requirement })));
+    }),
+    read('list_db_versions', 'List database versions', 'The versions of a database engine that can be installed, and which are already on this computer.', OBJECT({ engine: ENGINE }, ['engine']), async ({ engine }) => {
+      await engineOf(api, engine);
+      return reply((await api.dbVersions(engine as DbEngine)).map((v) => ({ version: v.version, label: v.label, installed: v.installed })));
+    }),
+    read('list_databases', 'List databases', 'The databases on a running database service (their names only).', OBJECT({ service: DB_SERVICE }, ['service']), async ({ service }) => {
+      const s = await state();
+      const d = databaseOf(s, service);
+      return reply({ service: d.name, databases: await api.dbList(d.id) });
     }),
     read('list_runtimes', 'List runtimes', 'The installed versions of Node.js, Bun, Go, Python and PHP, and the default of each.', OBJECT(), async () => {
       const s = await state();
@@ -202,7 +231,62 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
   };
   const serviceOf = async (ref: unknown) => findService(servicesOf(await api.getState(), api), String(ref));
   const SERVICE = { type: 'string', minLength: 1, maxLength: 200, description: "The service's id or name from list_services (a database's id or name, or a kind such as meilisearch or mail); a database engine such as mysql when only one service runs it." };
-  return VERBS.flatMap(({ action, verb, done }): ChangeAction[] => [
+  const creates: ChangeAction[] = !scopes.services
+    ? []
+    : [
+        {
+          name: 'create_service',
+          title: 'Create a database service',
+          description: 'Creates a database service and starts it, downloading the version first when it is not on this computer. Answers while that goes on: list_services shows it as creating, then its status or error. Its password is never returned. DevCatz asks the user first.',
+          tier: 'change',
+          input: OBJECT(
+            {
+              engine: ENGINE,
+              version: { type: 'string', minLength: 1, maxLength: 40, description: 'A version from list_db_versions.' },
+              name: { type: 'string', minLength: 1, maxLength: 60, description: "The service's name; DevCatz picks one when left out." },
+              port: { type: 'integer', minimum: 1024, maximum: 65535, description: 'DevCatz picks a free one when left out.' },
+            },
+            ['engine', 'version'],
+          ),
+          preview: async (args) => {
+            const { e, v, input } = await planService(api, args);
+            return {
+              title: `Create a ${e.name} service?`,
+              facts: [
+                { label: 'Name', value: input.name },
+                { label: 'Version', value: `${input.version}${v.installed || v.source === 'system' ? '' : ' (downloads first)'}` },
+                ...(input.port ? [{ label: 'Port', value: String(input.port) }] : []),
+                { label: 'Data', value: input.dataDir || "DevCatz's data folder" },
+              ],
+            };
+          },
+          run: async (args) => {
+            const { input } = await planService(api, args);
+            const created = api.dbCreate(input);
+            // A wrong name or port fails at once; a download goes on and shows in list_services and in DevCatz.
+            const quick = await Promise.race([created.then((id) => ({ id })), new Promise<null>((r) => setTimeout(() => r(null), 1500))]);
+            if (!quick) created.catch((e) => console.warn('MCatzP create_service:', (e as Error).message));
+            return reply({ service: input.name, result: quick ? 'Created' : 'Creating: list_services shows its progress' });
+          },
+        },
+        {
+          name: 'create_database',
+          title: 'Create a database',
+          description: 'Creates an empty database on a running database service. DevCatz asks the user first.',
+          tier: 'change',
+          input: OBJECT({ service: DB_SERVICE, name: { type: 'string', minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$', description: 'Letters, digits, _ and -.' } }, ['service', 'name']),
+          preview: async ({ service, name }) => {
+            const d = databaseOf(await api.getState(), service);
+            return { title: `Create the database ${String(name)}?`, facts: [{ label: 'Service', value: `${d.name} (${d.engineName} ${d.version})` }, ...(d.port ? [{ label: 'Port', value: String(d.port) }] : []), { label: 'Now', value: d.status }] };
+          },
+          run: async ({ service, name }) => {
+            const d = databaseOf(await api.getState(), service);
+            await api.dbCreateDatabase(d.id, String(name));
+            return reply({ service: d.name, database: name, result: 'Created' });
+          },
+        },
+      ];
+  const lifecycle = VERBS.flatMap(({ action, verb, done }): ChangeAction[] => [
     {
       name: `${action}_site`,
       title: `${verb} a site`,
@@ -241,4 +325,18 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
       },
     } satisfies ChangeAction]),
   ]);
+  return [...lifecycle, ...creates];
+}
+
+/** What create_service will make: DevCatz's own defaults for the rest, as in its form (the assistant never sets a password). */
+async function planService(api: HerdApi, args: Record<string, unknown>) {
+  const e = await engineOf(api, args.engine);
+  if (e.requirement) throw new Error(`${e.name} needs ${e.requirement} first`);
+  const versions = await api.dbVersions(e.engine);
+  const v = versions.find((x) => x.version === args.version);
+  if (!v) throw new Error(`No ${e.name} version ${String(args.version)} (list_db_versions shows them)`);
+  const input = { ...(await api.dbDefaults(e.engine, v.version)) };
+  if (typeof args.name === 'string') input.name = args.name;
+  if (typeof args.port === 'number') input.port = args.port;
+  return { e, v, input };
 }

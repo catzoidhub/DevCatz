@@ -44,7 +44,7 @@ const answer = (a: 'deny' | 'once' | 'session') => {
             <ul class="space-y-1 text-sm">
               <li v-for="c in CAN" :key="c" class="flex items-center gap-2"><span class="status status-success status-xs shrink-0" />{{ c }}</li>
             </ul>
-            <p class="mt-2 border-t border-base-300/60 pt-2 text-xs opacity-70">It can also ask to start, stop and restart sites and services; DevCatz asks you first. What it reads goes to that assistant's model provider.</p>
+            <p class="mt-2 border-t border-base-300/60 pt-2 text-xs opacity-70">It can also ask for changes, such as starting a service or creating a database; DevCatz asks you first. What it reads goes to that assistant's model provider.</p>
           </div>
           <p class="text-xs opacity-60">You can revoke this in Settings → MCatzP. The name is what the client says about itself: if you did not just start it, choose Don't Allow.</p>
           <div class="flex w-full gap-2">
