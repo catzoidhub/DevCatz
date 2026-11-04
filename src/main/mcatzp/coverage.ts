@@ -31,6 +31,8 @@ export const MCATZP_COVERAGE = {
   // tool: create_service
   dbDefaults: 'tool: create_service',
   dbCreate: 'tool: create_service',
+  // tool: delete_site_group
+  deleteGroup: 'tool: delete_site_group',
   // tool: deps_report
   depsReport: 'tool: deps_report',
   // tool: docker_cancel
@@ -185,8 +187,8 @@ export const MCATZP_COVERAGE = {
   // tool: refresh_runtimes
   rescan: 'tool: refresh_runtimes',
   refreshRuntimes: 'tool: refresh_runtimes',
-  // tool: rename_db_group (delete: later, destructive)
-  dbGroupAction: 'tool: rename_db_group (delete: later, destructive)',
+  // tool: rename_db_group, delete_db_group
+  dbGroupAction: 'tool: rename_db_group, delete_db_group',
   // tool: rename_site_group
   renameGroup: 'tool: rename_site_group',
   // tool: repair_electron
@@ -464,7 +466,6 @@ export const MCATZP_COVERAGE = {
   storageUninstall: 'later: destructive',
   s3DeleteBucket: 'later: destructive',
   s3Delete: 'later: destructive',
-  deleteGroup: 'later: destructive',
   // never: a QR logs in a WhatsApp account
   waSessionQr: 'never: a QR logs in a WhatsApp account',
   // never: credentials (user, 2026-11-04)

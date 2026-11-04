@@ -141,6 +141,11 @@ export function siteChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
     onSite('set_site_favorite', 'Favorite a site', 'Pins a site at the top of the sidebar, or unpins it.', { on: { type: 'boolean' } }, ['on'], (_p, a) => ({ title: a.on ? 'Add to favorites?' : 'Remove from favorites?', facts: [] }), async (p, a) => (await api.setFavorite(p.id, a.on === true), ok({ site: p.name, favorite: a.on })), true),
     onSite('set_site_group', "Change a site's group", 'Moves a site into a sidebar group (made when new), or out of every group when left out.', { group: { type: 'string', minLength: 1, maxLength: 100 } }, [], (_p, a) => ({ title: typeof a.group === 'string' ? `Move to the group ${a.group}?` : 'Take out of its group?', facts: [] }), async (p, a) => (await api.setSiteGroup(p.id, typeof a.group === 'string' ? a.group : null), ok({ site: p.name, group: a.group ?? null })), true),
     global('rename_site_group', 'Rename a site group', 'Renames a sidebar group.', { from: S('Its name.', 100), to: S('The new name.', 100) }, ['from', 'to'], 'projects', (a) => ({ title: `Rename the group ${String(a.from)} to ${String(a.to)}?`, facts: [] }), async (a) => (await api.renameGroup(String(a.from), String(a.to)), ok({ group: a.to }))),
+    global('delete_site_group', 'Delete a site group', 'Deletes a sidebar group. Its sites stay, out of any group.', { name: S('Its name.', 100) }, ['name'], 'projects', async (a) => {
+      const g = (await api.getState()).settings.siteGroups.find((x) => x.name === a.name);
+      if (!g) throw new Error(`No group ${String(a.name)}`);
+      return { title: `Delete the group ${g.name}?`, facts: [{ label: 'Its sites', value: `${g.sites.length} stay, out of any group` }] };
+    }, async (a) => (await api.deleteGroup(String(a.name)), ok({ deleted: a.name }))),
     global('start_all_sites', 'Start the shared sites', 'Starts every site shared with MCatzP.', {}, [], 'projects', async () => {
       const list = (await api.getState()).projects.filter((p) => scopes.site(p.id) && p.status !== 'running');
       return { title: `Start ${list.length} site(s)?`, facts: fact('Sites', list.map((p) => p.name).join(', ').slice(0, 300)) };
@@ -207,6 +212,11 @@ export function siteChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
         global('restart_dns', 'Restart DNS', "Restarts DevCatz's local DNS.", {}, [], 'settings', () => ({ title: 'Restart the local DNS?', facts: [] }), async () => ok({ running: await api.restartDns() })),
         global('set_db_favorite', 'Favorite a database', 'Pins a database service at the top of its list, or unpins it.', { service: S('An id from list_services.'), on: { type: 'boolean' } }, ['service', 'on'], 'database', (a) => ({ title: a.on ? 'Add to favorites?' : 'Remove from favorites?', facts: [{ label: 'Service', value: String(a.service) }] }), async (a) => (await api.dbSetFavorite(String(a.service), a.on === true), ok({ service: a.service, favorite: a.on }))),
         global('set_db_group', "Change a database's group", 'Moves a database service into a group, or out when left out.', { service: S('An id from list_services.'), group: { type: 'string', minLength: 1, maxLength: 100 } }, ['service'], 'database', (a) => ({ title: typeof a.group === 'string' ? `Move to the group ${a.group}?` : 'Take out of its group?', facts: [{ label: 'Service', value: String(a.service) }] }), async (a) => (await api.dbSetGroup(String(a.service), typeof a.group === 'string' ? a.group : null), ok({ service: a.service, group: a.group ?? null }))),
+        global('delete_db_group', 'Delete a database group', 'Deletes a group of database services. They stay, out of any group.', { name: S('Its name.', 100) }, ['name'], 'database', async (a) => {
+          const g = (await api.getState()).settings.dbGroups.find((x) => x.name === a.name);
+          if (!g) throw new Error(`No group ${String(a.name)}`);
+          return { title: `Delete the group ${g.name}?`, facts: [{ label: 'Its services', value: `${g.sites.length} stay, out of any group` }] };
+        }, async (a) => (await api.dbGroupAction(String(a.name), 'delete'), ok({ deleted: a.name }))),
         global('rename_db_group', 'Rename a database group', 'Renames a group of database services.', { from: S('Its name.', 100), to: S('The new name.', 100) }, ['from', 'to'], 'database', (a) => ({ title: `Rename the group ${String(a.from)} to ${String(a.to)}?`, facts: [] }), async (a) => (await api.dbGroupAction(String(a.from), 'rename', String(a.to)), ok({ group: a.to }))),
       ];
 
