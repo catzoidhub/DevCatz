@@ -114,6 +114,7 @@ function detectGoStack(root: string, domain: string): StackInfo {
   const app = detectGoApp(root, root, domain);
   const goravel = app.library === 'goravel';
   const noEnv = goravel && !existsSync(join(root, '.env'));
+  const noKey = goravel && !noEnv && !/^[ \t]*APP_KEY[ \t]*=[ \t]*\S/m.test(readText(join(root, '.env')) ?? '');
   return {
     packageManager: null,
     detectedPackageManager: null,
@@ -126,7 +127,7 @@ function detectGoStack(root: string, domain: string): StackInfo {
     node: null,
     runtime: 'go',
     depsMissing: false,
-    warnings: noEnv ? ['No .env yet: copy .env.example to .env, then run key:generate on the Database tab.'] : [],
+    warnings: noEnv ? ['No .env yet: create it on the Env tab, from .env.example with an APP_KEY.'] : noKey ? ['No APP_KEY in .env yet: Goravel will not start without one.'] : [],
     libs: [],
     ...(goravel ? { tasks: goravelTasks() } : {}),
   };

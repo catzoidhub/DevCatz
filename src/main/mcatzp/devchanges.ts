@@ -449,10 +449,10 @@ export function devChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
     onSite({
       name: 'env_generate_key',
       title: 'Generate the app key',
-      description: "Generates the site's framework key (Laravel's APP_KEY) and writes it to .env. The key is not returned.",
+      description: "Generates the site's framework key (the APP_KEY of Laravel or Goravel) and writes it to .env. The key is not returned.",
       tab: 'env',
       ask: (p) => {
-        if (!p.stack.apps.some((x) => x.framework === 'laravel')) throw new Error('Not a Laravel site');
+        if (!p.stack.apps.some((x) => x.framework === 'laravel' || x.library === 'goravel')) throw new Error('Not a Laravel or Goravel site');
         return { title: 'Generate a new app key?', facts: [{ label: 'Note', value: 'Data encrypted with the old key can no longer be read' }] };
       },
       run: async (p) => {

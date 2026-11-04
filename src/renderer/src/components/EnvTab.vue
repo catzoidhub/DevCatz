@@ -106,9 +106,11 @@ async function create() {
   await loadFile();
 }
 
-// Laravel: a new APP_KEY with `php artisan key:generate` (the site's PHP), then the file is read again.
-const laravel = computed(() => props.project.stack.apps.some((a) => a.framework === 'laravel'));
-const noKey = computed(() => !/^\s*APP_KEY\s*=\s*\S/m.test(saved.value));
+// Laravel and Goravel: a new APP_KEY with `artisan key:generate` (the site's PHP or Go), then the file is read again.
+const goravel = computed(() => props.project.stack.apps.some((a) => a.library === 'goravel'));
+const hasAppKey = computed(() => goravel.value || props.project.stack.apps.some((a) => a.framework === 'laravel'));
+const keyCommand = computed(() => (goravel.value ? 'go run . artisan key:generate' : 'php artisan key:generate'));
+const noKey = computed(() => !/^[ \t]*APP_KEY[ \t]*=[ \t]*\S/m.test(saved.value));
 const generating = ref(false);
 async function generateKey() {
   if (!noKey.value && !confirm('Replace APP_KEY? Sessions, encrypted values and signed URLs made with the old key stop working.')) return;
@@ -175,11 +177,11 @@ const varCount = computed(() => (locked.value ? saved.value : content.value).spl
       </div>
       <div class="flex-1" />
       <button
-        v-if="laravel && selected === '.env' && current?.exists"
+        v-if="hasAppKey && selected === '.env' && current?.exists"
         class="btn btn-sm"
         :class="{ 'btn-primary': noKey }"
         :disabled="generating || dirty"
-        :title="dirty ? 'Save .env first' : 'php artisan key:generate: a new APP_KEY in .env'"
+        :title="dirty ? 'Save .env first' : `${keyCommand}: a new APP_KEY in .env`"
         @click="generateKey"
       >
         <span v-if="generating" class="loading loading-spinner loading-xs" />{{ noKey ? 'Generate APP_KEY' : 'New APP_KEY' }}
@@ -200,7 +202,7 @@ const varCount = computed(() => (locked.value ? saved.value : content.value).spl
       <p class="mt-1 text-xs opacity-70">
         <template v-if="current.example">It will start as a copy of <code>{{ current.example }}</code>.</template>
         <template v-else>It will start empty.</template>
-        <template v-if="selected === '.env' && project.stack.apps.some((a) => a.framework === 'laravel')"> <code>php artisan key:generate</code> sets APP_KEY afterwards.</template>
+        <template v-if="selected === '.env' && hasAppKey"> <code>{{ keyCommand }}</code> sets APP_KEY afterwards.</template>
       </p>
       <button class="btn btn-primary btn-sm mt-3" @click="create">Create {{ selected }}</button>
     </div>

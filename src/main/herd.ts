@@ -3938,14 +3938,26 @@ export class Herd extends EventEmitter {
     this.processes.log(id, 'sys', `Created ${path}${info?.example ? ` from ${info.example}` : ''}`);
     const laravel = this.stacks.get(id)?.apps.some((a) => a.framework === 'laravel');
     if (laravel && path === '.env' && existsSync(join(p.path, 'vendor/autoload.php'))) await this.envKeyGenerate(id).catch(() => undefined);
+    if (path === '.env' && this.stacks.get(id)?.apps.some((a) => a.library === 'goravel')) await this.envKeyGenerate(id).catch(() => undefined);
     this.rescan();
   }
 
-  /** Laravel: `php artisan key:generate` (a new APP_KEY in .env) with the site's own PHP; output in Logs. */
+  /** Laravel and Goravel: `artisan key:generate` (a new APP_KEY in .env) with the site's own PHP or Go; output in Logs. */
   async envKeyGenerate(id: string): Promise<void> {
     const p = this.project(id);
-    if (!this.stacks.get(id)?.apps.some((a) => a.framework === 'laravel')) throw new Error('Not a Laravel site');
+    const goravel = this.stacks.get(id)?.apps.some((a) => a.library === 'goravel');
+    if (!goravel && !this.stacks.get(id)?.apps.some((a) => a.framework === 'laravel')) throw new Error('Not a Laravel or Goravel site');
     if (!existsSync(join(p.path, '.env'))) throw new Error('Create .env first');
+    if (goravel) {
+      if (!this.goChoice(p).binDir) throw new Error('Go is not installed: install it on the Go page first');
+      const code = await stream(p.path, 'go run . artisan key:generate', (t) => this.processes.log(id, 'sys', t), this.runtimeEnv(p));
+      if (code !== 0) {
+        this.processes.log(id, 'sys', 'key:generate failed; set APP_KEY yourself');
+        throw new Error('go run . artisan key:generate failed: see Logs');
+      }
+      this.rescan();
+      return;
+    }
     if (!existsSync(join(p.path, 'vendor/autoload.php'))) throw new Error('vendor/ is missing: use "Install dependencies" (composer install) first');
     if (!this.phpChoice(p).version) throw new Error('PHP is not installed: install it from the site\'s Overview first');
     const code = await stream(p.path, 'php artisan key:generate --force --no-interaction', (t) => this.processes.log(id, 'sys', t), this.runtimeEnv(p));

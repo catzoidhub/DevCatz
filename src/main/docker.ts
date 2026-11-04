@@ -851,6 +851,8 @@ function dockerEnvMap(ctx: Ctx, project: string, db: ReturnType<typeof dbService
     if (e.DB_HOST !== undefined || ctx.stack.runtime === 'php') Object.assign(set, { DB_HOST: db.host, DB_PORT: String(db.port) });
   } else if (e.DB_HOST && loop.test(e.DB_HOST)) set.DB_HOST = 'host.docker.internal';
   if (redis) Object.assign(set, { REDIS_HOST: 'redis', REDIS_PORT: '6379' });
+  // Goravel takes its address from the env file, which beats the image's ENV: 127.0.0.1 could not be reached from outside.
+  if (ctx.stack.apps.some((x) => x.library === 'goravel')) set.APP_HOST = '0.0.0.0';
   else if (e.REDIS_HOST && loop.test(e.REDIS_HOST)) set.REDIS_HOST = 'host.docker.internal';
 
   const full: [string, string][] = [];

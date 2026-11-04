@@ -13,6 +13,7 @@
     "licenses": "node scripts/licenses.mjs",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json",
+    "test": "bun --tsconfig-override=tsconfig.node.json test tests",
     "quick": "node scripts/quick.mjs",
     "package": "node scripts/package.mjs",
     "icons": "bun scripts/render-icons.ts",

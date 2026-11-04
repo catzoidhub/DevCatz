@@ -425,6 +425,15 @@ async function copyShare() {
 
 const isFav = computed(() => state.value?.settings.favorites.includes(props.project.id) ?? false);
 const group = computed(() => state.value?.settings.siteGroups.find((g) => g.sites.includes(props.project.id))?.name ?? null);
+
+/** "No APP_KEY in .env yet" (Goravel): the key, right from the warning. */
+const generatingKey = ref(false);
+async function generateKey() {
+  generatingKey.value = true;
+  const ok = await attempt(() => herd.envKeyGenerate(p.value.id).then(() => true));
+  generatingKey.value = false;
+  if (ok) notify('success', 'New APP_KEY written to .env');
+}
 </script>
 
 <template>
@@ -604,7 +613,8 @@ const group = computed(() => state.value?.settings.siteGroups.find((g) => g.site
     <div v-for="w in p.stack.warnings" :key="w" role="alert" class="alert alert-warning text-sm">
       <CatMood mood="warning" class="size-7 shrink-0 -my-0.5" /><span class="flex-1">{{ w }}</span>
       <!-- "No .env yet": the Env tab creates it from the example (and a Laravel APP_KEY with it). -->
-      <button v-if="/\.env\b/.test(w)" class="btn btn-sm" @click="tab = 'env'">Open Env</button>
+      <button v-if="/^No APP_KEY/.test(w)" class="btn btn-sm" :disabled="generatingKey" @click="generateKey">{{ generatingKey ? 'Generating…' : 'Generate key' }}</button>
+      <button v-else-if="/\.env\b/.test(w)" class="btn btn-sm" @click="tab = 'env'">Open Env</button>
     </div>
     <div v-if="p.envHints.length || Object.keys(p.envOverrides).length" role="alert" class="alert text-sm">
       <div class="min-w-0 flex-1">
