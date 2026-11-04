@@ -7,6 +7,7 @@ import { setBridgeMcatzp } from '../bridge';
 import { store } from '../store';
 import { type ChangeAction, changeActions, findSite, readActions, type Scopes } from './actions';
 import { ActivityLog } from './activity';
+import { devChanges } from './devchanges';
 import { moreReads } from './reads';
 
 /** Unanswered questions lapse before MCatzP stops waiting (3 and 10 minutes), so a late Allow never runs for nobody. */
@@ -102,7 +103,7 @@ export class Mcatzp {
   }
 
   private changes(): ChangeAction[] {
-    return changeActions(this.api, this.scopes());
+    return [...changeActions(this.api, this.scopes()), ...devChanges(this.api, this.scopes())];
   }
 
   /** What is shared changed: connected clients get the new list of tools. */

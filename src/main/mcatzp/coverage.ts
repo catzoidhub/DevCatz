@@ -22,12 +22,62 @@ export const MCATZP_COVERAGE = {
   dbCreate: 'tool: create_service',
   // tool: deps_report
   depsReport: 'tool: deps_report',
+  // tool: docker_cancel
+  dockerCancel: 'tool: docker_cancel',
+  // tool: docker_compose
+  dockerCompose: 'tool: docker_compose',
+  // tool: docker_dev_write
+  dockerDevWrite: 'tool: docker_dev_write',
+  // tool: docker_env_replace
+  dockerDocatzEnvReplace: 'tool: docker_env_replace',
+  // tool: docker_save_file
+  dockerSaveFile: 'tool: docker_save_file',
   // tool: docker_status
   dockerStatus: 'tool: docker_status',
+  // tool: docker_write
+  dockerWrite: 'tool: docker_write',
   // tool: domain_owner
   domainOwner: 'tool: domain_owner',
   // tool: expose_requests
   exposeRequests: 'tool: expose_requests',
+  // tool: get_status
+  mailForwardConfig: 'tool: get_status',
+  // tool: git_add_remote
+  gitAddRemote: 'tool: git_add_remote',
+  // tool: git_branch (delete: later, destructive)
+  gitBranch: 'tool: git_branch (delete: later, destructive)',
+  // tool: git_cancel
+  gitCancel: 'tool: git_cancel',
+  // tool: git_cancel_clone
+  gitCancelClone: 'tool: git_cancel_clone',
+  // tool: git_checkout_pull
+  gitCheckoutPull: 'tool: git_checkout_pull',
+  // tool: git_cherry_pick
+  gitCherryPick: 'tool: git_cherry_pick',
+  // tool: git_clone
+  gitClone: 'tool: git_clone',
+  // tool: git_commit (amend: later, destructive)
+  gitCommit: 'tool: git_commit (amend: later, destructive)',
+  // tool: git_create_pull
+  gitCreatePull: 'tool: git_create_pull',
+  // tool: git_ignore_add
+  gitIgnoreAdd: 'tool: git_ignore_add',
+  // tool: git_ignore_save
+  gitignoreSave: 'tool: git_ignore_save',
+  // tool: git_init
+  gitInit: 'tool: git_init',
+  // tool: git_rebase
+  gitOperation: 'tool: git_rebase',
+  // tool: git_stage
+  gitStage: 'tool: git_stage',
+  // tool: git_stash (drop: later, destructive)
+  gitStash: 'tool: git_stash (drop: later, destructive)',
+  // tool: git_sync (force push: later, destructive)
+  gitSync: 'tool: git_sync (force push: later, destructive)',
+  // tool: git_tag (delete: later, destructive)
+  gitTag: 'tool: git_tag (delete: later, destructive)',
+  // tool: git_unstage
+  gitUnstage: 'tool: git_unstage',
   // tool: install_runtime
   nodeInstall: 'tool: install_runtime',
   bunInstall: 'tool: install_runtime',
@@ -70,6 +120,8 @@ export const MCATZP_COVERAGE = {
   mailGet: 'tool: mail_get',
   // tool: mail_list
   mailList: 'tool: mail_list',
+  // tool: mail_raw
+  mailRaw: 'tool: mail_raw',
   // tool: monitor_history
   monitorHistory: 'tool: monitor_history',
   // tool: monitor_snapshot
@@ -105,6 +157,8 @@ export const MCATZP_COVERAGE = {
   dockerComposeEnv: 'tool: site_docker_env',
   // tool: site_docker_files
   dockerFiles: 'tool: site_docker_files',
+  // tool: site_docker_generate
+  dockerGenerate: 'tool: site_docker_generate',
   // tool: site_docker_list_files
   dockerListFiles: 'tool: site_docker_list_files',
   // tool: site_docker_preview
@@ -176,6 +230,8 @@ export const MCATZP_COVERAGE = {
   gwAction: 'tool: start/stop/restart_service',
   wsAction: 'tool: start/stop/restart_service',
   storageAction: 'tool: start/stop/restart_service',
+  // tool: start_docker_engine
+  startEngine: 'tool: start_docker_engine',
   // tool: start_site
   start: 'tool: start_site',
   // tool: stop_site
@@ -196,6 +252,10 @@ export const MCATZP_COVERAGE = {
   waHooks: 'tool: whatsapp_hooks',
   // tool: whatsapp_messages
   waMessages: 'tool: whatsapp_messages',
+  // tool: worktree_add
+  worktreeAdd: 'tool: worktree_add',
+  // tool: worktree_create
+  worktreeCreate: 'tool: worktree_create',
   // later: change
   clearLogs: 'later: change',
   linkProject: 'later: change',
@@ -212,7 +272,6 @@ export const MCATZP_COVERAGE = {
   openapiUntrack: 'later: change',
   dbImportOne: 'later: change',
   buildSite: 'later: change',
-  gitignoreSave: 'later: change',
   setAppSubdomain: 'later: change',
   restartApp: 'later: change',
   setSitePort: 'later: change',
@@ -273,25 +332,6 @@ export const MCATZP_COVERAGE = {
   waSend: 'later: change',
   waSetHook: 'later: change',
   waReplay: 'later: change',
-  gitInit: 'later: change',
-  gitStage: 'later: change',
-  gitUnstage: 'later: change',
-  gitCommit: 'later: change',
-  gitSync: 'later: change',
-  gitCancel: 'later: change',
-  gitBranch: 'later: change',
-  worktreeCreate: 'later: change',
-  worktreeAdd: 'later: change',
-  gitStash: 'later: change',
-  gitTag: 'later: change',
-  gitOperation: 'later: change',
-  gitCherryPick: 'later: change',
-  gitIgnoreAdd: 'later: change',
-  gitAddRemote: 'later: change',
-  gitCreatePull: 'later: change',
-  gitCheckoutPull: 'later: change',
-  gitClone: 'later: change',
-  gitCancelClone: 'later: change',
   wsUpgrade: 'later: change',
   serviceSetAutoStart: 'later: change',
   searchCancelTasks: 'later: change',
@@ -309,14 +349,6 @@ export const MCATZP_COVERAGE = {
   s3CancelUpload: 'later: change',
   s3Download: 'later: change',
   s3MkDir: 'later: change',
-  dockerGenerate: 'later: change',
-  dockerWrite: 'later: change',
-  dockerDocatzEnvReplace: 'later: change',
-  dockerCancel: 'later: change',
-  dockerDevWrite: 'later: change',
-  dockerSaveFile: 'later: change',
-  dockerCompose: 'later: change',
-  startEngine: 'later: change',
   setFavorite: 'later: change',
   setSiteGroup: 'later: change',
   renameGroup: 'later: change',
@@ -387,7 +419,6 @@ export const MCATZP_COVERAGE = {
   s3DeleteBucket: 'later: destructive',
   s3Delete: 'later: destructive',
   deleteGroup: 'later: destructive',
-  mailForwardConfig: 'tool: get_status',
   // never: a QR logs in a WhatsApp account
   waSessionQr: 'never: a QR logs in a WhatsApp account',
   // never: credentials (user, 2026-11-04)
@@ -416,7 +447,6 @@ export const MCATZP_COVERAGE = {
   updateSettings: 'never: the app itself (user, 2026-11-04)',
   // not a tool
   runtimePick: 'not a tool',
-  mailRaw: 'tool: mail_raw',
   mailAttachmentData: 'not a tool',
   pickFolder: 'not a tool',
   aboutInfo: 'not a tool',

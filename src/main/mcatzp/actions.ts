@@ -483,7 +483,7 @@ async function runtimeVersionOf(api: HerdApi, r: Runtime, version: unknown): Pro
  */
 const WATCH_MS = 50_000;
 
-async function inBackground(api: HerdApi, ctx: ActionContext, work: Promise<unknown>, cancel: () => Promise<void>, about: Record<string, unknown>, done: string, going: string, watch: (s: AppState) => { message: string; percent: number } | null): Promise<CallResult> {
+export async function inBackground(api: HerdApi, ctx: ActionContext, work: Promise<unknown>, cancel: () => Promise<void>, about: Record<string, unknown>, done: string, going: string, watch: (s: AppState) => { message: string; percent: number } | null): Promise<CallResult> {
   let ended = false;
   const finished = work.then(() => (ended = true));
   const wait = ctx.progress ? WATCH_MS : 1500;
