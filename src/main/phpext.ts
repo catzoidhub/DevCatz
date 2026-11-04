@@ -179,6 +179,8 @@ export function setEnabled(version: string, module: string, on: boolean): void {
   const from = iniFile(version, module, !on);
   const to = iniFile(version, module, on);
   if (existsSync(from)) renameSync(from, to);
+  // Nothing to switch off: built into this PHP, or not installed. Saying nothing would look as if it worked.
+  else if (!on && !existsSync(to)) throw new Error(`${module} cannot be switched off for PHP ${version}: it is built in, or not installed`);
   else if (on && !existsSync(to)) {
     const meta = listInstalled(version).find((e) => e.module === module);
     const bundled = listBundled(version).find((e) => e.module === module);
