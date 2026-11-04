@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { words } from '@shared/platform';
 import type { McatzpActivity, McatzpSetup, Settings } from '@shared/types';
 import mcatzpLogo from '../assets/logos/mcatzp.svg';
+import CatMood from './CatMood.vue';
 import { attempt, herd, state } from '../store';
 
 /** Settings → MCatzP: the switch, what is shared, the approved clients and what they did. */
@@ -45,7 +46,7 @@ const section = ref<(typeof SECTIONS)[number]['id']>('access');
 
 const activity = ref<McatzpActivity[]>([]);
 const load = async () => {
-  if (on.value && section.value === 'activity') activity.value = (await attempt(() => herd.mcatzpActivity())) ?? activity.value;
+  if (on.value && section.value !== 'access') activity.value = (await attempt(() => herd.mcatzpActivity())) ?? activity.value;
 };
 // While this page is open only: calls come from outside DevCatz, with no state change to follow.
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -62,7 +63,43 @@ async function clearLog() {
   activity.value = [];
 }
 const TONE = { ok: 'text-success', refused: 'text-error', declined: 'text-warning', failed: 'text-error' } as const;
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const DOT = { ok: 'status-success', refused: 'status-error', declined: 'status-warning', failed: 'status-error' } as const;
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+/** Each approved client with what the log knows about it, the most recent first. */
+const clients = computed(() => {
+  const list = (s.value.mcatzpClients ?? []).map((c) => {
+    const own = activity.value.filter((a) => a.client === c.name && a.action);
+    return { ...c, last: own[0]?.time ?? null, calls: own.length };
+  });
+  return list.sort((a, b) => (b.last ?? b.approvedAt).localeCompare(a.last ?? a.approvedAt));
+});
+
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'changes', label: 'Changes' },
+  { id: 'problems', label: 'Problems' },
+] as const;
+const filter = ref<(typeof FILTERS)[number]['id']>('all');
+
+/** By day, with a run of the same call folded into one row (a client polling a status is one line, not fifty). */
+const groups = computed(() => {
+  const out: { day: string; rows: (McatzpActivity & { key: string; name: string; count: number })[] }[] = [];
+  activity.value.forEach((a, i) => {
+    if (filter.value === 'changes' && a.tier !== 'change' && a.tier !== 'destructive') return;
+    if (filter.value === 'problems' && a.outcome === 'ok') return;
+    const d = day(a.time);
+    const name = a.action ?? a.method;
+    if (out.at(-1)?.day !== d) out.push({ day: d, rows: [] });
+    const rows = out.at(-1)!.rows;
+    const prev = rows.at(-1);
+    if (prev && prev.name === name && prev.client === a.client && prev.outcome === a.outcome) prev.count++;
+    else rows.push({ ...a, key: `${a.time}-${i}`, name, count: 1 });
+  });
+  return out;
+});
 </script>
 
 <template>
@@ -163,26 +200,51 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
         </div>
 
         <div v-else-if="section === 'clients'">
-          <p v-if="!s.mcatzpClients?.length" class="text-xs opacity-60">None yet. A client asks here the first time it connects.</p>
-          <div v-for="c in s.mcatzpClients" :key="c.name" class="flex items-center gap-2 py-0.5 text-sm">
-            <span class="selectable min-w-0 flex-1 truncate">{{ c.name }}</span>
-            <span class="text-xs opacity-50">{{ when(c.approvedAt) }}</span>
-            <button class="btn btn-ghost btn-xs text-error" @click="revoke(c.name)">Revoke</button>
+          <div v-if="!s.mcatzpClients?.length" class="empty">
+            <CatMood mood="info" class="size-14" />
+            <p class="font-medium">No approved clients yet</p>
+            <p class="text-xs opacity-60">A client asks here the first time it connects, and shows up once you allow it.</p>
           </div>
+          <ul v-else class="divide-y divide-base-300/50 overflow-hidden rounded-box border border-base-300/60">
+            <li v-for="c in clients" :key="c.name" class="flex items-center gap-3 px-3 py-2.5">
+              <span class="avatar-letter" aria-hidden="true">{{ c.name.slice(0, 1).toUpperCase() }}</span>
+              <div class="min-w-0 flex-1">
+                <p class="selectable truncate text-sm font-medium">{{ c.name }}</p>
+                <p class="truncate text-xs opacity-60">Approved {{ day(c.approvedAt) }}<template v-if="c.last"> · last call {{ when(c.last) }} · {{ c.calls }} {{ c.calls === 1 ? 'call' : 'calls' }}</template></p>
+              </div>
+              <button class="btn btn-sm" @click="revoke(c.name)">Revoke</button>
+            </li>
+          </ul>
         </div>
 
         <div v-else>
-          <div v-if="activity.length" class="mb-2 flex justify-end">
-            <button class="btn btn-ghost btn-xs" @click="clearLog">Clear</button>
-          </div>
-          <p v-if="!activity.length" class="text-xs opacity-60">Nothing yet. Every call is listed here: names and outcomes, not what was read.</p>
-          <div v-else class="max-h-[28rem] space-y-0.5 overflow-y-auto">
-            <div v-for="(a, i) in activity" :key="i" class="flex items-baseline gap-2 text-xs" :title="a.reason">
-              <span class="w-32 shrink-0 tabular-nums opacity-50">{{ when(a.time) }}</span>
-              <span class="w-24 shrink-0 truncate opacity-70">{{ a.client }}</span>
-              <code class="min-w-0 flex-1 truncate">{{ a.action ?? a.method }}</code>
-              <span class="shrink-0 font-medium" :class="TONE[a.outcome]">{{ a.outcome }}</span>
+          <div class="mb-3 flex flex-wrap items-center gap-2">
+            <div role="tablist" class="seg seg-xs">
+              <button v-for="f in FILTERS" :key="f.id" role="tab" class="seg-item" :class="{ 'is-active': filter === f.id }" @click="filter = f.id">{{ f.label }}</button>
             </div>
+            <span class="flex-1" />
+            <button v-if="activity.length" class="btn btn-ghost btn-xs" @click="clearLog">Clear</button>
+          </div>
+          <div v-if="!groups.length" class="empty">
+            <CatMood mood="info" class="size-14" />
+            <p class="font-medium">{{ activity.length ? 'Nothing here' : 'No activity yet' }}</p>
+            <p class="text-xs opacity-60">{{ activity.length ? 'No call matches this filter.' : 'Every call is listed here: names and outcomes, never what was read.' }}</p>
+          </div>
+          <div v-else class="log max-h-[30rem] overflow-y-auto rounded-box border border-base-300/60">
+            <section v-for="g in groups" :key="g.day">
+              <h3 class="log-day">{{ g.day }}</h3>
+              <div v-for="r in g.rows" :key="r.key" class="log-row" :title="r.reason">
+                <span class="status status-sm shrink-0" :class="DOT[r.outcome]" />
+                <code class="selectable min-w-0 flex-1 truncate text-xs">{{ r.name }}<span v-if="r.count > 1" class="ml-1.5 opacity-50">×{{ r.count }}</span></code>
+                <span class="flex w-20 shrink-0 justify-end">
+                  <span v-if="r.tier === 'destructive'" class="badge badge-xs badge-error badge-outline">destructive</span>
+                  <span v-else-if="r.tier === 'change'" class="badge badge-xs badge-ghost">change</span>
+                </span>
+                <span class="hidden w-24 shrink-0 truncate text-xs opacity-60 sm:block">{{ r.client }}</span>
+                <span class="w-16 shrink-0 text-right text-xs font-medium" :class="TONE[r.outcome]">{{ r.outcome === 'ok' ? '' : r.outcome }}</span>
+                <span class="w-14 shrink-0 text-right text-xs tabular-nums opacity-50">{{ clock(r.time) }}</span>
+              </div>
+            </section>
           </div>
         </div>
       </template>
@@ -194,5 +256,45 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
 /* MCatzP's own pink, so the page is known at a glance. */
 .logo {
   box-shadow: 0 0 0 1px color-mix(in oklab, #ff8dbe 45%, transparent), 0 6px 20px color-mix(in oklab, #ff8dbe 35%, transparent);
+}
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+.avatar-letter {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 0.625rem;
+  background: color-mix(in oklab, #ff8dbe 18%, transparent);
+  color: #ff8dbe;
+  font-weight: 600;
+}
+.log-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.375rem 0.75rem;
+  background: var(--color-base-200);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+  text-transform: uppercase;
+}
+.log-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.75rem;
+}
+.log-row + .log-row {
+  border-top: 1px solid color-mix(in oklab, var(--color-base-300) 45%, transparent);
 }
 </style>
