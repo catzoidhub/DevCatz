@@ -91,7 +91,9 @@ export async function install(progress: (p: McatzpInstallProgress) => void, sign
     const built = join(unpacked, exe('mcatzp'));
     if (!existsSync(built) || !lstatSync(built).isFile()) throw new Error('The download holds no MCatzP program');
     if (!isWin) chmodSync(built, 0o755);
-    if (!(await versionOf(built))) throw new Error('The downloaded MCatzP does not start on this computer');
+    const version = await versionOf(built);
+    if (!version) throw new Error('The downloaded MCatzP does not start on this computer');
+    if (version !== l.version) throw new Error(`The download is MCatzP ${version}, not the ${l.version} the site offers`);
     try {
       renameSync(built, target);
     } catch (e) {
