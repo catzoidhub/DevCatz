@@ -49,7 +49,7 @@ export function destructiveActions(api: HerdApi, scopes: Scopes): ChangeAction[]
       await api.removeProject(p.id, p.domain);
       return ok({ removed: p.name });
     }),
-    asked('forget_missing_site', 'Forget a missing site', 'Forgets a site whose folder is gone (get_status does not list it: see missingSites in list_sites).', { id: S('Its id.') }, ['id'], async (a) => {
+    asked('forget_missing_site', 'Forget a missing site', 'Forgets a site whose folder is gone (get_status does not list it: see list_missing_sites).', { id: S('Its id.') }, ['id'], async (a) => {
       const m = (await state()).missingSites.find((x) => x.id === a.id);
       if (!m) throw new Error(`No missing site ${String(a.id)}`);
       return { title: `Forget ${m.name}?`, facts: [{ label: 'Was', value: m.path }], page: 'projects' };
