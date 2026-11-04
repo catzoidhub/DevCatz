@@ -126,6 +126,14 @@ export const MCATZP_COVERAGE = {
   monitorHistory: 'tool: monitor_history',
   // tool: monitor_snapshot
   monitorSnapshot: 'tool: monitor_snapshot',
+  // tool: openapi_add_generator
+  addOpenApi: 'tool: openapi_add_generator',
+  // tool: openapi_create
+  createOpenApi: 'tool: openapi_create',
+  // tool: openapi_gitignore
+  openapiIgnore: 'tool: openapi_gitignore',
+  openapiUnignore: 'tool: openapi_gitignore',
+  openapiUntrack: 'tool: openapi_gitignore',
   // tool: php_extensions
   phpExtensions: 'tool: php_extensions',
   // tool: php_ini
@@ -265,11 +273,6 @@ export const MCATZP_COVERAGE = {
   missingLocateApply: 'later: change',
   updateProject: 'later: change',
   envKeyGenerate: 'later: change',
-  addOpenApi: 'later: change',
-  createOpenApi: 'later: change',
-  openapiIgnore: 'later: change',
-  openapiUnignore: 'later: change',
-  openapiUntrack: 'later: change',
   dbImportOne: 'later: change',
   buildSite: 'later: change',
   setAppSubdomain: 'later: change',

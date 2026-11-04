@@ -34,7 +34,7 @@ export function devChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
     props?: Record<string, unknown>;
     required?: string[];
     allowSession?: boolean;
-    tab: 'git' | 'docker';
+    tab: 'git' | 'docker' | 'api';
     ask: (p: Awaited<ReturnType<typeof site>>, a: Record<string, unknown>) => Promise<{ title: string; facts: Fact[] }> | { title: string; facts: Fact[] };
     run: ChangeAction['run'] extends (...x: infer _) => unknown ? (p: Awaited<ReturnType<typeof site>>, a: Record<string, unknown>, ctx: Parameters<ChangeAction['run']>[1]) => ReturnType<ChangeAction['run']> : never;
   }): ChangeAction => ({
@@ -292,11 +292,11 @@ export function devChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
         onSite({
           name: 'docker_compose',
           title: 'Run docker compose',
-          description: 'Build & up, down, restart or build, for a compose file of the site or one service in it. Output goes to site_logs; docker_cancel stops it.',
-          props: { file: S('A file from site_docker_files.', 500), action: { type: 'string', enum: ['up', 'down', 'restart', 'build'] }, service: { type: 'string', maxLength: 200, description: 'One service; the whole file when left out.' } },
+          description: 'Build & up, down, start, stop, restart or build, for a compose file of the site or one service in it. Output goes to site_logs; docker_cancel stops it.',
+          props: { file: S('A file from site_docker_files.', 500), action: { type: 'string', enum: ['up', 'down', 'start', 'stop', 'restart', 'build'] }, service: { type: 'string', maxLength: 200, description: 'One service; the whole file when left out.' } },
           required: ['file', 'action'],
           tab: 'docker',
-          ask: (_p, a) => ({ title: `${{ up: 'Build & up', down: 'Take down', restart: 'Restart', build: 'Build' }[String(a.action)]} ${typeof a.service === 'string' ? a.service : 'this compose file'}?`, facts: [{ label: 'File', value: String(a.file) }] }),
+          ask: (_p, a) => ({ title: `${{ up: 'Build & up', down: 'Take down', start: 'Start', stop: 'Stop', restart: 'Restart', build: 'Build' }[String(a.action)]} ${typeof a.service === 'string' ? a.service : 'this compose file'}?`, facts: [{ label: 'File', value: String(a.file) }] }),
           run: async (p, a, ctx) => inBackground(api, ctx, api.dockerCompose(p.id, String(a.file), a.action as DockerAction, typeof a.service === 'string' ? a.service : undefined), () => api.dockerCancel(p.id), { site: p.name, action: a.action }, 'Done', 'Still running: site_logs shows it; only docker_cancel stops it', () => null),
         }),
         { name: 'docker_cancel', title: 'Cancel a compose command', description: "Stops a site's running compose command. Runs at once, without a dialog.", tier: 'change', noDialog: true, input: OBJECT({ site: SITE }, ['site']), preview: async () => ({ title: '', facts: [], page: '' }), run: async (a) => {
@@ -338,5 +338,54 @@ export function devChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
           : []),
       ];
 
-  return [...git, ...docker];
+  /** A file the site really has among its OpenAPI files, by its path in the site. */
+  const specFile = async (id: string, path: string, root: string) => {
+    const specs = (await api.siteOpenApi(id)).specs.filter((s) => s.file);
+    const found = specs.find((s) => s.file === path || s.file === `${root}/${path}`);
+    if (!found) throw new Error(`No OpenAPI file ${path} in this site (site_openapi shows them)`);
+    return found.file!;
+  };
+  const openapi: ChangeAction[] = [
+    onSite({
+      name: 'openapi_create',
+      title: 'Create an OpenAPI document',
+      description: 'Writes a starter OpenAPI 3 document into an app of the site: openapi.yaml or swagger.json. Refused when the file exists.',
+      props: { format: { type: 'string', enum: ['yaml', 'json'] }, app: S("The app's folder from get_site; the main app when left out.") },
+      required: ['format'],
+      tab: 'api',
+      ask: (_p, a) => ({ title: `Create ${a.format === 'json' ? 'swagger.json' : 'openapi.yaml'}?`, facts: fact('App', a.app) }),
+      run: async (p, a) => ok({ site: p.name, file: await api.createOpenApi(p.id, a.format as 'yaml' | 'json', typeof a.app === 'string' ? a.app : undefined) }),
+    }),
+    onSite({
+      name: 'openapi_add_generator',
+      title: 'Add an OpenAPI generator',
+      description: 'Adds Scramble to a Laravel site or @nestjs/swagger to a NestJS site. Output goes to site_logs.',
+      props: { generator: { type: 'string', enum: ['scramble', 'nest-swagger'] } },
+      required: ['generator'],
+      tab: 'api',
+      ask: (_p, a) => ({ title: `Add ${a.generator === 'scramble' ? 'Scramble' : '@nestjs/swagger'}?`, facts: [{ label: 'Runs', value: a.generator === 'scramble' ? 'composer require dedoc/scramble --dev' : 'installs @nestjs/swagger and adds three lines to src/main.ts' }] }),
+      run: async (p, a, ctx) => inBackground(api, ctx, api.addOpenApi(p.id, a.generator as 'scramble' | 'nest-swagger'), async () => undefined, { site: p.name, generator: a.generator }, 'Added', 'Still adding: site_logs shows it', () => null),
+    }),
+    onSite({
+      name: 'openapi_gitignore',
+      title: 'OpenAPI file and Git',
+      description: 'For an OpenAPI file of the site: adds it to .gitignore, takes it out again, or stops tracking it in Git (git rm --cached: the file stays, and leaves the repository when committed).',
+      props: { file: S('A file from site_openapi.', 500), action: { type: 'string', enum: ['ignore', 'unignore', 'stop_tracking'] } },
+      required: ['file', 'action'],
+      tab: 'api',
+      ask: async (p, a) => {
+        await specFile(p.id, String(a.file), p.path);
+        return { title: `${{ ignore: 'Add to .gitignore', unignore: 'Remove from .gitignore', stop_tracking: 'Stop tracking in Git' }[String(a.action)]}?`, facts: [{ label: 'File', value: String(a.file) }] };
+      },
+      run: async (p, a) => {
+        const file = await specFile(p.id, String(a.file), p.path);
+        if (a.action === 'ignore') await api.openapiIgnore(p.id, file);
+        else if (a.action === 'unignore') await api.openapiUnignore(p.id, file);
+        else await api.openapiUntrack(p.id, file);
+        return ok({ site: p.name, file: a.file, result: String(a.action) });
+      },
+    }),
+  ];
+
+  return [...git, ...docker, ...openapi];
 }
