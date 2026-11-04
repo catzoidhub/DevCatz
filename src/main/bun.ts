@@ -7,6 +7,7 @@ import { run } from './env';
 import { compare, shimDir, writeCmdShim } from './node';
 import { exe, isWin, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
+import { githubJson } from './github';
 
 /**
  * Bun versions, managed like Node.js: official GitHub release builds
@@ -15,7 +16,7 @@ import { dataDir } from './store';
  * installed themselves (~/.bun/bin, Homebrew) is picked up too, read-only.
  * On Windows: bun-windows-x64.zip, bun.exe with a bunx.exe copy beside it.
  */
-const RELEASES = 'https://api.github.com/repos/oven-sh/bun/releases?per_page=30';
+const RELEASES = '/repos/oven-sh/bun/releases?per_page=30';
 const ASSET = isWin ? 'bun-windows-x64' : `bun-darwin-${process.arch === 'arm64' ? 'aarch64' : 'x64'}`;
 
 export const bunDir = () => {
@@ -31,9 +32,7 @@ let remoteCache: { at: number; list: RemoteBun[] } | null = null;
 /** Recent stable releases, newest first. */
 export async function listRemote(force = false): Promise<RemoteBun[]> {
   if (!force && remoteCache && Date.now() - remoteCache.at < 3600_000) return remoteCache.list;
-  const res = await fetch(RELEASES, { headers: { Accept: 'application/vnd.github+json' } });
-  if (!res.ok) throw new Error(`GitHub: HTTP ${res.status}${res.status === 403 ? ' (rate limit, try again later)' : ''}`);
-  const releases = (await res.json()) as { tag_name: string; published_at: string; prerelease: boolean; draft: boolean; assets: { name: string }[] }[];
+  const releases = await githubJson<{ tag_name: string; published_at: string; prerelease: boolean; draft: boolean; assets: { name: string }[] }[]>(RELEASES);
   const list = releases
     .filter((r) => !r.prerelease && !r.draft && /^bun-v\d+\.\d+\.\d+$/.test(r.tag_name) && r.assets.some((a) => a.name === `${ASSET}.zip`))
     .map((r) => ({ version: r.tag_name.slice(5), date: r.published_at.slice(0, 10) }))

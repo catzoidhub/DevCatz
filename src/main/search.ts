@@ -28,6 +28,7 @@ import { brewLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
 import { exe, isWin, removeTemp, TAR } from './platform';
 import { svcCompose, svcComposeFile, svcEngineReady, svcInDocker, svcPull, svcRemove, svcRemoveImage, svcUpCommand, vol, writeSvcCompose, type SvcKind } from './svcdocker';
+import { githubJson } from './github';
 
 /**
  * Search engines, one instance per kind (like Object Storage), installed into
@@ -135,9 +136,7 @@ function place(from: string, dest: string): void {
 }
 
 async function latestTag(repo: string): Promise<string> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, { headers: { Accept: 'application/vnd.github+json' } });
-  if (!res.ok) throw new Error(`GitHub: HTTP ${res.status}${res.status === 403 ? ' (rate limit, try again later)' : ''}`);
-  const list = (await res.json()) as { tag_name: string; prerelease: boolean; draft: boolean }[];
+  const list = await githubJson<{ tag_name: string; prerelease: boolean; draft: boolean }[]>(`/repos/${repo}/releases?per_page=10`);
   const tag = list.find((r) => !r.prerelease && !r.draft)?.tag_name;
   if (!tag) throw new Error(`No release found in ${repo}`);
   return tag;

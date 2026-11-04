@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import type { TaskProgress } from '@shared/types';
+import { githubJson } from './github';
 
 /**
  * Updates of the services DevCatz installs (object storage, WebSocket servers,
@@ -29,9 +30,7 @@ export function isNewer(latest: string | null | undefined, current: string | nul
 
 /** Newest non-prerelease tag of a GitHub repository (without a leading v); engines use the newest release with a macOS build instead (githubAsset). */
 export async function githubLatest(repo: string): Promise<string> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, { headers: { Accept: 'application/vnd.github+json' } });
-  if (!res.ok) throw new Error(`GitHub: HTTP ${res.status}`);
-  const list = (await res.json()) as { tag_name: string; prerelease: boolean; draft: boolean }[];
+  const list = await githubJson<{ tag_name: string; prerelease: boolean; draft: boolean }[]>(`/repos/${repo}/releases?per_page=10`);
   const tag = list.find((r) => !r.prerelease && !r.draft)?.tag_name;
   if (!tag) throw new Error(`No release in ${repo}`);
   return tag.replace(/^v/, '');

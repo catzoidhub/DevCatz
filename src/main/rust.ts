@@ -11,6 +11,7 @@ import { compare } from './node';
 import { newer } from './tools';
 import { exe, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
+import { githubJson } from './github';
 
 /**
  * Rust, through the official **rustup** in its standard place (~/.rustup and ~/.cargo, or RUSTUP_HOME / CARGO_HOME),
@@ -200,8 +201,8 @@ export async function listRemote(force = false): Promise<RemoteRust[]> {
     { name: 'beta', note: 'the next release' },
     { name: 'nightly', note: 'daily builds (some crates need it)' },
   ];
-  const res = await fetch('https://api.github.com/repos/rust-lang/rust/releases?per_page=12', { headers: { Accept: 'application/vnd.github+json' } });
-  const rels = res.ok ? ((await res.json()) as { tag_name: string; prerelease: boolean }[]) : [];
+  // The channels are enough when GitHub cannot be reached.
+  const rels = await githubJson<{ tag_name: string; prerelease: boolean }[]>('/repos/rust-lang/rust/releases?per_page=12').catch(() => []);
   const versions = rels
     .filter((r) => !r.prerelease && /^\d+\.\d+\.\d+$/.test(r.tag_name))
     .map((r) => r.tag_name)
@@ -340,9 +341,7 @@ interface GhAsset {
 }
 
 async function latestRelease(repo: string): Promise<{ tag: string; assets: GhAsset[] }> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } });
-  if (!res.ok) throw new Error(`GitHub (${repo}): HTTP ${res.status}`);
-  const rel = (await res.json()) as { tag_name: string; assets: GhAsset[] };
+  const rel = await githubJson<{ tag_name: string; assets: GhAsset[] }>(`/repos/${repo}/releases/latest`);
   return { tag: rel.tag_name, assets: rel.assets };
 }
 

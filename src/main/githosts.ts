@@ -26,6 +26,12 @@ async function decrypt(a: StoredAccount): Promise<string> {
   return t;
 }
 
+/** The token of a connected github.com account, for looking up public releases with a higher limit (github.ts). */
+export async function githubToken(): Promise<string | null> {
+  const a = accountsOf().find((x) => x.kind === 'github' && hostOf(x.baseUrl) === 'github.com');
+  return a ? decrypt(a) : null;
+}
+
 /** Local avatar copies, by account id: { url (the remote one it came from), data }. */
 const avatars = (): Record<string, { url: string; data: string | null }> => store.extra('gitAvatars') ?? {};
 

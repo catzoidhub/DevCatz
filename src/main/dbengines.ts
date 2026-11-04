@@ -9,6 +9,7 @@ import { getShellEnv, run } from './env';
 import { brewBin } from './php';
 import { exe, isWin, moveDir, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
+import { githubJson } from './github';
 
 /**
  * Database server builds and how to run them. Each engine comes from its
@@ -132,7 +133,7 @@ async function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
 
 async function json<T>(url: string, headers: Record<string, string> = {}): Promise<T> {
   const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}${res.status === 403 && url.includes('github') ? ' (rate limit, try again later)' : ''}`);
+  if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`);
   return (await res.json()) as T;
 }
 
@@ -510,10 +511,7 @@ const postgresql: EngineDef = {
       // The three pages in parallel (each takes a few seconds: releases carry many assets).
       const pages = await Promise.all(
         [1, 2, 3].map((page) =>
-          json<{ tag_name: string; prerelease: boolean; assets: { name: string }[] }[]>(
-            `https://api.github.com/repos/theseus-rs/postgresql-binaries/releases?per_page=100&page=${page}`,
-            { Accept: 'application/vnd.github+json' },
-          ).catch((e) => (page === 1 ? Promise.reject(e) : [])),
+          githubJson<{ tag_name: string; prerelease: boolean; assets: { name: string }[] }[]>(`/repos/theseus-rs/postgresql-binaries/releases?per_page=100&page=${page}`).catch((e) => (page === 1 ? Promise.reject(e) : [])),
         ),
       );
       for (const rel of pages) for (const r of rel) if (!r.prerelease && r.assets.some((a) => a.name === `postgresql-${r.tag_name}-${PG_TRIPLE}.tar.gz`)) tags.push(r.tag_name);
@@ -582,10 +580,7 @@ let cltOk: boolean | null = null;
  * compiled with MSYS2 (redis-server.exe, redis-cli.exe and their DLLs in one folder; SHA-256 from GitHub's asset digest).
  */
 async function redisWindowsBuilds(minMajor: number): Promise<RemoteBuild[]> {
-  const rels = await json<{ tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string; digest?: string | null }[] }[]>(
-    'https://api.github.com/repos/redis-windows/redis-windows/releases?per_page=100',
-    { Accept: 'application/vnd.github+json' },
-  );
+  const rels = await githubJson<{ tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string; digest?: string | null }[] }[]>('/repos/redis-windows/redis-windows/releases?per_page=100');
   const all: RemoteBuild[] = [];
   for (const r of rels) {
     if (r.prerelease || r.draft || !/^\d+\.\d+\.\d+$/.test(r.tag_name) || Number(major(r.tag_name)) < minMajor) continue;
@@ -601,10 +596,7 @@ async function redisWindowsBuilds(minMajor: number): Promise<RemoteBuild[]> {
  * SHA-256 from GitHub's asset digest). A community build — the install says so.
  */
 async function valkeyWindowsBuilds(minMajor: number): Promise<RemoteBuild[]> {
-  const rels = await json<{ tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string; digest?: string | null }[] }[]>(
-    'https://api.github.com/repos/SamuelMarks/valkey-windows/releases?per_page=100',
-    { Accept: 'application/vnd.github+json' },
-  );
+  const rels = await githubJson<{ tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string; digest?: string | null }[] }[]>('/repos/SamuelMarks/valkey-windows/releases?per_page=100');
   const all: RemoteBuild[] = [];
   for (const r of rels) {
     if (r.prerelease || r.draft || !/^\d+\.\d+\.\d+$/.test(r.tag_name) || Number(major(r.tag_name)) < minMajor) continue;
@@ -799,9 +791,7 @@ const elasticsearch: EngineDef = {
       const tags: string[] = [];
       const pages = await Promise.all(
         [1, 2].map((page) =>
-          json<{ tag_name: string; prerelease: boolean; draft: boolean }[]>(`https://api.github.com/repos/elastic/elasticsearch/releases?per_page=100&page=${page}`, {
-            Accept: 'application/vnd.github+json',
-          }).catch((e) => (page === 1 ? Promise.reject(e) : [])),
+          githubJson<{ tag_name: string; prerelease: boolean; draft: boolean }[]>(`/repos/elastic/elasticsearch/releases?per_page=100&page=${page}`).catch((e) => (page === 1 ? Promise.reject(e) : [])),
         ),
       );
       for (const rel of pages) for (const r of rel) if (!r.prerelease && !r.draft && /^v\d+\.\d+\.\d+$/.test(r.tag_name)) tags.push(r.tag_name.slice(1));

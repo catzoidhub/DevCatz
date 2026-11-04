@@ -20,6 +20,8 @@ import { SearchManager } from './search';
 import * as gitHosts from './githosts';
 import { MIGRATION_FLAG } from './migrate';
 import { Mcatzp } from './mcatzp';
+import { setGithubToken } from './github';
+import { githubToken } from './githosts';
 import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3UploadProgress, type Settings, type TaskProgress, type GwKind, type SearchKind, type StorageKind, type WaEngine, type WsKind } from '@shared/types';
 import { uninstall, uninstallPlan, UNINSTALL_STEPS } from './uninstall';
 import { isMac, isWin } from './platform';
@@ -1197,6 +1199,7 @@ app.whenReady().then(async () => {
   else if (!sharedTheme) writeShared({ theme: store.settings.theme });
   nativeTheme.themeSource = store.settings.theme;
   setStatusPageIcon(join(RESOURCES, 'icon-192.png'));
+  setGithubToken(githubToken);
   herd = new Herd();
   registerIpc();
   mcatzp = new Mcatzp(api(), (ask) => {

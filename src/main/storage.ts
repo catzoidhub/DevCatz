@@ -10,6 +10,7 @@ import { ProcessManager } from './processes';
 import type { Route } from './proxy';
 import { dataDir, store, tld } from './store';
 import { exe, removeTemp, isWin, TAR } from './platform';
+import { githubJson } from './github';
 
 /**
  * Local S3-compatible object storage, one instance per kind: RustFS, MinIO and
@@ -60,9 +61,7 @@ const host = (label: string) => `${label}.${tld()}`;
 
 /** GitHub release asset with its published SHA-256 digest. */
 export async function githubAsset(repo: string, match: RegExp, perPage = 10): Promise<{ url: string; sha256: string; tag: string }> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=${perPage}`, { headers: { Accept: 'application/vnd.github+json' } });
-  if (!res.ok) throw new Error(`GitHub: HTTP ${res.status}${res.status === 403 ? ' (rate limit, try again later)' : ''}`);
-  const releases = (await res.json()) as { tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string; digest?: string }[] }[];
+  const releases = await githubJson<{ tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string; digest?: string }[] }[]>(`/repos/${repo}/releases?per_page=${perPage}`);
   for (const r of releases) {
     if (r.prerelease || r.draft) continue;
     const a = r.assets.find((x) => match.test(x.name));

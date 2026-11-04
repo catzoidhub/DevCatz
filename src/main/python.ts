@@ -6,6 +6,7 @@ import { getShellEnv, run } from './env';
 import { compare, shimDir, writeCmdShim } from './node';
 import { exe, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
+import { githubJson } from './github';
 
 /**
  * Python, through Astral's **uv**: DevCatz downloads uv itself (GitHub
@@ -60,9 +61,7 @@ export async function installUv(progress: (p: RuntimeInstallProgress) => void): 
   const triple = isWin ? 'x86_64-pc-windows-msvc' : process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
   // Windows builds are zips with uv.exe / uvx.exe at the root; macOS ones a tarball with a top folder.
   const ext = isWin ? 'zip' : 'tar.gz';
-  const res = await fetch('https://api.github.com/repos/astral-sh/uv/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
-  if (!res.ok) throw new Error(`GitHub: HTTP ${res.status}`);
-  const rel = (await res.json()) as { tag_name: string; assets: { name: string; browser_download_url: string; digest?: string }[] };
+  const rel = await githubJson<{ tag_name: string; assets: { name: string; browser_download_url: string; digest?: string }[] }>('/repos/astral-sh/uv/releases/latest');
   const asset = rel.assets.find((a) => a.name === `uv-${triple}.${ext}`);
   if (!asset?.digest?.startsWith('sha256:')) throw new Error(`No uv build with a checksum for this ${isWin ? 'PC' : 'Mac'}`);
   const tmp = join(pythonDir(), `.uv-${Date.now()}`);
