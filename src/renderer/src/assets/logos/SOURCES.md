@@ -131,3 +131,4 @@ Rust frameworks (Simple Icons 13.21.0 for Rust, Actix, Rocket, Tauri, Leptos, Be
 - goravel.svg — https://www.goravel.dev/logo.svg (the Goravel logo from its site)
 
 AI assistants (Settings → MCatzP): Simple Icons 16.36.0 (claude, cursor, windsurf, googlegemini, opencode, cline), 13.21.0 (openai), 12.0.0 (visualstudiocode; both left later releases). zcode.png — the app's own icon, /Applications/ZCode.app.
+Also Simple Icons 16.36.0 (githubcopilot, qwen, lmstudio, amp). kiro.png — https://github.com/kirodotdev.png; roo.png — https://github.com/RooCodeInc.png (their GitHub organisation avatars).

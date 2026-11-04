@@ -101,7 +101,7 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
-const MARK: Record<McatzpTarget['id'], string> = { 'claude-code': 'claude', 'claude-desktop': 'claude', zcode: 'zcode', cursor: 'cursor', windsurf: 'windsurf', vscode: 'visualstudiocode', cline: 'cline', gemini: 'googlegemini', codex: 'openai', opencode: 'opencode' };
+const MARK: Partial<Record<McatzpTarget['id'], string>> = { 'claude-code': 'claude', 'claude-desktop': 'claude', zcode: 'zcode', cursor: 'cursor', windsurf: 'windsurf', vscode: 'visualstudiocode', cline: 'cline', gemini: 'googlegemini', codex: 'openai', opencode: 'opencode', copilot: 'githubcopilot', kiro: 'kiro', qwen: 'qwen', lmstudio: 'lmstudio', roo: 'roo', amp: 'amp' };
 /** Which listed assistant a client is, by the name it gives itself; null for any other, which keeps its initial. */
 function clientTarget(name: string): McatzpTarget['id'] | null {
   const n = name.toLowerCase().replace(/[^a-z]/g, '');
@@ -109,7 +109,8 @@ function clientTarget(name: string): McatzpTarget['id'] | null {
   if (n.startsWith('claude')) return 'claude-desktop';
   if (n.startsWith('visualstudiocode') || n.startsWith('vscode')) return 'vscode';
   if (n.startsWith('gemini')) return 'gemini';
-  return (['zcode', 'cursor', 'windsurf', 'cline', 'codex', 'opencode'] as const).find((id) => n.startsWith(id)) ?? null;
+  if (n.startsWith('github') || n.startsWith('copilot')) return 'copilot';
+  return (['zcode', 'cursor', 'windsurf', 'cline', 'codex', 'opencode', 'kiro', 'antigravity', 'qwen', 'lmstudio', 'roo', 'amp'] as const).find((id) => n.startsWith(id)) ?? null;
 }
 
 /** Each approved client with what the log knows about it, the most recent first. */
@@ -117,7 +118,7 @@ const clients = computed(() => {
   const list = (s.value.mcatzpClients ?? []).map((c) => {
     const own = activity.value.filter((a) => a.client === c.name && a.action);
     const id = clientTarget(c.name);
-    const mark = id ? MARK[id] : null;
+    const mark = id ? (MARK[id] ?? null) : null;
     return { ...c, last: own[0]?.time ?? null, calls: own.length, mark, account: targets.value.find((t) => t.id === id)?.account };
   });
   return list.sort((a, b) => (b.last ?? b.approvedAt).localeCompare(a.last ?? a.approvedAt));
@@ -202,7 +203,8 @@ const groups = computed(() => {
             <span class="mb-2 flex flex-wrap items-center gap-2"><span class="label-caps">AI assistants</span><span class="badge badge-ghost badge-sm font-normal" title="Install or add it from any Catzoid app and the others use the same">Shared with Catzoid apps</span></span>
             <ul class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
               <li v-for="t in shownTargets" :key="t.id" class="flex min-w-0 items-center gap-2.5 rounded-box border border-base-300/60 p-2.5 text-sm" :class="{ 'opacity-60': !t.found && t.command === null }">
-                <StackMark :icon="STACK_ICONS[MARK[t.id]]" :label="t.label" class="size-7 shrink-0" />
+                <StackMark v-if="MARK[t.id]" :icon="STACK_ICONS[MARK[t.id]!]" :label="t.label" class="size-7 shrink-0" />
+                <span v-else class="avatar-letter avatar-small" aria-hidden="true">{{ t.label.slice(0, 1) }}</span>
                 <div class="min-w-0 flex-1">
                   <p class="flex items-center gap-1.5 font-medium"><span class="truncate">{{ t.label }}</span><span v-if="t.command !== null" class="status status-xs shrink-0" :class="t.current ? 'status-success' : 'status-warning'" /></p>
                   <p class="truncate text-xs opacity-60" :title="t.command ?? t.account ?? ''">
@@ -343,6 +345,12 @@ const groups = computed(() => {
   background: color-mix(in oklab, #ff8dbe 18%, transparent);
   color: #ff8dbe;
   font-weight: 600;
+}
+.avatar-small {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
 }
 .log-day {
   position: sticky;
