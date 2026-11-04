@@ -796,6 +796,12 @@ function api(): HerdApi {
       shell.showItemInFolder(String(file));
     },
     addOpenApi: (siteId, kind) => herd.addOpenApi(String(siteId), kind === 'nest-swagger' ? 'nest-swagger' : 'scramble'),
+    openapiRemoveFile: (siteId, file) => herd.openapiRemoveFile(String(siteId), String(file)),
+    openapiRemoveGenerator: (siteId) => herd.openapiRemoveGenerator(String(siteId)),
+    openapiIgnore: (siteId, file) => herd.openapiIgnore(String(siteId), String(file)),
+    openapiSetAuth: (siteId, auth, envFile, ignoreEnv) => herd.openapiSetAuth(String(siteId), auth ? { user: String(auth.user).trim(), password: String(auth.password) } : null, envFile ? String(envFile) : null, ignoreEnv === true),
+    openapiEnvIgnored: (siteId, envFile) => herd.openapiEnvIgnored(String(siteId), String(envFile)),
+    mcatzpAnswer: async (id, allow) => mcatzp.answer(String(id), allow === true),
     createOpenApi: (siteId, format, app) => herd.createOpenApi(String(siteId), format === 'json' ? 'json' : 'yaml', typeof app === 'string' ? app : undefined),
     dialcatzOpen: (siteId) => {
       if (!herd.find(String(siteId))) throw new Error('This site is gone');
@@ -1189,7 +1195,11 @@ app.whenReady().then(async () => {
   setStatusPageIcon(join(RESOURCES, 'icon-192.png'));
   herd = new Herd();
   registerIpc();
-  mcatzp = new Mcatzp(api());
+  mcatzp = new Mcatzp(api(), (ask) => {
+    herd.mcatzpAsk = ask;
+    if (ask) showWindow();
+    herd.emit('change');
+  });
   void mcatzp.set(store.settings.mcatzp === true).catch(() => undefined);
   void migrateAiToShared()
     .then(() => herd.emit('change'))

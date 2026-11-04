@@ -101,6 +101,19 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
 <template>
   <div class="card">
     <div class="card-body gap-3 p-4">
+      <h2 class="flex items-center gap-2 font-semibold"><img :src="mcatzpLogo" alt="" class="size-5 rounded" draggable="false" />MCatzP</h2>
+      <label class="flex cursor-pointer items-start gap-3">
+        <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5" :checked="state!.settings.mcatzp === true" @change="setMcatzp(($event.target as HTMLInputElement).checked)" />
+        <span>
+          Let AI assistants read DevCatz through MCatzP
+          <span class="block text-xs opacity-60">While this is on, an MCP client you approve can read your sites, services, runtimes, Git status and logs (secrets masked). It reaches DevCatz through a channel only your account on this {{ words.computer }} can open, and it cannot change anything. What it reads goes to that assistant's model provider.</span>
+        </span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body gap-3 p-4">
       <h2 class="font-semibold">AI</h2>
       <label class="flex cursor-pointer items-start gap-3">
         <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5" :checked="ai.enabled" @change="save({ enabled: ($event.target as HTMLInputElement).checked })" />
@@ -185,18 +198,6 @@ const toggleFeature = (f: AiFeature, on: boolean) => save({ off: on ? ai.value.o
           <span class="font-medium">{{ f.label }}</span>
           <span class="block text-xs opacity-70">{{ f.hint }}</span>
           <span class="block text-xs opacity-50">Sends: {{ f.sends }}.</span>
-        </span>
-      </label>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-body gap-3 p-4">
-      <h2 class="flex items-center gap-2 font-semibold"><img :src="mcatzpLogo" alt="" class="size-5 rounded" draggable="false" />MCatzP</h2>
-      <label class="flex cursor-pointer items-start gap-3">
-        <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5" :checked="state!.settings.mcatzp === true" @change="setMcatzp(($event.target as HTMLInputElement).checked)" />
-        <span>
-          Let AI assistants read DevCatz through MCatzP
-          <span class="block text-xs opacity-60">While this is on, an MCP client you approve can read your sites, services, runtimes, Git status and logs (secrets masked). It reaches DevCatz through a channel only your account on this {{ words.computer }} can open, and it cannot change anything. What it reads goes to that assistant's model provider.</span>
         </span>
       </label>
     </div>

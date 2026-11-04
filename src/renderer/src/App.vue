@@ -7,6 +7,7 @@ import UpdateDialog from './components/UpdateDialog.vue';
 import ReportDialog from './components/ReportDialog.vue';
 import UninstallDialog from './components/UninstallDialog.vue';
 import WelcomeDialog from './components/WelcomeDialog.vue';
+import McatzpPairDialog from './components/McatzpPairDialog.vue';
 import ProjectView from './components/ProjectView.vue';
 import askMark from './assets/logos/ask-catzoid.svg';
 import CatMood from './components/CatMood.vue';
@@ -846,6 +847,7 @@ async function park() {
     <ReportDialog />
     <UninstallDialog />
     <WelcomeDialog />
+    <McatzpPairDialog />
     <!-- Asked once, after the first crash or error (Catzoid #65). -->
     <dialog v-if="state?.reports.askCrash" open class="modal modal-open">
       <div class="modal-box w-[30rem] max-w-[95vw] space-y-3">

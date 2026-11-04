@@ -168,9 +168,19 @@ export interface AboutInfo {
 
 export interface SiteOpenApi {
   /** A spec file in the project and / or a URL a running app serves it on; `app` = the app's folder. */
-  specs: { app: string; file?: string; url?: string }[];
+  specs: {
+    app: string;
+    file?: string;
+    url?: string;
+    /** A file: where DevCatz serves it on the site's domain (works while the site is stopped). */
+    docUrl?: string;
+    /** A file: already in .gitignore; null when the site has no Git repository. */
+    ignored?: boolean | null;
+  }[];
   /** What DevCatz can add when there is none: Scramble (Laravel), @nestjs/swagger (NestJS). */
   install: 'scramble' | 'nest-swagger' | null;
+  /** The generator DevCatz can take out again (its package, and for NestJS the lines DevCatz added). */
+  generator: 'scramble' | 'nest-swagger' | null;
   /** How this stack gets one, when DevCatz cannot add it (FastAPI's built-in, swag for Go …). */
   hint: string | null;
   /** The running apps were asked for their document (false while the site is stopped). */
@@ -304,6 +314,8 @@ export interface ProjectConfig {
   path: string;
   /** A Git worktree of another site (its id): listed under it, with its own branch, domain and ports. */
   worktreeOf?: string;
+  /** The password on the site's API documents, asked by DevCatz's proxy on the site's domain (API tab → Access…). */
+  openapiAuth?: { user: string; password: string } | null;
   /** Primary domain, e.g. `shop.localhost` (suffix = Settings → Default domain). */
   domain: string;
   /** Set when the project comes from a parked folder rather than an explicit link. */
@@ -1439,6 +1451,8 @@ export interface BrowsersState {
 }
 
 export interface AppState {
+  /** An MCP client waiting for the user's approval (MCatzP), the oldest first. */
+  mcatzpAsk: { id: string; client: string; version: string | null } | null;
   projects: ProjectState[];
   /** Linked sites whose folder is gone (deleted or moved outside DevCatz): their settings wait until removed or located. */
   missingSites: { id: string; name: string; path: string; domain: string }[];
@@ -2687,6 +2701,21 @@ export interface HerdApi {
    * name and version, its local URL as the server, one example path. Refused when the file exists. Returns its path.
    */
   createOpenApi(siteId: string, format: 'yaml' | 'json', app?: string): Promise<string>;
+  /** Moves one of the site's OpenAPI files to the Trash. */
+  openapiRemoveFile(siteId: string, file: string): Promise<void>;
+  /** Takes out the generator DevCatz can remove (SiteOpenApi.generator); output in Logs. */
+  openapiRemoveGenerator(siteId: string): Promise<void>;
+  /** Adds one of the site's OpenAPI files to .gitignore. */
+  openapiIgnore(siteId: string, file: string): Promise<void>;
+  /**
+   * Sets or clears (null) the password on the site's API documents. With `envFile`, OPENAPI_DOCS_USER and
+   * OPENAPI_DOCS_PASSWORD are written there too, and with `ignoreEnv` that file goes into .gitignore.
+   */
+  openapiSetAuth(siteId: string, auth: { user: string; password: string } | null, envFile?: string | null, ignoreEnv?: boolean): Promise<void>;
+  /** Whether a .env file of the site is in .gitignore; null when the site has no Git repository. */
+  openapiEnvIgnored(siteId: string, envFile: string): Promise<boolean | null>;
+  /** The answer to the MCatzP client waiting in state.mcatzpAsk. */
+  mcatzpAnswer(id: string, allow: boolean): Promise<void>;
   /** Opens DialCatz's import for a site (dialcatz://open?site=<id>); false when DialCatz is not installed. */
   dialcatzOpen(siteId: string): Promise<boolean>;
   /** Downloads the latest DialCatz release, installs it to /Applications and opens the site; progress in state.dialcatz.task. */
@@ -3235,7 +3264,7 @@ export interface HerdApi {
 
 export const API_METHODS: (keyof HerdApi)[] = [
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
-  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
+  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiSetAuth', 'openapiEnvIgnored', 'mcatzpAnswer', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',

@@ -4,7 +4,7 @@ import { depFolders, isRealDirInside, lastActivity, sizeOf } from './depclean';
 import { EventEmitter } from 'node:events';
 import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve , sep } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { CertManager } from './certs';
 import {
@@ -65,7 +65,7 @@ import { detectSearch } from './searchdetect';
 import { detectS3, endpointMatches } from './storagedetect';
 import { FpmManager } from './fpm';
 import { redisDetails, redisPassword } from './redis';
-import { Proxy, type Route } from './proxy';
+import { OPENAPI_FILE_PREFIX, Proxy, type Route } from './proxy';
 import { store, tld } from './store';
 import { DNS_HOST, DNS_PORT, DnsServer } from './dns';
 import { findUpdates, type RemoteLists } from './updates';
@@ -176,6 +176,9 @@ const LTS_NAMES = new Map([
 /** Dockerfile, Dockerfile.prod, docker-compose.yml, compose.prod.yaml, .dockerignore … */
 const DOCKER_FILE = /^(Dockerfile(\.[\w.-]+)?|[\w.-]*\.Dockerfile|(docker-)?compose(\.[\w-]+)?\.ya?ml|\.dockerignore)$/;
 const idFor = (path: string) => createHash('sha1').update(path).digest('hex').slice(0, 10);
+
+/** What openapi's Add wrote into a NestJS src/main.ts, as Remove takes it out again. */
+const NEST_SWAGGER_BLOCK = /^[ \t]*\/\/ OpenAPI document at \/docs-json[^\n]*\n[^\n]*await import\('@nestjs\/swagger'\);\n[^\n]*SwaggerModule\.setup\([^\n]*\n/m;
 
 /**
  * Owns the projects (linked + parked), their runtime state, the proxy and
@@ -1469,6 +1472,9 @@ export class Herd extends EventEmitter {
 
   // ------------------------------------------------------------ OpenAPI and DevCatz/bridge.json (for DialCatz)
 
+  /** An MCP client waiting for the user's approval, shown as a dialog (mcatzp/index.ts). */
+  mcatzpAsk: AppState['mcatzpAsk'] = null;
+
   /** OpenAPI URLs the sites' running apps answered with, by site (kept until the next probe). */
   private openapiUrls = new Map<string, { app: string; url: string }[]>();
 
@@ -1486,23 +1492,117 @@ export class Herd extends EventEmitter {
       this.openapiUrls.set(id, urls);
       this.changed();
     }
-    const specs: SiteOpenApi['specs'] = [...specFiles(p, stack).map((f) => ({ app: f.app, file: f.file })), ...(this.openapiUrls.get(id) ?? [])];
+    const specs: SiteOpenApi['specs'] = [
+      ...(await Promise.all(
+        specFiles(p, stack).map(async (f) => {
+          const domain = stack?.apps.find((a) => a.dir === f.app && a.domain)?.domain ?? stack?.apps.find((a) => a.domain)?.domain;
+          return { app: f.app, file: f.file, ...(domain ? { docUrl: this.urlFor(p, domain) + OPENAPI_FILE_PREFIX + this.specRel(p, f.file).split('/').map(encodeURIComponent).join('/') } : {}), ignored: await this.git.isIgnored(id, f.file) };
+        }),
+      )),
+      ...(this.openapiUrls.get(id) ?? []),
+    ];
     const fw = new Set(stack?.apps.map((a) => a.framework) ?? []);
     const has = (f: string) => existsSync(join(p.path, f));
     const composer = has('composer.json') ? readFileSync(join(p.path, 'composer.json'), 'utf8') : '';
+    const nest = stack?.apps.find((a) => a.framework === 'nestjs');
+    const nestMain = nest && existsSync(join(p.path, nest.dir, 'src/main.ts')) ? readFileSync(join(p.path, nest.dir, 'src/main.ts'), 'utf8') : '';
+    const scramble = /dedoc\/scramble/.test(composer);
     let install: SiteOpenApi['install'] = null;
+    let generator: SiteOpenApi['generator'] = null;
+    if (fw.has('laravel')) {
+      if (scramble) generator = 'scramble';
+      else install = 'scramble';
+    } else if (nest) {
+      if (NEST_SWAGGER_BLOCK.test(nestMain)) generator = 'nest-swagger';
+      else if (!/SwaggerModule/.test(nestMain)) install = 'nest-swagger';
+    }
     let hint: string | null = null;
-    if (!specs.length) {
-      if (fw.has('laravel') && !/dedoc\/scramble/.test(composer)) install = 'scramble';
-      else if (fw.has('nestjs')) install = 'nest-swagger';
-      else if (fw.has('laravel')) hint = 'Scramble is installed: start the site and its document is served at /docs/api.json (local environment).';
+    if (!specs.length && !install) {
+      if (fw.has('laravel')) hint = 'Scramble is installed: start the site and its document is served at /docs/api.json (local environment).';
       else if (fw.has('fastapi')) hint = 'FastAPI serves /openapi.json by itself: start the site and look again.';
       else if (fw.has('go')) hint = 'Go: `swag init` (github.com/swaggo/swag) writes docs/swagger.json from your handler comments.';
       else if (fw.has('rust')) hint = 'Rust: utoipa (Axum, Actix Web, Rocket), poem-openapi or aide describe your handlers; serve the document at /openapi.json or save it as openapi.json.';
       else if (fw.has('express') || fw.has('node')) hint = 'Express & co.: put an openapi.yaml / swagger.json in the project (or serve one with swagger-jsdoc); DevCatz finds it.';
       else hint = 'Put an openapi.yaml or swagger.json in the project, or serve one at /openapi.json; DevCatz finds either.';
     }
-    return { specs, install, hint, probed: probe && running };
+    return { specs, install, generator, hint, probed: probe && running };
+  }
+
+  private specRel(p: ProjectConfig, file: string): string {
+    return relative(p.path, file).split(sep).join('/');
+  }
+
+  /** A file the site really has among its OpenAPI files, never a path from elsewhere. */
+  private specFile(id: string, file: string): string {
+    const p = this.project(id);
+    const found = specFiles(p, this.stacks.get(id)).find((f) => f.file === file);
+    if (!found) throw new Error('Not an OpenAPI file of this site');
+    return found.file;
+  }
+
+  async openapiRemoveFile(id: string, file: string): Promise<void> {
+    const p = this.project(id);
+    await shell.trashItem(this.specFile(id, file));
+    this.processes.log(id, 'sys', `[openapi] ${this.specRel(p, file)} moved to the ${words.trash}`);
+    this.changed();
+  }
+
+  async openapiIgnore(id: string, file: string): Promise<void> {
+    await this.git.ignoreFile(id, this.specFile(id, file));
+    this.processes.log(id, 'sys', `[openapi] ${this.specRel(this.project(id), file)} added to .gitignore`);
+  }
+
+  /** Scramble: `composer remove`. NestJS: the lines DevCatz added to src/main.ts, then the package. Output in the log. */
+  async openapiRemoveGenerator(id: string): Promise<void> {
+    const p = this.project(id);
+    const stack = this.stacks.get(id);
+    const { generator } = await this.siteOpenApi(id);
+    if (!generator) throw new Error('DevCatz added no generator to this site');
+    if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
+    const log = (t: string) => this.processes.log(id, 'sys', t.replace(/^(?=.)/gm, '[openapi] '));
+    this.dbTasks.set(id, 'removing OpenAPI');
+    this.changed();
+    try {
+      if (generator === 'scramble') {
+        const app = stack!.apps.find((a) => a.framework === 'laravel')!;
+        const code = await stream(join(p.path, app.dir === '.' ? '' : app.dir), 'composer remove dedoc/scramble --dev --no-interaction', log, this.runtimeEnv(p));
+        if (code !== 0) throw new Error('composer remove dedoc/scramble failed; see Logs');
+      } else {
+        const app = stack!.apps.find((a) => a.framework === 'nestjs')!;
+        const dir = join(p.path, app.dir);
+        const mainFile = join(dir, 'src/main.ts');
+        writeFileSync(mainFile, readFileSync(mainFile, 'utf8').replace(NEST_SWAGGER_BLOCK, ''));
+        log('src/main.ts: the SwaggerModule lines DevCatz added are gone.');
+        const pm = detectPackageManager(dir, readJson<PackageJson>(join(dir, 'package.json')));
+        const code = await stream(dir, `${pm === 'npm' ? 'npm uninstall' : `${pm} remove`} @nestjs/swagger`, log, this.runtimeEnv(p));
+        if (code !== 0) throw new Error('Removing @nestjs/swagger failed; see Logs');
+      }
+      this.openapiUrls.delete(id);
+      this.rescan();
+    } finally {
+      this.dbTasks.delete(id);
+      this.changed();
+    }
+  }
+
+  async openapiEnvIgnored(id: string, envFile: string): Promise<boolean | null> {
+    return this.git.isIgnored(id, envfiles.envPath(this.project(id).path, envFile, this.envDirs(id)));
+  }
+
+  /** The password on the site's API documents; DevCatz's proxy asks for it on the site's domain. */
+  async openapiSetAuth(id: string, auth: { user: string; password: string } | null, envFile?: string | null, ignoreEnv?: boolean): Promise<void> {
+    const p = this.project(id);
+    if (auth && !/^[^:\s]+$/.test(auth.user)) throw new Error('User: no spaces or colons');
+    if (auth && (!auth.password || /[\r\n]/.test(auth.password))) throw new Error('Enter a password (one line)');
+    store.setProjects(store.projects.map((x) => (x.id === id ? { ...x, openapiAuth: auth } : x)));
+    this.rescan();
+    this.processes.log(id, 'sys', auth ? `[openapi] API documents now ask for a password (user ${auth.user})` : '[openapi] API documents no longer ask for a password');
+    if (auth && envFile) {
+      this.envMerge(id, envFile, { OPENAPI_DOCS_USER: auth.user, OPENAPI_DOCS_PASSWORD: auth.password }, 'API documents (DevCatz)', true);
+      if (ignoreEnv && (await this.openapiEnvIgnored(id, envFile)) === false) await this.git.ignoreFile(id, envfiles.envPath(p.path, envFile, this.envDirs(id)));
+    }
+    this.updateRoutes();
+    this.changed();
   }
 
   /** A starter OpenAPI 3 document in an app's folder, for stacks without a generator (or before one is added). */
@@ -1605,7 +1705,14 @@ export class Herd extends EventEmitter {
         ...(p.worktreeOf ? { worktreeOf: p.worktreeOf } : {}),
         running: this.processes.isActive(p.id),
         apps: (stack?.apps ?? []).map((a) => ({ dir: a.dir, name: a.name, framework: a.framework, kind: a.kind, domain: a.domain, url: a.domain ? this.urlFor(p, a.domain) : null, port: a.port })),
-        openapi: [...(this.specFileCache.get(p.id) ?? []), ...(this.openapiUrls.get(p.id) ?? [])],
+        // With a password on the documents the domain asks for it, so the other apps read them on the app's own port.
+        openapi: [
+          ...(this.specFileCache.get(p.id) ?? []),
+          ...(this.openapiUrls.get(p.id) ?? []).map((o) => {
+            const port = stack?.apps.find((a) => a.dir === o.app)?.port;
+            return p.openapiAuth && port ? { ...o, url: `http://127.0.0.1:${port}${new URL(o.url).pathname}` } : o;
+          }),
+        ],
       };
     });
     const gateways: BridgeGateway[] = [
@@ -3895,6 +4002,10 @@ export class Herd extends EventEmitter {
           projectName: p.name,
           running: this.processes.isActive(p.id) || (this.openPorts.get(p.id) ?? []).includes(app.port ?? -1),
           secure: p.secure !== false,
+          docs: {
+            auth: p.openapiAuth ?? null,
+            file: (rel) => specFiles(p, this.stacks.get(p.id)).find((f) => this.specRel(p, f.file) === rel)?.file ?? null,
+          },
         };
         if (app.docroot !== undefined) {
           const version = this.phpChoice(p).version;
@@ -4919,6 +5030,7 @@ export class Herd extends EventEmitter {
 
   snapshot(editors: string[], login: { launchAtLogin: boolean; packaged: boolean }): AppState {
     return {
+      mcatzpAsk: this.mcatzpAsk,
       projects: this.projects.map((p) => this.state(p)),
       missingSites: this.missingSites(),
       settings: store.settings,

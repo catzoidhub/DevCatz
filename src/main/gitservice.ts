@@ -1,6 +1,6 @@
 import { existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import type { GitCloneTask, GitPull, GitRemote, GitState, GitStatus, GitSummary, GitSyncAction, ProjectConfig } from '@shared/types';
 import * as g from './git';
 import * as hosts from './githosts';
@@ -371,6 +371,20 @@ export class GitService {
   async ignoreAdd(id: string, lines: string[]): Promise<void> {
     g.addIgnore(await this.root(id), lines);
     await this.refresh(id);
+  }
+
+  /** Adds one file of the site to .gitignore. */
+  async ignoreFile(id: string, abs: string): Promise<void> {
+    const root = await this.root(id);
+    g.addIgnore(root, [relative(root, abs).split(sep).join('/')]);
+    await this.refresh(id);
+  }
+
+  /** Whether a file of the site is ignored; null when the site has no repository. */
+  async isIgnored(id: string, abs: string): Promise<boolean | null> {
+    const root = await g.repoRoot(this.h.project(id).path);
+    if (!root) return null;
+    return (await g.git(root, ['check-ignore', '-q', '--no-index', abs])).code === 0;
   }
 
   async setIdentity(id: string, name: string, email: string, global: boolean): Promise<void> {

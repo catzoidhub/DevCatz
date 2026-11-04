@@ -45,15 +45,18 @@ export function readActions(api: HerdApi): ActionDef[] {
   const read = (name: string, title: string, description: string, input: ReturnType<typeof OBJECT>, run: (args: Record<string, unknown>) => Promise<CallResult>): ActionDef => ({ name, title, description, tier: 'read', input, run });
 
   return [
-    read('list_sites', 'List sites', 'The sites DevCatz runs: name, domain, URL, folder, status and their apps with framework and port.', OBJECT(), async () => {
-      const { projects } = await state();
-      return reply(projects.map((p) => ({ id: p.id, name: p.name, domain: p.domain, path: p.path, status: p.status, served: p.served ?? false, worktreeOf: p.worktreeOf ?? null, apps: appsOf(p) })));
+    read('list_sites', 'List sites', 'The sites DevCatz runs: name, domain, folder, status, whether it is a favorite, its sidebar group, and its apps with framework and port.', OBJECT(), async () => {
+      const { projects, settings } = await state();
+      return reply(projects.map((p) => ({ id: p.id, name: p.name, domain: p.domain, path: p.path, status: p.status, served: p.served ?? false, favorite: settings.favorites.includes(p.id), group: settings.siteGroups.find((g) => g.sites.includes(p.id))?.name ?? null, worktreeOf: p.worktreeOf ?? null, apps: appsOf(p) })));
     }),
     read('get_site', 'Site details', "One site: its apps, dev command, package manager, database and the ports that answer right now.", OBJECT({ site: SITE }, ['site']), async ({ site: ref }) => {
       const p = await site(ref);
+      const { settings } = await state();
       return reply({
         id: p.id,
         name: p.name,
+        favorite: settings.favorites.includes(p.id),
+        group: settings.siteGroups.find((g) => g.sites.includes(p.id))?.name ?? null,
         domain: p.domain,
         path: p.path,
         status: p.status,
@@ -85,7 +88,7 @@ export function readActions(api: HerdApi): ActionDef[] {
     read('site_openapi', 'Site API documents', "Where a site's OpenAPI documents are: files in the project and URLs its running apps serve.", OBJECT({ site: SITE }, ['site']), async ({ site: ref }) => {
       const p = await site(ref);
       const o = await api.siteOpenApi(p.id, false);
-      return reply({ specs: o.specs, hint: o.hint });
+      return reply({ specs: o.specs.map((s) => ({ app: s.app, file: s.file, url: s.url ?? s.docUrl })), hint: o.hint });
     }),
     read('site_git_status', 'Site Git status', "A site's branch, how far it is from its upstream, changed files and remotes (credentials in URLs masked).", OBJECT({ site: SITE }, ['site']), async ({ site: ref }) => {
       const p = await site(ref);
@@ -113,7 +116,7 @@ export function readActions(api: HerdApi): ActionDef[] {
       const s = await state();
       const svc = (x: { kind: string; name: string; installed: boolean; status: string; config: { version?: string | null } | null }) => ({ kind: x.kind, name: x.name, installed: x.installed, status: x.status, version: x.config?.version ?? null });
       return reply({
-        databases: s.databases.filter((d) => !d.pending).map((d) => ({ id: d.id, name: d.name, engine: d.engine, version: d.version, port: d.port, status: d.status, linkedSites: d.linkedSites })),
+        databases: s.databases.filter((d) => !d.pending).map((d) => ({ id: d.id, name: d.name, engine: d.engine, version: d.version, port: d.port, status: d.status, favorite: s.settings.dbFavorites.includes(d.id), group: s.settings.dbGroups.find((g) => g.sites.includes(d.id))?.name ?? null, linkedSites: d.linkedSites })),
         search: s.searchEngines.map(svc),
         websockets: s.websockets.map(svc),
         storage: s.storage.map(svc),
