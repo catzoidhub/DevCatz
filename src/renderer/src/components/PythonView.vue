@@ -6,6 +6,7 @@ import { STACK_ICONS } from '../stackicons';
 import { attempt, herd, notify, runtimeTabRequest, state, askConfirm } from '../store';
 import RuntimeToolsCard from './RuntimeToolsCard.vue';
 import CatMood from './CatMood.vue';
+import GitConnectButton from './GitConnectButton.vue';
 
 /** Python versions through uv (Astral): uv itself, installed CPythons, the ones uv can download, the default. */
 
@@ -100,7 +101,7 @@ watch(runtimeTabRequest, (t) => {
       </div>
       <button class="btn btn-ghost btn-sm" title="Stop the download / install" @click="herd.installCancel('python')">Cancel</button>
     </div>
-    <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />Installing {{ b.installing.version }} failed: {{ b.installing.error }}</div>
+    <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />Installing {{ b.installing.version }} failed: {{ b.installing.error }}<GitConnectButton :text="b.installing.error" /></div>
 
     <template v-if="tab === 'installed'">
     <!-- Installed -->

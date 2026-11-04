@@ -9,6 +9,7 @@ import UpdateButton from './UpdateButton.vue';
 import { attempt, herd, notify, state, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
 import { isWin } from '../platform';
+import GitConnectButton from './GitConnectButton.vue';
 
 /** What serves PHP sites: PHP-FPM on macOS, php-cgi workers (FastCGI) on Windows. */
 const FPM = isWin ? 'PHP (FastCGI)' : 'PHP-FPM';
@@ -248,6 +249,7 @@ const tab = ref<Tab>('installed');
     </div>
     <div v-else-if="php.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />
       Installing {{ php.installing.version }} failed: {{ php.installing.error }}
+      <GitConnectButton :text="php.installing.error" />
     </div>
 
     <template v-if="tab === 'ini'">

@@ -7,6 +7,7 @@ import UpdateButton from './UpdateButton.vue';
 import { attempt, herd, notify, runtimeTabRequest, state, askConfirm } from '../store';
 import RuntimeToolsCard from './RuntimeToolsCard.vue';
 import CatMood from './CatMood.vue';
+import GitConnectButton from './GitConnectButton.vue';
 
 
 const s = computed(() => state.value!);
@@ -141,6 +142,7 @@ watch(runtimeTabRequest, (t) => {
     </div>
     <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />
       Installing Go {{ b.installing.version }} failed: {{ b.installing.error }}
+      <GitConnectButton :text="b.installing.error" />
     </div>
 
     <template v-if="tab === 'available'">

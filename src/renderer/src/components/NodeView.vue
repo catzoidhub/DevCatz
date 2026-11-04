@@ -8,6 +8,7 @@ import { attempt, herd, notify, runtimeTabRequest, state, askConfirm } from '../
 import RuntimeToolsCard from './RuntimeToolsCard.vue';
 import CatMood from './CatMood.vue';
 import { isWin } from '../platform';
+import GitConnectButton from './GitConnectButton.vue';
 
 const s = computed(() => state.value!);
 /** Update badges on the tabs: newer versions of this runtime (Installed), newer tool releases (Tools). */
@@ -153,6 +154,7 @@ watch(runtimeTabRequest, (t) => {
     </div>
     <div v-else-if="n.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />
       Installing {{ n.installing.version }} failed: {{ n.installing.error }}
+      <GitConnectButton :text="n.installing.error" />
     </div>
 
     <template v-if="tab === 'available'">

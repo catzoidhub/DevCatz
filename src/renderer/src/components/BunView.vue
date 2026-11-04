@@ -6,6 +6,7 @@ import { ICONS } from '../icons';
 import UpdateButton from './UpdateButton.vue';
 import { attempt, herd, notify, state, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
+import GitConnectButton from './GitConnectButton.vue';
 
 
 const s = computed(() => state.value!);
@@ -131,6 +132,7 @@ const tab = ref<Tab>('installed');
     </div>
     <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />
       Installing Bun {{ b.installing.version }} failed: {{ b.installing.error }}
+      <GitConnectButton :text="b.installing.error" />
     </div>
 
     <template v-if="tab === 'available'">

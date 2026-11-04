@@ -35,6 +35,7 @@ import { siteStatus, stackTag, isDesktopSite } from './runtimes';
 import { backIndex, backList, canBack, canForward, forwardList, goBack, goForward, goTo, navApply, navPrune, navVisit, type NavEntry } from './nav';
 import type { AppState, ProjectState } from '@shared/types';
 import { isWin, WIN_SECTIONS } from './platform';
+import GitConnectButton from './components/GitConnectButton.vue';
 
 const PANELS = ['node', 'bun', 'go', 'rust', 'php', 'python'];
 
@@ -911,6 +912,7 @@ async function park() {
       >
         <CatMood :mood="toast.kind" class="-my-1 size-8 shrink-0" />
         <span class="selectable min-w-0 flex-1">{{ toast.text }}</span>
+        <GitConnectButton :text="toast.text" @opened="dismissToast" />
         <button type="button" class="btn btn-ghost btn-xs btn-square -my-0.5 opacity-60 hover:opacity-100" title="Dismiss" @click="dismissToast">✕</button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { TaskProgress } from '@shared/types';
+import GitConnectButton from './GitConnectButton.vue';
 
 /** Progress of a multi-step job (install / uninstall): step list, download bar and what is being worked on. */
 const props = defineProps<{ task: TaskProgress; compact?: boolean; cancellable?: boolean; dismissable?: boolean }>();
@@ -73,5 +74,6 @@ const state = (i: number) =>
     </div>
 
     <div v-if="task.error" class="selectable rounded-lg px-2.5 py-1.5 text-xs" :class="task.cancelled ? 'bg-base-content/5 opacity-70' : 'bg-error/10 text-error'">{{ task.error }}</div>
+    <GitConnectButton :text="task.error" />
   </div>
 </template>

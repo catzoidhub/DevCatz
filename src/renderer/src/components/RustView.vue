@@ -7,6 +7,7 @@ import { attempt, herd, notify, state, runtimeTabRequest, askConfirm } from '../
 import CatMood from './CatMood.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
 import { isWin } from '../platform';
+import GitConnectButton from './GitConnectButton.vue';
 
 /**
  * Rust through rustup in its standard place (~/.rustup, ~/.cargo): toolchains, the WebAssembly target, and the CLIs
@@ -144,7 +145,7 @@ async function checkTools() {
       </div>
       <button class="btn btn-ghost btn-sm" title="Stop the download / install" @click="herd.installCancel('rust')">Cancel</button>
     </div>
-    <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />Installing {{ b.installing.version }} failed: {{ b.installing.error }}</div>
+    <div v-else-if="b.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />Installing {{ b.installing.version }} failed: {{ b.installing.error }}<GitConnectButton :text="b.installing.error" /></div>
 
     <template v-if="tab === 'installed'">
       <div class="card">
