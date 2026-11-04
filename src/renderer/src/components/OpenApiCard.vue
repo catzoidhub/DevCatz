@@ -49,6 +49,75 @@ const apiApps = computed(() => props.site.stack.apps.filter((a) => a.kind !== 'a
 const createApp = ref('');
 watch(apiApps, (a) => (createApp.value = (a.find((x) => x.domain) ?? a[0])?.dir ?? '.'), { immediate: true });
 const creating = ref<'yaml' | 'json' | null>(null);
+const FILE_NAME = { yaml: 'openapi.yaml', json: 'swagger.json' } as const;
+/** The app already has this file: Create is only offered for the other one. */
+const hasFile = (format: 'yaml' | 'json') => {
+  const want = createApp.value === '.' ? FILE_NAME[format] : `${createApp.value}/${FILE_NAME[format]}`;
+  return !!info.value?.specs.some((s) => s.file && rel(s.file).replaceAll('\\', '/') === want);
+};
+const GENERATOR = { scramble: 'Scramble', 'nest-swagger': '@nestjs/swagger' } as const;
+
+// Remove: a file goes to the Trash; a generator DevCatz added comes out with its package.
+const removing = ref<{ kind: 'file'; file: string } | { kind: 'generator' } | null>(null);
+const removeBusy = ref(false);
+const removeText = computed(() => {
+  const r = removing.value;
+  if (!r) return null;
+  if (r.kind === 'file') return { title: `Remove ${rel(r.file)}?`, text: `The file goes to the ${words.trash}. DialCatz can no longer import routes from it.`, button: 'Move to ' + words.trash };
+  const g = info.value?.generator;
+  return { title: `Remove ${g ? GENERATOR[g] : ''}?`, text: g === 'scramble' ? 'Runs composer remove dedoc/scramble --dev; the site stops serving its document. Output in Logs.' : 'Takes out the lines DevCatz added to src/main.ts, then uninstalls @nestjs/swagger. Output in Logs.', button: 'Remove' };
+});
+async function remove() {
+  const r = removing.value;
+  if (!r) return;
+  removeBusy.value = true;
+  if (r.kind === 'generator') emit('logs');
+  const ok = await attempt(() => (r.kind === 'file' ? herd.openapiRemoveFile(props.site.id, r.file) : herd.openapiRemoveGenerator(props.site.id)).then(() => true));
+  removeBusy.value = false;
+  removing.value = null;
+  if (ok) notify('success', r.kind === 'file' ? `Moved to the ${words.trash}` : 'Removed');
+  await load(running.value);
+}
+async function ignore(file: string) {
+  if (await attempt(() => herd.openapiIgnore(props.site.id, file).then(() => true))) notify('success', `${rel(file)} added to .gitignore`);
+  await load(false);
+}
+
+// Access…: a password on the documents, asked by DevCatz's proxy on the site's domain.
+const accessOpen = ref(false);
+const accessOn = ref(false);
+const accessUser = ref('');
+const accessPassword = ref('');
+const envList = ref<string[]>([]);
+const envFile = ref('');
+const envIgnored = ref<boolean | null>(null);
+const ignoreEnv = ref(true);
+const accessBusy = ref(false);
+async function openAccess() {
+  const a = props.site.openapiAuth;
+  accessOn.value = !!a;
+  accessUser.value = a?.user ?? 'docs';
+  accessPassword.value = a?.password ?? '';
+  const files = (await attempt(() => herd.envFiles(props.site.id))) ?? [];
+  envList.value = files.filter((f) => f.exists && !f.template).map((f) => f.path);
+  envFile.value = envList.value.includes('.env') ? '.env' : '';
+  accessOpen.value = true;
+}
+watch(envFile, async (f) => {
+  envIgnored.value = f ? ((await attempt(() => herd.openapiEnvIgnored(props.site.id, f).then((v) => ({ v }))))?.v ?? null) : null;
+});
+function generatePassword() {
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  accessPassword.value = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '').slice(0, 20);
+}
+async function saveAccess() {
+  accessBusy.value = true;
+  const ok = await attempt(() => herd.openapiSetAuth(props.site.id, accessOn.value ? { user: accessUser.value, password: accessPassword.value } : null, accessOn.value ? envFile.value || null : null, ignoreEnv.value).then(() => true));
+  accessBusy.value = false;
+  if (!ok) return;
+  accessOpen.value = false;
+  notify('success', accessOn.value ? 'The API documents now ask for a password' : 'The API documents no longer ask for a password');
+}
 async function create(format: 'yaml' | 'json') {
   creating.value = format;
   const file = await attempt(() => herd.createOpenApi(props.site.id, format, createApp.value));
@@ -77,7 +146,9 @@ async function add() {
       <div class="flex items-center gap-2">
         <h2 class="font-semibold">API</h2>
         <span class="badge badge-ghost badge-sm">OpenAPI</span>
+        <span v-if="site.openapiAuth" class="badge badge-success badge-soft badge-sm">Password on</span>
         <span class="flex-1" />
+        <button v-if="info?.specs.length" class="btn btn-ghost btn-xs" title="A password on the API documents" @click="openAccess">Access…</button>
         <button class="btn btn-ghost btn-xs" :disabled="probing || !running" :title="running ? 'Ask the running apps again' : 'Start the site to look for the documents its apps serve'" @click="load(true)">
           <span v-if="probing" class="loading loading-spinner loading-xs" />Look again
         </button>
@@ -90,8 +161,18 @@ async function add() {
           <span class="badge badge-sm" :class="s.url ? 'badge-success badge-soft' : 'badge-ghost'">{{ s.url ? 'served' : 'file' }}</span>
           <code class="min-w-0 flex-1 truncate text-xs">{{ s.url ?? rel(s.file!) }}</code>
           <span v-if="site.stack.apps.length > 1" class="text-xs opacity-60">{{ appName(s.app) }}</span>
-          <button v-if="s.url" class="btn btn-ghost btn-xs" @click="herd.openUrl(s.url)">Open</button>
-          <button v-else class="btn btn-ghost btn-xs" @click="herd.openapiReveal(site.id, s.file!)">{{ words.revealIn }}</button>
+          <button v-if="s.url ?? s.docUrl" class="btn btn-ghost btn-xs" :title="s.url ?? s.docUrl" @click="herd.openUrl((s.url ?? s.docUrl)!)">Open URL</button>
+          <template v-if="s.file">
+            <button class="btn btn-ghost btn-xs" @click="herd.openapiReveal(site.id, s.file!)">{{ words.revealIn }}</button>
+            <button v-if="s.ignored === false" class="btn btn-ghost btn-xs" @click="ignore(s.file!)">Add to .gitignore</button>
+            <span v-else-if="s.ignored" class="text-xs opacity-50">in .gitignore</span>
+            <button class="btn btn-ghost btn-xs text-error" @click="removing = { kind: 'file', file: s.file! }">Remove</button>
+          </template>
+        </div>
+        <div v-if="info.generator" class="flex items-center gap-3 rounded-box border border-base-300/60 px-3 py-2 text-sm">
+          <span class="badge badge-ghost badge-sm">generator</span>
+          <span class="min-w-0 flex-1 truncate text-xs">{{ GENERATOR[info.generator] }} writes the document from your code</span>
+          <button class="btn btn-ghost btn-xs text-error" :disabled="!!site.dbTask" @click="removing = { kind: 'generator' }">Remove</button>
         </div>
         <p v-if="!laravel" class="text-xs opacity-60">DialCatz imports the routes from {{ info.specs.length === 1 ? 'this document' : 'these documents' }}.</p>
       </template>
@@ -106,30 +187,80 @@ async function add() {
             <p v-else-if="info.install && !laravel" class="text-xs opacity-70">DialCatz needs one to import this site's routes; DevCatz can add it.</p>
           </div>
         </div>
+      </template>
+      <div v-else class="flex items-center gap-2 text-sm opacity-60"><span class="loading loading-spinner loading-sm" />Looking…</div>
+      <template v-if="info">
         <div class="flex flex-wrap items-center justify-end gap-2">
           <select v-if="apiApps.length > 1" v-model="createApp" class="select select-sm w-auto" title="The app whose folder gets the file">
             <option v-for="a in apiApps" :key="a.dir" :value="a.dir">{{ a.name }}{{ a.dir === '.' ? '' : ` (${a.dir})` }}</option>
           </select>
           <button
+            v-if="!hasFile('yaml')"
             class="btn btn-sm"
-            :class="{ 'btn-primary': !info.install }"
+            :class="{ 'btn-primary': !info.install && !info.specs.length }"
             :disabled="!!creating"
             title="A starter OpenAPI 3 document: this app's name and local URL, one example path to replace with your routes"
             @click="create('yaml')"
           >
             <span v-if="creating === 'yaml'" class="loading loading-spinner loading-xs" />Create openapi.yaml
           </button>
-          <button class="btn btn-sm" :disabled="!!creating" title="The same starter document in JSON (OpenAPI 3)" @click="create('json')">
+          <button v-if="!hasFile('json')" class="btn btn-sm" :disabled="!!creating" title="The same starter document in JSON (OpenAPI 3)" @click="create('json')">
             <span v-if="creating === 'json'" class="loading loading-spinner loading-xs" />Create swagger.json
           </button>
-          <button v-if="info.install" class="btn btn-sm btn-primary" :disabled="adding || !!site.dbTask" @click="asking = true">
+          <button v-if="info.install" class="btn btn-sm" :class="{ 'btn-primary': !info.specs.length }" :disabled="adding || !!site.dbTask" @click="asking = true">
             <span v-if="adding" class="loading loading-spinner loading-xs" />{{ WHAT[info.install].button }}
           </button>
         </div>
         <p v-if="info.install" class="text-right text-xs opacity-60">{{ WHAT[info.install].button.replace('Add ', '') }} writes the document from your code; a file is written by hand.</p>
       </template>
-      <div v-else class="flex items-center gap-2 text-sm opacity-60"><span class="loading loading-spinner loading-sm" />Looking…</div>
     </div>
-    <ConfirmDialog v-if="asking && info?.install" :title="WHAT[info.install].title" :text="WHAT[info.install].text" :confirm="WHAT[info.install].button" @ok="add" @cancel="asking = false" />
+    <Teleport to="body">
+      <ConfirmDialog v-if="asking && info?.install" :title="WHAT[info.install].title" :text="WHAT[info.install].text" :confirm="WHAT[info.install].button" @ok="add" @cancel="asking = false" />
+      <ConfirmDialog v-if="removeText" :title="removeText.title" :text="removeText.text" :confirm="removeText.button" tone="error" :busy="removeBusy" @ok="remove" @cancel="removing = null" />
+      <dialog v-if="accessOpen" open class="modal modal-open" @keydown.esc="!accessBusy && (accessOpen = false)">
+        <div class="modal-box w-[30rem] max-w-[95vw] space-y-3">
+          <div>
+            <h3 class="text-lg font-semibold tracking-tight">Access to the API documents</h3>
+            <p class="text-xs opacity-70">{{ site.name }}: the files above and the documents and viewers its apps serve.</p>
+          </div>
+          <label class="flex cursor-pointer items-center gap-3 text-sm">
+            <input v-model="accessOn" type="checkbox" class="toggle toggle-primary toggle-sm" />
+            Ask for a password (basic auth)
+          </label>
+          <template v-if="accessOn">
+            <label class="flex items-center gap-3 text-sm">
+              <span class="w-20 shrink-0 opacity-70">User</span>
+              <input v-model="accessUser" class="input input-sm min-w-0 flex-1 font-mono text-xs" spellcheck="false" autocomplete="off" />
+            </label>
+            <label class="flex items-center gap-3 text-sm">
+              <span class="w-20 shrink-0 opacity-70">Password</span>
+              <input v-model="accessPassword" class="input input-sm min-w-0 flex-1 font-mono text-xs" spellcheck="false" autocomplete="off" />
+              <button type="button" class="btn btn-sm" @click="generatePassword">Generate</button>
+            </label>
+            <label class="flex items-center gap-3 text-sm">
+              <span class="w-20 shrink-0 opacity-70">Write to</span>
+              <select v-model="envFile" class="select select-sm min-w-0 flex-1">
+                <option value="">Don't write to a file</option>
+                <option v-for="f in envList" :key="f" :value="f">{{ f }}</option>
+              </select>
+            </label>
+            <template v-if="envFile">
+              <p class="pl-[5.75rem] text-xs opacity-60">Sets <code>OPENAPI_DOCS_USER</code> and <code>OPENAPI_DOCS_PASSWORD</code>.</p>
+              <label v-if="envIgnored === false" class="flex cursor-pointer items-center gap-2 pl-[5.75rem] text-sm">
+                <input v-model="ignoreEnv" type="checkbox" class="checkbox checkbox-sm" />
+                Add {{ envFile }} to .gitignore
+              </label>
+              <p v-else-if="envIgnored" class="pl-[5.75rem] text-xs opacity-60">{{ envFile }} is already in .gitignore.</p>
+            </template>
+          </template>
+          <p class="text-xs opacity-60">{{ accessOn ? "DevCatz asks for it on the site's domain. The app's own port and your production server are not covered." : site.openapiAuth ? 'Lines already written to a .env file stay there.' : `Anyone who can reach the site's domain on this ${words.computer} can read the documents.` }}</p>
+          <div class="modal-action">
+            <button class="btn btn-ghost btn-sm" :disabled="accessBusy" @click="accessOpen = false">Cancel</button>
+            <button class="btn btn-primary btn-sm" :disabled="accessBusy || (accessOn && (!accessUser.trim() || !accessPassword))" @click="saveAccess"><span v-if="accessBusy" class="loading loading-spinner loading-xs" />Save</button>
+          </div>
+        </div>
+        <div class="modal-backdrop" @click="!accessBusy && (accessOpen = false)" />
+      </dialog>
+    </Teleport>
   </div>
 </template>
