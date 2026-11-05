@@ -1,6 +1,6 @@
 # Contributing to DevCatz
 
-Thank you for wanting to help — DevCatz is made by one person, and every fix, idea and bug report counts. This page says
+Thank you for wanting to help — DevCatz is made by one person, with two others helping, and every fix, idea and bug report counts. This page says
 how to get a change merged without wasted work.
 
 ## Before you start
