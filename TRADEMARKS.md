@@ -4,7 +4,7 @@ The code of this app is free software under the licence in [`LICENSE`](LICENSE).
 
 ## What the marks are
 
-- the names **Catzoid**, **DevCatz**, **DBCatz**, **DialCatz**, **DialCatz Den** and **DoCatz**;
+- the names **Catzoid**, **DevCatz**, **DBCatz**, **DialCatz**, **DialCatz Den**, **DoCatz** and **MCatzP**;
 - the **Catzoid cat** (the white cat with `< >` eyes, the antenna and the neck ring) in every form: the app icons,
   the mood icons in the apps, the 3D cat and the ✦ Ask mark;
 - the domain **catzoid.com** and the look of the app icons as a family.

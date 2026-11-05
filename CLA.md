@@ -18,7 +18,7 @@ You remain the owner of the copyright in your Contributions. Nothing here transf
 You grant us and the recipients of software we distribute a perpetual, worldwide, non-exclusive, no-charge,
 royalty-free, irrevocable licence to use, reproduce, modify, prepare derivative works of, publicly display, publicly
 perform, sublicense and distribute your Contributions and derivative works of them, **under any licence terms we
-choose**, including the project's current licence (GPL-3.0 or AGPL-3.0), other open-source licences and other terms.
+choose**, including the project's current licence (GPL-3.0, AGPL-3.0 or Apache-2.0), other open-source licences and other terms.
 
 Why the last part: it lets the project change or add a licence later (for example dual licensing, or a move to a
 newer licence), and it lets the projects be passed on as a whole, without tracking down every contributor. Every
