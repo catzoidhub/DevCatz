@@ -52,6 +52,9 @@ require `visibility=selected`, `allows_public_repositories=true`,
 `restricted_to_workflows=true`, and exactly the approved `selected_workflows`.
 Also inspect its `/repositories` and `/runners` subresources. The repository list
 must contain only DevCatz; every DevCatz registration must belong to this group.
+When updating only workflow pins, leave repository visibility unchanged, then
+recheck `/repositories`. Reapply the explicit DevCatz repository selection if it
+is empty; an online runner with no permitted repository cannot receive jobs.
 Do not use repository-level runners or the unrestricted default group. Never
 temporarily relax the workflow restriction to debug routing. If the feature is
 unavailable, leave runners unregistered/stopped: YAML-only checks are insufficient.

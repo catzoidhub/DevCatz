@@ -67,16 +67,16 @@ an actual owner-membership lookup and is stored only in that environment as
 `DEVCATZ_MEMBERS_READ_TOKEN`. Expected account variables and the policy-ready
 attestation are configured. The current runner-group allowlist contains only the
 readiness workflow at `ef0864fd821eb5e66c40e8e666760e02d57a9c1a` and both release
-workflows at `ef0864fd821eb5e66c40e8e666760e02d57a9c1a`. Both release wrappers use
-that updated pin; publication/Linux validation tools use
-`a24559385763f25f8cbd0114197f47bcbf1457fb`.
+workflows at `5692dae40857bb18d2905c78b6478af82e6ba566`. Publication uses
+`a24559385763f25f8cbd0114197f47bcbf1457fb`; Linux packaging/checks use
+`5bd4ac94aa0f738aec730503e52c319d022b375f`.
 
 An [unapproved alternate-ref workflow probe](https://github.com/catzoidhub/DevCatz/actions/runs/42374526721)
-requested both platform runners directly. Both jobs remained queued and unassigned
-for about 90 seconds while both dedicated runners were online/idle. It was
-cancelled with no steps executed, and its temporary branch was deleted. This
-observation supports the configured restrictions; it is not a complete historical
-rerun or queue-expiration test.
+requested both platform runners directly and was cancelled without executing steps.
+This result is inconclusive: a later allowlist update was found to have left the
+group's repository selection empty. Access was restored to only DevCatz and both
+settings were rechecked. A fresh rejection probe is still required with that
+verified configuration.
 
 A [real non-main Windows dispatch](https://github.com/catzoidhub/DevCatz/actions/runs/42374704165)
 was skipped before any build job. A separate local validator smoke used live
@@ -84,8 +84,15 @@ GitHub API responses with event/ref context fixtures: owner selection of `v1.1.0
 resolved `facfa9a52337db69e78cde0c67fe1198d93a26ea`; non-owner, non-main and absent-tag
 fixtures were rejected. These fixture contexts do not prove real rerun handling.
 
-Positive dispatch from main awaits rollout of the integration PR; current main
-still contains the prior hosted Windows workflow. Main branch protection is not
-configured. Neither native
+The [real main readiness run](https://github.com/catzoidhub/DevCatz/actions/runs/42376790427)
+passed authorization and first-step revalidation/account/tool checks on both
+dedicated runner services. Native runs then exposed two deployment issues:
+setup-bun's privileged Windows symlink creation, and AppImage's x86_64 filename
+normalization. The workflow now reuses installed Windows tools and fixes Linux
+artifact naming explicitly. Actual Linux packages passed full metadata,
+architecture and regenerated-blockmap validation in a temporary corrected-name
+probe; this does not replace a successful artifact-retaining workflow run.
+
+Main branch protection is not configured. Neither complete native
 build, optional signing, workflow rejection/rerun/offline checks, nor controlled
 release publication has been exercised. No release assets were changed.
