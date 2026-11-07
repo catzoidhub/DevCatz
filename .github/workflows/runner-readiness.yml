@@ -23,8 +23,9 @@ jobs:
       sha: ${{ steps.source.outputs.sha }}
     steps:
       - id: source
-        uses: catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        uses: catzoidhub/DevCatz/.github/actions/validate-release@3f634e3bff1bd67ab81ec4044a2effe4e193c3e5
         with:
+          policy-ready: ${{ vars.DEVCATZ_RUNNER_POLICY_READY }}
           tag: ${{ inputs.tag }}
           membership-token: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
           github-token: ${{ github.token }}
@@ -47,8 +48,9 @@ jobs:
     steps:
       # A failed-job rerun can retain authorize's outputs. Check both actors again here.
       - id: source
-        uses: catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        uses: catzoidhub/DevCatz/.github/actions/validate-release@3f634e3bff1bd67ab81ec4044a2effe4e193c3e5
         with:
+          policy-ready: ${{ vars.DEVCATZ_RUNNER_POLICY_READY }}
           tag: ${{ inputs.tag }}
           expected-sha: ${{ needs.authorize.outputs.sha }}
           membership-token: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}

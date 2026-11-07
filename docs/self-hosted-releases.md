@@ -99,7 +99,7 @@ Set repository variables only after the platform policy is verified:
 
 ## Consumer contract for #4/#5
 
-Reuse `catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67`.
+Reuse `catzoidhub/DevCatz/.github/actions/validate-release@3f634e3bff1bd67ab81ec4044a2effe4e193c3e5`.
 There is no checkout or dependency installation in this action. It only calls the
 fixed GitHub API origin and reads manifest bytes through the contents API.
 
@@ -107,7 +107,9 @@ fixed GitHub API origin and reads manifest bytes through the contents API.
    Declare and explicitly forward `DEVCATZ_MEMBERS_READ_TOKEN` in that call, even
    when its value only exists in the called job's environment.
 2. Its hosted `authorize` job uses environment `devcatz-release` and invokes the
-   action with `tag`, `membership-token` and `github-token`. Expose `sha` as a job
+   action with `tag`, `policy-ready: ${{ vars.DEVCATZ_RUNNER_POLICY_READY }}`,
+   `membership-token` and `github-token`. The composite action cannot read the
+   `vars` context directly. Expose `sha` as a job
    output. Hosting the API-only gate does not provide a hosted build fallback.
 3. Every persistent job uses environment `devcatz-release` and the restricted
    group plus all platform/project labels. **Its first step** invokes the same

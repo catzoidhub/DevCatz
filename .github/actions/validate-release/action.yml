@@ -4,6 +4,9 @@ inputs:
   tag:
     description: Existing v-prefixed tag matching package.json
     required: true
+  policy-ready:
+    description: Runner-policy attestation supplied by the pinned workflow's repository variable
+    required: true
   expected-sha:
     description: Previously validated SHA; mandatory on persistent hosts
     required: false
@@ -37,7 +40,7 @@ runs:
         RELEASE_ACTOR: ${{ github.actor }}
         RELEASE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         RELEASE_RUNNER_ENVIRONMENT: ${{ runner.environment }}
-        RELEASE_POLICY_READY: ${{ vars.DEVCATZ_RUNNER_POLICY_READY }}
+        RELEASE_POLICY_READY: ${{ inputs.policy-ready }}
         RELEASE_TAG: ${{ inputs.tag }}
         RELEASE_EXPECTED_SHA: ${{ inputs.expected-sha }}
         RELEASE_MEMBERSHIP_TOKEN: ${{ inputs.membership-token }}
