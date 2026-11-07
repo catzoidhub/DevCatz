@@ -88,5 +88,19 @@ nsis:
   createStartMenuShortcut: true
   uninstallDisplayName: ${productName}
 
+linux:
+  icon: resources/icon.png
+  category: Development
+  maintainer: Mahryan Rakhmatullah <109191921+ryankucingg@users.noreply.github.com>
+  executableName: devcatz
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  artifactName: DevCatz-${version}-${arch}.${ext}
+deb:
+  artifactName: DevCatz-${version}-amd64.${ext}
+
 # No native modules to compile: ssh2's optional cpu-features / crypto bindings fall back to pure JS.
 npmRebuild: false
