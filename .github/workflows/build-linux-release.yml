@@ -68,7 +68,7 @@ jobs:
       - name: Checkout immutable Linux packaging configuration and checks
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: a24559385763f25f8cbd0114197f47bcbf1457fb
+          ref: 5bd4ac94aa0f738aec730503e52c319d022b375f
           path: release-tools
           persist-credentials: false
           sparse-checkout: |
@@ -110,7 +110,7 @@ jobs:
           RELEASE_TAG: ${{ steps.source.outputs.tag }}
           UPLOAD: ${{ inputs.upload }}
         run: |
-          printf 'Linux source: `%s` at `%s`\n\nPackaging/checks: `a24559385763f25f8cbd0114197f47bcbf1457fb`\n\nRelease publication requested: `%s`\n' "$RELEASE_TAG" "$SOURCE_SHA" "$UPLOAD" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Linux source: `%s` at `%s`\n\nPackaging/checks: `5bd4ac94aa0f738aec730503e52c319d022b375f`\n\nRelease publication requested: `%s`\n' "$RELEASE_TAG" "$SOURCE_SHA" "$UPLOAD" >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     # This hosted job only transfers immutable artifacts; Linux builds stay self-hosted.
