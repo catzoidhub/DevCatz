@@ -47,6 +47,7 @@ jobs:
         shell: pwsh
         working-directory: source
     outputs:
+      sha: ${{ steps.source.outputs.sha }}
       artifact-id: ${{ steps.final-artifact.outputs.artifact-id }}
     steps:
       # Failed-job/individual-job reruns must not reuse an earlier owner's authorization.
@@ -173,7 +174,7 @@ jobs:
         uses: catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
         with:
           tag: ${{ inputs.tag }}
-          expected-sha: ${{ needs.authorize.outputs.sha }}
+          expected-sha: ${{ needs.windows.outputs.sha }}
           membership-token: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
           github-token: ${{ github.token }}
       - name: Download only the retained final artifact from this build
@@ -183,9 +184,10 @@ jobs:
           path: artifacts
           merge-multiple: true
       - name: Create release assets without replacement
-        uses: catzoidhub/DevCatz/.github/actions/publish-release@315c741184808aaeae1e4a167e8d06c5ef7cc57a
+        uses: catzoidhub/DevCatz/.github/actions/publish-release@a24559385763f25f8cbd0114197f47bcbf1457fb
         with:
           tag: ${{ steps.source.outputs.tag }}
+          expected-sha: ${{ needs.windows.outputs.sha }}
           files: |
             artifacts/DevCatz-Setup-${{ steps.source.outputs.version }}.exe
             artifacts/DevCatz-Setup-${{ steps.source.outputs.version }}.exe.blockmap

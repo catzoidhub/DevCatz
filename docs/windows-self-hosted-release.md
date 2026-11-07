@@ -109,7 +109,7 @@ it regenerates metadata/blockmap, then performs the same validation.
 ## Publication shared with Linux
 
 The reusable cross-platform action is
-`catzoidhub/DevCatz/.github/actions/publish-release@315c741184808aaeae1e4a167e8d06c5ef7cc57a`.
+`catzoidhub/DevCatz/.github/actions/publish-release@a24559385763f25f8cbd0114197f47bcbf1457fb`.
 Linux may pin this same action without using Windows tooling. Its inputs are
 `tag`, `expected-sha`, `files` and `github-token`. `expected-sha` is the Windows
 build job's validated commit output, preserved across artifact download. `files`

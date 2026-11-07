@@ -8,14 +8,14 @@ Do not register/start runners before those restrictions are verified.
 ## Integration status and pins
 
 The shared publication action is pinned to
-`315c741184808aaeae1e4a167e8d06c5ef7cc57a`; the dispatcher calls the completed
+`a24559385763f25f8cbd0114197f47bcbf1457fb`; the dispatcher calls the completed
 reusable workflow at `c461c844f8fe04c09a47ad06abd168fbe9e5d581`. Allowlist that
 exact `catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@c461c844f8fe04c09a47ad06abd168fbe9e5d581` in the
 restricted `devcatz-release` group. Never allowlist the dispatcher or a branch.
 Preserve all referenced commits when integrating; do not squash away the pins.
 
 The Linux configuration/output checker is pinned independently to
-`bfa1925f2d2c6f9767440a9b6a246c729cecdfe1`. The owner/source gate and account/tool
+`a24559385763f25f8cbd0114197f47bcbf1457fb`. The owner/source gate and account/tool
 check use `a056b5ddcbe378bca0fb678023b22cc05ca0ae67`.
 
 The real Linux account/tool readiness check passed over administrative SSH; see
