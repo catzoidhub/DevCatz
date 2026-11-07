@@ -9,8 +9,8 @@ Do not register/start runners before those restrictions are verified.
 
 The shared publication action is pinned to
 `a24559385763f25f8cbd0114197f47bcbf1457fb`; the dispatcher calls the completed
-reusable workflow at `c461c844f8fe04c09a47ad06abd168fbe9e5d581`. Allowlist that
-exact `catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@c461c844f8fe04c09a47ad06abd168fbe9e5d581` in the
+reusable workflow at `79034a2bb7dd9c54da6e2a9f3aec79460420cc8c`. Allowlist that
+exact `catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@79034a2bb7dd9c54da6e2a9f3aec79460420cc8c` in the
 restricted `devcatz-release` group. Never allowlist the dispatcher or a branch.
 Preserve all referenced commits when integrating; do not squash away the pins.
 
