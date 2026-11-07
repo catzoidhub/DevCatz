@@ -6,10 +6,10 @@ reuse this gate; their runbooks cover packaging and publication for #4/#5.
 
 ## Current evidence and blockers
 
-Local fixture tests, typecheck and dedicated-account readiness on both real hosts
-have passed. The restricted runner group and main-only environment are configured;
-see [current host and policy evidence](self-hosted-host-evidence.md) for remaining
-registration, credential, service, workflow and native-build verification.
+Local fixture tests, typecheck, real Actions readiness and upload-disabled native
+builds passed on both dedicated services. The restricted runner group and main-only
+environment are configured. See [host and policy evidence](self-hosted-host-evidence.md)
+for actual authorization, rerun, source, offline and publication results.
 Do not enable runners until the platform restrictions below are confirmed. Missing
 `DEVCATZ_RUNNER_POLICY_READY=true` or either credential fails validation.
 
@@ -188,7 +188,7 @@ If drift is reported, preserve retained artifacts and all existing release bytes
 inspect release ID/tag/SHA and downloaded hashes, and have an owner resolve the
 partial outcome before any retry. No automated rollback or replacement occurs.
 
-## Provision the two hosts (administrator runbook; not executed)
+## Provision the two hosts (administrator runbook)
 
 The parent must first verify administrative access, OS version/architecture,
 available disk, network reachability and mailbox's existing account/service/path

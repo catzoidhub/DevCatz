@@ -8,9 +8,9 @@ Do not register/start runners before those restrictions are verified.
 ## Integration status and pins
 
 The shared publication action is pinned to
-`a24559385763f25f8cbd0114197f47bcbf1457fb`; the dispatcher calls the completed
-reusable workflow at `5692dae40857bb18d2905c78b6478af82e6ba566`. Allowlist that
-exact `catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@5692dae40857bb18d2905c78b6478af82e6ba566` in the
+`256531de305d974dae311bd108c65ec5194dbf85`; the dispatcher calls the completed
+reusable workflow at `1c15830e964380fbf92647315475f6cac1e3ca97`. Allowlist that
+exact `catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@1c15830e964380fbf92647315475f6cac1e3ca97` in the
 restricted `devcatz-release` group. Never allowlist the dispatcher or a branch.
 Preserve all referenced commits when integrating; do not squash away the pins.
 
@@ -19,10 +19,10 @@ The Linux configuration/output checker is pinned independently to
 `3f634e3bff1bd67ab81ec4044a2effe4e193c3e5`; the account/tool check remains at
 `a056b5ddcbe378bca0fb678023b22cc05ca0ae67`.
 
-The real Linux account/tool readiness check passed over administrative SSH; see
-[host evidence](self-hosted-host-evidence.md). Runner registration, membership
-credentials, policy enforcement, workflow dispatch, native build, installation,
-application launch, updater behavior and publication remain unverified.
+Real Actions readiness and an upload-disabled native AppImage/deb build passed on
+the dedicated service. See [host evidence](self-hosted-host-evidence.md) for source,
+artifact, policy and publication results. Installation, application launch and
+updater behavior remain unverified.
 
 ## Source and packaging contract
 
@@ -140,7 +140,7 @@ Then separately test AppImage startup, Debian installation/removal and startup,
 and updater download/install on supported distributions. Record exact OS/library
 versions and results; this implementation does not claim any of those passed.
 
-## Publication, recovery and evidence still required
+## Publication, recovery and verification
 
 Only after inspecting artifacts, dispatch with `-f upload=true` for an existing
 controlled test release. This performs a new build; it does not publish an earlier
@@ -176,5 +176,6 @@ builder configuration schema validation and parsed preservation of existing plat
 settings; actionlint on the workflows. Linux tests use synthetic package bytes and
 fixture responses at the `dpkg-deb` command boundary, with real blockmaps generated
 by the installed builder, not native Electron packages. Publication tests use
-simulated GitHub responses; actual native/update/publication verification still
-requires the main rollout.
+simulated GitHub responses. Actual native/publication results are recorded in
+[host evidence](self-hosted-host-evidence.md); installation and updater behavior
+remain unverified.
