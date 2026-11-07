@@ -131,8 +131,7 @@ jobs:
           path: linux-artifacts
           merge-multiple: true
       - name: Publish without replacing release assets
-        # PENDING: replace this full-SHA placeholder with the Windows implementer's shared action commit.
-        uses: catzoidhub/DevCatz/.github/actions/publish-release@0000000000000000000000000000000000000000
+        uses: catzoidhub/DevCatz/.github/actions/publish-release@315c741184808aaeae1e4a167e8d06c5ef7cc57a
         with:
           tag: ${{ steps.source.outputs.tag }}
           files: |
