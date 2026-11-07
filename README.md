@@ -34,8 +34,10 @@ brew tap catzoidhub/catz && brew trust catzoidhub/catz
 brew install --cask devcatz
 ```
 
-The app is signed and notarized by Apple and updates itself (Settings → About → Check for Updates). Windows builds
-are on the way.
+The macOS app is signed and notarized by Apple and updates itself (Settings → About → Check for Updates).
+Windows x64 NSIS and Linux x64 AppImage/`.deb` packages are available from
+[GitHub Releases](https://github.com/catzoidhub/DevCatz/releases/latest). Linux installation,
+startup and updater behavior have not yet been verified; see [release evidence](docs/self-hosted-host-evidence.md).
 
 ## Build from source
 

@@ -1,10 +1,10 @@
 # Windows x64 self-hosted releases
 
 Implements the workflow and local validation for [#4](https://github.com/catzoidhub/DevCatz/issues/4)
-under [#2](https://github.com/catzoidhub/DevCatz/issues/2). Real Windows build,
-SignPath and GitHub Release publication verification remain outstanding. Dedicated
-account/tool readiness passed on the real host; see [host evidence](self-hosted-host-evidence.md).
-Fixture tests and static checks below are implementation evidence only.
+under [#2](https://github.com/catzoidhub/DevCatz/issues/2). Real Actions readiness and
+an unsigned, upload-disabled native build passed on the dedicated service; see
+[host evidence](self-hosted-host-evidence.md) for artifacts and publication results.
+SignPath remains unverified because signing credentials are not configured.
 
 ## Enable only after runner-policy verification
 
@@ -12,7 +12,7 @@ Follow [the shared runner runbook](self-hosted-releases.md) first: dedicated
 non-administrator Windows x64 account/work directory, the `devcatz-release`
 organization runner group, public-repository opt-in, only this repository, and
 **immutable selected reusable workflows**. The group must allow the full
-`catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@5692dae40857bb18d2905c78b6478af82e6ba566`
+`catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@1c15830e964380fbf92647315475f6cac1e3ca97`
 used by the dispatcher. Do not allow `release-windows.yml`, mutable refs, or
 label-only access. Preserve the pinned commits when integrating; the dispatcher
 pin is committed after the reusable workflow so it names an existing commit.
@@ -112,7 +112,7 @@ it regenerates metadata/blockmap, then performs the same validation.
 ## Publication shared with Linux
 
 The reusable cross-platform action is
-`catzoidhub/DevCatz/.github/actions/publish-release@a24559385763f25f8cbd0114197f47bcbf1457fb`.
+`catzoidhub/DevCatz/.github/actions/publish-release@256531de305d974dae311bd108c65ec5194dbf85`.
 Linux may pin this same action without using Windows tooling. Its inputs are
 `tag`, `expected-sha`, `files` and `github-token`. `expected-sha` is the Windows
 build job's validated commit output, preserved across artifact download. `files`
@@ -122,11 +122,12 @@ use ASCII letters, digits, underscores, dots and hyphens to avoid GitHub filenam
 normalization. Directories, missing/empty files, duplicate paths/names and invalid
 responses fail before uploads.
 
-The action requires an existing release at the selected tag. It retrieves **all
-asset pages** and preflights every proposed name before sending any bytes. It
+The action requires an existing release at the selected tag. Published releases
+resolve by tag; drafts are found by exact tag across release pages when that
+endpoint returns 404. It retrieves **all asset pages** and preflights every proposed name before sending any bytes. It
 uses only GET and create-upload POST requests, with no release creation, clobber,
 replacement or deletion. If another publisher claims a name after preflight,
-GitHub's create API rejects it (422); the action stops without retrying as a
+GitHub's create API rejects it; the action stops without retrying as a
 replacement. Error reporting lists confirmed uploads and the failed/uncertain
 asset. Network failures can leave an asset on the server even without a confirmed
 response; inspect the release before retrying. GitHub uploads are not transactional.
@@ -181,5 +182,5 @@ Use a **controlled disposable test release**, with accepted source/tag, to verif
 successful upload and a second collision attempt. Compare every existing asset's
 downloaded bytes before/after rejection. Exercise partial/concurrent publication
 there if possible; never use production assets for destructive experiments.
-Runner dispatch, native builds, signing, release mutation and controlled
-publication remain unverified.
+Actual runner, native-build and publication evidence is linked above. Signing,
+installer execution and end-user update behavior remain unverified.
