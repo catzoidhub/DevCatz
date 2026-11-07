@@ -66,7 +66,10 @@ public-repository opt-in, and immutable selected-workflow restrictions. Environm
 an actual owner-membership lookup and is stored only in that environment as
 `DEVCATZ_MEMBERS_READ_TOKEN`. Expected account variables and the policy-ready
 attestation are configured. The current runner-group allowlist contains only the
-three reusable workflows at `c461c844f8fe04c09a47ad06abd168fbe9e5d581`.
+readiness workflow at `c461c844f8fe04c09a47ad06abd168fbe9e5d581` and both release
+workflows at `79034a2bb7dd9c54da6e2a9f3aec79460420cc8c`. Both release wrappers use
+that updated pin; publication/Linux validation tools use
+`a24559385763f25f8cbd0114197f47bcbf1457fb`.
 
 An [unapproved alternate-ref workflow probe](https://github.com/catzoidhub/DevCatz/actions/runs/42374526721)
 requested both platform runners directly. Both jobs remained queued and unassigned
