@@ -140,6 +140,49 @@ job start, not continuous revocation during a running build.
 the selected release source. Its two persistent jobs only run the pinned guard
 and smoke-check action; both must pass before recording readiness evidence.
 
+## Publication source binding and required mutation freeze
+
+Both publication jobs pass the build job's validated commit as the shared
+publisher's required `expected-sha`. Keep that immutable output through artifact
+download; resolving the mutable tag again is not a substitute. The publisher
+captures the existing release ID and checks its `tag_name`, then immediately
+before **each** create-upload request peels the current Git tag to a commit and
+requires the expected SHA and the original release ID/tag name. It repeats those
+checks after every confirmed upload, including the last. A changed, missing or
+unverifiable binding stops publication and reports confirmed and uncertain files.
+It never deletes, replaces, creates or retargets a release.
+
+Operators must keep accepted release tags and their release association frozen
+from initial source validation through completion of **both platforms'** uploads
+and inspection. Administrators should enforce active tag rulesets matching the
+accepted `v*` tags with **Restrict updates** and **Restrict deletions**, and audit
+all bypass actors/apps. Those rules control tag mutations, not release edits.
+During that window, owners, other writers and automation must also refrain from
+changing `release.tag_name`, deleting/recreating the release, or changing the tag
+through bypass permissions. Coordinate that freeze across publishers and keep
+the protected tag/release association stable afterward for consumers. The parent
+owns verifying these settings and the operational freeze; the helper does not
+discover or enforce them. [Tag rules and bypasses](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets),
+[release edit permissions and fields](https://docs.github.com/en/rest/releases/releases#update-a-release).
+
+**Residual race:** GitHub's documented asset-upload API addresses a release ID
+and asset name; it provides no documented atomic expected-commit-SHA condition.
+The separate GET checks and POST upload are not a transaction. A mutation between
+checks and upload can still attach bytes to a changed target; a transient change
+and restoration between checks may escape detection, and later mutations remain
+possible. Post-upload checks detect observable drift but cannot undo it safely.
+Do not claim atomic source binding from these checks or from an operator flag.
+[Upload API parameters](https://docs.github.com/en/rest/releases/assets#upload-a-release-asset).
+
+This flow continues to append assets to an existing mutable release, whether
+draft or published. Do not enable immutable releases as a workaround: once
+published, they cannot accept additional assets, which would prevent the other
+platform from appending its files. A draft-only lifecycle would be a separate
+design change. [GitHub's immutable-release behavior](https://github.blog/changelog/2025-10-28-immutable-releases-are-now-generally-available/).
+If drift is reported, preserve retained artifacts and all existing release bytes,
+inspect release ID/tag/SHA and downloaded hashes, and have an owner resolve the
+partial outcome before any retry. No automated rollback or replacement occurs.
+
 ## Provision the two hosts (administrator runbook; not executed)
 
 The parent must first verify administrative access, OS version/architecture,

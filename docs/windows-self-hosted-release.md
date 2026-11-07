@@ -110,8 +110,10 @@ it regenerates metadata/blockmap, then performs the same validation.
 
 The reusable cross-platform action is
 `catzoidhub/DevCatz/.github/actions/publish-release@315c741184808aaeae1e4a167e8d06c5ef7cc57a`.
-Linux may pin this same action without using Windows tooling. Its only inputs are
-`tag`, `files` and `github-token`. `files` is newline-separated **exact paths**, no
+Linux may pin this same action without using Windows tooling. Its inputs are
+`tag`, `expected-sha`, `files` and `github-token`. `expected-sha` is the Windows
+build job's validated commit output, preserved across artifact download. `files`
+is newline-separated **exact paths**, no
 globs, with unique nonempty readable regular files and unique basenames. Basenames
 use ASCII letters, digits, underscores, dots and hyphens to avoid GitHub filename
 normalization. Directories, missing/empty files, duplicate paths/names and invalid
@@ -126,6 +128,14 @@ replacement. Error reporting lists confirmed uploads and the failed/uncertain
 asset. Network failures can leave an asset on the server even without a confirmed
 response; inspect the release before retrying. GitHub uploads are not transactional.
 See the [official asset API](https://docs.github.com/en/rest/releases/assets).
+
+The publisher rechecks the peeled tag commit and original release ID/tag name
+before and after each upload. Observable drift stops later uploads and reports
+the partial outcome, including drift during the final upload. These separate API
+calls cannot guarantee atomic source binding. Apply the shared runbook's
+[required tag/release mutation freeze and residual-race guidance](self-hosted-releases.md#publication-source-binding-and-required-mutation-freeze)
+through both platforms' publications; no immutable-release or draft-only lifecycle
+is introduced.
 
 To publish, dispatch from main with `-f upload=true`. This builds again; it does
 not promote a prior run. Use retained bytes and the action's exact file list for

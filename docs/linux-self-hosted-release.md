@@ -87,6 +87,11 @@ The contents-write publication job is skipped entirely when upload is false.
 An explicit upload uses a fresh hosted gate, downloads by the immutable artifact
 ID from the successful Linux job (also on a publication-only rerun), then calls
 the shared create-only publication action with exact newline-separated paths.
+It passes `expected-sha` from the Linux build's validated commit output, preserved
+through download, and rechecks the peeled tag and original release ID/tag name
+before and after each upload. Apply the shared runbook's
+[required tag/release mutation freeze and residual-race guidance](self-hosted-releases.md#publication-source-binding-and-required-mutation-freeze);
+these API checks cannot make source binding atomic.
 Its token is supplied only to that action step; membership secrets are supplied
 only to validation steps.
 
@@ -107,6 +112,18 @@ mapping. AppImage differential updates use the **embedded** blockmap; there is n
 separate `.AppImage.blockmap` asset to publish. Debian updates use the `.deb`
 entry in the same metadata and the packaged `resources/package-type` identity.
 These checks do not execute package contents or install scripts.
+
+Blockmap validation regenerates the authoritative map from exactly the AppImage
+payload preceding the compressed map and four-byte footer, then compares the
+complete parsed maps. This verifies chunk names/offsets, sizes, complete coverage
+and checksums, rejecting both malformed-but-decompressible maps and well-formed
+maps for stale payload bytes even when outer SHA-512 metadata has been updated.
+The locked `app-builder-lib@26.15.3` dependency provides `buildBlockMap` (Rabin
+chunks, base64-encoded 18-byte BLAKE2b checksums); this version does not install
+`app-builder-bin`. The checker reuses that generator just like the Windows tool,
+without adding a dependency or implementing chunking/hashing. It streams the
+payload to a private temporary directory, requiring disk space for one payload
+copy, and cleans it on success or failure without modifying retained packages.
 
 The supported output here is `latest-linux.yml`. The app also has an optional
 beta feed; beta-channel feed delivery and metadata routing are not verified by
@@ -156,4 +173,7 @@ Local evidence only: dependency installation with lifecycle scripts disabled;
 `node --test tests/linux-release.test.cjs tests/release-source.test.cjs tests/runner-readiness.test.cjs`;
 builder configuration schema validation and parsed preservation of existing platform
 settings; actionlint on the workflows. Linux tests use synthetic package bytes and
-fixture responses at the `dpkg-deb` command boundary, not native Electron packages.
+fixture responses at the `dpkg-deb` command boundary, with real blockmaps generated
+by the installed builder, not native Electron packages. Publication tests use
+simulated GitHub responses; actual native/update/publication verification still
+requires the main rollout.

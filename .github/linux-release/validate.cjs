@@ -1,9 +1,12 @@
 const assert = require('node:assert/strict')
 const { createHash } = require('node:crypto')
-const { createReadStream, readFileSync, lstatSync, appendFileSync, openSync, readSync, closeSync } = require('node:fs')
+const { createReadStream, createWriteStream, readFileSync, lstatSync, appendFileSync, openSync, readSync, closeSync, mkdtempSync, rmSync } = require('node:fs')
 const { resolve, join } = require('node:path')
+const { tmpdir } = require('node:os')
+const { pipeline } = require('node:stream/promises')
 const { inflateRawSync } = require('node:zlib')
 const yaml = require('js-yaml')
+const { buildBlockMap } = require('app-builder-lib/out/targets/blockmap/blockmap')
 
 async function validateLinuxOutputs(directory, version, { execFileSync = require('node:child_process').execFileSync } = {}) {
   assert.match(version, /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/, 'Invalid release version')
@@ -24,6 +27,7 @@ async function validateLinuxOutputs(directory, version, { execFileSync = require
   const primary = metadata.files.find(file => file.url === metadata.path)
   assert.ok(primary, 'Legacy updater path must reference a package')
   assert.equal(metadata.sha512, primary.sha512, 'Legacy updater hash mismatch')
+  let blockmap, payloadSize
   const fd = openSync(paths[0], 'r')
   try {
     const header = Buffer.alloc(20)
@@ -38,9 +42,18 @@ async function validateLinuxOutputs(directory, version, { execFileSync = require
     assert.equal(footer.readUInt32BE(0), blockMapSize, 'Embedded blockmap size mismatch')
     const compressed = Buffer.alloc(blockMapSize)
     readSync(fd, compressed, 0, blockMapSize, size - 4 - blockMapSize)
-    const blockmap = JSON.parse(inflateRawSync(compressed, { maxOutputLength: 16 * 1024 * 1024 }))
-    assert.ok(blockmap.version === '2' && Array.isArray(blockmap.files) && blockmap.files.length > 0, 'Invalid embedded blockmap')
+    blockmap = JSON.parse(inflateRawSync(compressed, { maxOutputLength: 16 * 1024 * 1024 }))
+    payloadSize = size - 4 - blockMapSize
   } finally { closeSync(fd) }
+  const temp = mkdtempSync(join(tmpdir(), 'devcatz-linux-blockmap-'))
+  try {
+    const payload = join(temp, 'payload.AppImage')
+    await pipeline(createReadStream(paths[0], { start: 0, end: payloadSize - 1 }), createWriteStream(payload))
+    const generated = join(temp, 'payload.blockmap')
+    await buildBlockMap(payload, 'deflate', generated)
+    assert.deepEqual(blockmap, JSON.parse(inflateRawSync(readFileSync(generated), { maxOutputLength: 16 * 1024 * 1024 })),
+      'Embedded blockmap does not match AppImage payload')
+  } finally { rmSync(temp, { recursive: true, force: true }) }
   const fields = execFileSync('dpkg-deb', ['--show', '--showformat=${Package}\n${Version}\n${Architecture}', paths[1]], { encoding: 'utf8' }).trim().split('\n')
   assert.deepEqual(fields, ['devcatz', version.replace(/-/g, '~'), 'amd64'], 'Debian package name, version or architecture mismatch')
   const contents = execFileSync('dpkg-deb', ['--contents', paths[1]], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
