@@ -1,0 +1,31 @@
+name: Publish retained release files without replacement
+description: Preflight every exact file name, then create assets on an existing release
+inputs:
+  tag:
+    description: Existing GitHub Release tag
+    required: true
+  files:
+    description: Newline-separated exact nonempty file paths, with unique safe basenames (no globs)
+    required: true
+  github-token:
+    description: Contents-write token scoped to the publication step/job
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+      env:
+        RELEASE_ACTION_PATH: ${{ github.action_path }}
+        RELEASE_REPOSITORY: ${{ github.repository }}
+        RELEASE_TAG: ${{ inputs.tag }}
+        RELEASE_FILES: ${{ inputs.files }}
+        RELEASE_GITHUB_TOKEN: ${{ inputs.github-token }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const { publishRelease } = require(`${process.env.RELEASE_ACTION_PATH}/publish.cjs`)
+          const names = await publishRelease({
+            repository: process.env.RELEASE_REPOSITORY, tag: process.env.RELEASE_TAG,
+            files: process.env.RELEASE_FILES, githubToken: process.env.RELEASE_GITHUB_TOKEN
+          })
+          core.info(`Created release assets: ${names.join(', ')}`)
