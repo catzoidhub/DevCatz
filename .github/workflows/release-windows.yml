@@ -19,7 +19,7 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main'
     # Allowlist this exact reusable workflow SHA in the runner group, never this dispatcher.
-    uses: catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@ef0864fd821eb5e66c40e8e666760e02d57a9c1a
+    uses: catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@5692dae40857bb18d2905c78b6478af82e6ba566
     permissions:
       # The reusable workflow downgrades authorization/build to read; only publication uses write.
       contents: write

@@ -98,7 +98,7 @@ linux:
       arch: [x64]
     - target: deb
       arch: [x64]
-  artifactName: DevCatz-${version}-${arch}.${ext}
+  artifactName: DevCatz-${version}-x64.${ext}
 deb:
   artifactName: DevCatz-${version}-amd64.${ext}
 
