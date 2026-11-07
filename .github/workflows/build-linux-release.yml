@@ -11,6 +11,9 @@ on:
         description: Publish validated files to an existing release without replacing assets
         type: boolean
         default: false
+    secrets:
+      DEVCATZ_MEMBERS_READ_TOKEN:
+        required: true
 
 permissions:
   contents: read
