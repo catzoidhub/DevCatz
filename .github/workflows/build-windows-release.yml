@@ -1,0 +1,195 @@
+name: Build Windows release (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing release tag in main history
+        required: true
+        type: string
+      upload:
+        description: Create release assets after retaining validated artifacts
+        type: boolean
+        default: false
+    secrets:
+      DEVCATZ_MEMBERS_READ_TOKEN:
+        required: true
+      SIGNPATH_API_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    environment: devcatz-release
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - id: source
+        uses: catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        with:
+          tag: ${{ inputs.tag }}
+          membership-token: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
+          github-token: ${{ github.token }}
+
+  windows:
+    needs: authorize
+    environment: devcatz-release
+    timeout-minutes: 180
+    runs-on:
+      group: devcatz-release
+      labels: [self-hosted, Windows, X64, devcatz, devcatz-windows-x64]
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      artifact-id: ${{ steps.final-artifact.outputs.artifact-id }}
+    steps:
+      # Failed-job/individual-job reruns must not reuse an earlier owner's authorization.
+      - id: source
+        uses: catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        with:
+          tag: ${{ inputs.tag }}
+          expected-sha: ${{ needs.authorize.outputs.sha }}
+          membership-token: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
+          github-token: ${{ github.token }}
+      - name: Check dedicated account and installed tools
+        uses: catzoidhub/DevCatz/.github/actions/runner-readiness@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        with:
+          expected-user: ${{ vars.DEVCATZ_WINDOWS_RUNNER_USER }}
+      - name: Checkout locally validated source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          path: source
+          persist-credentials: false
+      - name: Checkout audited metadata tool independently of release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: catzoidhub/DevCatz
+          ref: 315c741184808aaeae1e4a167e8d06c5ef7cc57a
+          path: release-tools
+          sparse-checkout: scripts/windows-release.cjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: |
+          if (Test-Path dist) { Remove-Item dist -Recurse -Force }
+          bun run build
+          if ($LASTEXITCODE -ne 0) { throw 'Application build failed' }
+      - name: Package (NSIS, x64)
+        run: bun x --no-install electron-builder --win nsis --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Validate unsigned installer, x64 payload, metadata and blockmap
+        id: unsigned-files
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: node ../release-tools/scripts/windows-release.cjs verify dist $env:RELEASE_VERSION
+      - name: Retain validated unsigned outputs (also SignPath input)
+        id: unsigned-artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.unsigned-files.outputs.files }}
+          if-no-files-found: error
+          retention-days: 30
+      - name: Check optional signing configuration
+        id: signing
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+        run: |
+          if ($env:SIGNPATH_API_TOKEN) {
+            if (!$env:SIGNPATH_ORGANIZATION_ID -or !$env:SIGNPATH_PROJECT_SLUG -or !$env:SIGNPATH_SIGNING_POLICY_SLUG) {
+              throw 'SignPath token configured without all required variables'
+            }
+            if (Test-Path ../signed) { Remove-Item ../signed -Recurse -Force }
+            'enabled=true' >> $env:GITHUB_OUTPUT
+          } else {
+            'enabled=false' >> $env:GITHUB_OUTPUT
+            Write-Host 'SignPath is not configured; retaining an unsigned release.'
+          }
+      - name: Sign (SignPath)
+        if: steps.signing.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.unsigned-artifact.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed
+      - name: Adopt signed installer and regenerate update metadata
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          $name = "DevCatz-Setup-$env:RELEASE_VERSION.exe"
+          $signed = @(Get-ChildItem ../signed -Recurse -File -Filter '*.exe')
+          if ($signed.Count -ne 1 -or $signed[0].Name -cne $name) { throw 'Expected exactly the selected signed installer' }
+          if ((Get-AuthenticodeSignature $signed[0].FullName).Status -ne 'Valid') { throw 'The returned installer signature is not valid' }
+          Copy-Item -LiteralPath $signed[0].FullName -Destination "dist/$name" -Force
+          node ../release-tools/scripts/windows-release.cjs refresh dist $env:RELEASE_VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'Signed update metadata regeneration failed' }
+      - name: Validate final release outputs
+        id: final-files
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: node ../release-tools/scripts/windows-release.cjs verify dist $env:RELEASE_VERSION
+      - name: Retain final release outputs regardless of publication choice
+        id: final-artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.final-files.outputs.files }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: inputs.upload
+    needs: [authorize, windows]
+    runs-on: ubuntu-latest
+    environment: devcatz-release
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - id: source
+        uses: catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        with:
+          tag: ${{ inputs.tag }}
+          expected-sha: ${{ needs.windows.outputs.sha }}
+          membership-token: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
+          github-token: ${{ github.token }}
+      - name: Download only the retained final artifact from this build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.windows.outputs.artifact-id }}
+          path: artifacts
+          merge-multiple: true
+      - name: Create release assets without replacement
+        uses: catzoidhub/DevCatz/.github/actions/publish-release@a24559385763f25f8cbd0114197f47bcbf1457fb
+        with:
+          tag: ${{ steps.source.outputs.tag }}
+          expected-sha: ${{ needs.windows.outputs.sha }}
+          files: |
+            artifacts/DevCatz-Setup-${{ steps.source.outputs.version }}.exe
+            artifacts/DevCatz-Setup-${{ steps.source.outputs.version }}.exe.blockmap
+            artifacts/latest.yml
+          github-token: ${{ github.token }}

@@ -1,0 +1,28 @@
+name: Release Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v-prefixed release tag in main history
+        required: true
+        type: string
+      upload:
+        description: Publish Linux packages and update metadata without replacing assets
+        type: boolean
+        default: false
+
+# The reusable workflow limits build/authorization jobs to read; only opt-in publication writes.
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    if: github.ref == 'refs/heads/main'
+    # Allowlist this exact reusable workflow SHA in the runner group, never this wrapper.
+    uses: catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@79034a2bb7dd9c54da6e2a9f3aec79460420cc8c
+    with:
+      tag: ${{ inputs.tag }}
+      upload: ${{ inputs.upload }}
+    secrets:
+      DEVCATZ_MEMBERS_READ_TOKEN: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
