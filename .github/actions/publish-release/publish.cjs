@@ -24,13 +24,21 @@ async function publishRelease({ repository, tag, expectedSha, files, githubToken
     'X-GitHub-Api-Version': '2022-11-28' }
   const repo = `https://api.github.com/repos/${repository}`
   const base = `${repo}/releases`
-  async function get(url) {
+  async function get(url, allowMissing = false) {
     const response = await fetch(url, { headers, redirect: 'error' })
+    if (allowMissing && response.status === 404) return undefined
     if (response.status !== 200) throw new Error(`Release preflight failed: HTTP ${response.status}`)
     return response.json()
   }
-  const release = await get(`${base}/tags/${encodeURIComponent(tag)}`)
-  if (!Number.isSafeInteger(release.id) || release.id <= 0 || release.tag_name !== tag) throw new Error('Invalid release preflight response')
+  let release = await get(`${base}/tags/${encodeURIComponent(tag)}`, true)
+  // The by-tag endpoint only returns published releases; drafts require the release list.
+  for (let page = 1; release === undefined; page++) {
+    const releases = await get(`${base}?per_page=100&page=${page}`)
+    if (!Array.isArray(releases)) throw new Error('Invalid release preflight response')
+    release = releases.find(candidate => candidate?.tag_name === tag)
+    if (release === undefined && releases.length < 100) throw new Error('Release preflight failed: HTTP 404 (no existing release for tag)')
+  }
+  if (!Number.isSafeInteger(release?.id) || release.id <= 0 || release.tag_name !== tag) throw new Error('Invalid release preflight response')
   async function checkBinding() {
     let { object } = await get(`${repo}/git/ref/tags/${encodeURIComponent(tag)}`)
     const seen = new Set()
