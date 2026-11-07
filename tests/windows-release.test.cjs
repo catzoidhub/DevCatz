@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { createHash } = require('node:crypto')
 const { gzipSync, gunzipSync } = require('node:zlib')
 const yaml = require('js-yaml')
@@ -84,4 +85,18 @@ test('after signing, refreshes metadata and blockmap from the final installer by
   assert.equal(map.files[0].sizes.reduce((a, b) => a + b, 0), signedBytes.length)
   assert.notDeepEqual(readFileSync(`${f.installer}.blockmap`), unsignedMap)
   await windowsRelease({ directory: f.directory, version: '1.1.0' })
+})
+
+test('workflow CLI exposes only validated exact artifact paths, and fails without outputs on invalid files', async t => {
+  const f = await fixture(t)
+  const output = join(f.directory, 'outputs')
+  const invoke = () => spawnSync(process.execPath, [join(__dirname, '../scripts/windows-release.cjs'), 'verify', f.directory, '1.1.0'], {
+    env: { ...process.env, GITHUB_OUTPUT: output }, encoding: 'utf8'
+  })
+  assert.equal(invoke().status, 0)
+  assert.equal(readFileSync(output, 'utf8'), `files<<WINDOWS_RELEASE_FILES\n${f.installer}\n${f.installer}.blockmap\n${join(f.directory, 'latest.yml')}\nWINDOWS_RELEASE_FILES\n`)
+  writeFileSync(output, '')
+  writeFileSync(`${f.installer}.blockmap`, 'corrupt')
+  assert.equal(invoke().status, 1)
+  assert.equal(readFileSync(output, 'utf8'), '')
 })
