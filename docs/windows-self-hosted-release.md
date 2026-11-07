@@ -12,7 +12,7 @@ Follow [the shared runner runbook](self-hosted-releases.md) first: dedicated
 non-administrator Windows x64 account/work directory, the `devcatz-release`
 organization runner group, public-repository opt-in, only this repository, and
 **immutable selected reusable workflows**. The group must allow the full
-`catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@<build-workflow commit>`
+`catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@5661962d5f7f5af186541f08690d28aadf1c7c82`
 used by the dispatcher. Do not allow `release-windows.yml`, mutable refs, or
 label-only access. Preserve the pinned commits when integrating; the dispatcher
 pin is committed after the reusable workflow so it names an existing commit.
