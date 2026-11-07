@@ -12,7 +12,7 @@ Follow [the shared runner runbook](self-hosted-releases.md) first: dedicated
 non-administrator Windows x64 account/work directory, the `devcatz-release`
 organization runner group, public-repository opt-in, only this repository, and
 **immutable selected reusable workflows**. The group must allow the full
-`catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@79034a2bb7dd9c54da6e2a9f3aec79460420cc8c`
+`catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@ef0864fd821eb5e66c40e8e666760e02d57a9c1a`
 used by the dispatcher. Do not allow `release-windows.yml`, mutable refs, or
 label-only access. Preserve the pinned commits when integrating; the dispatcher
 pin is committed after the reusable workflow so it names an existing commit.
@@ -21,7 +21,7 @@ The manual dispatcher must be on main. Environment `devcatz-release` must permit
 only main, with dedicated `DEVCATZ_MEMBERS_READ_TOKEN`; set the runner policy and
 expected Windows identity variables only after administrator verification. The
 hosted gate and **first step** in the persistent job both use the immutable
-validator `a056b5ddcbe378bca0fb678023b22cc05ca0ae67`. Both current actors must be
+validator `3f634e3bff1bd67ab81ec4044a2effe4e193c3e5`. Both current actors must be
 owners. The persistent check compares the tag against the gate's SHA, then
 checkout uses its own newly validated SHA with persisted credentials disabled.
 No selected source, lifecycle hooks, caches or tools run before this check.

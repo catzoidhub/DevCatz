@@ -66,8 +66,8 @@ public-repository opt-in, and immutable selected-workflow restrictions. Environm
 an actual owner-membership lookup and is stored only in that environment as
 `DEVCATZ_MEMBERS_READ_TOKEN`. Expected account variables and the policy-ready
 attestation are configured. The current runner-group allowlist contains only the
-readiness workflow at `c461c844f8fe04c09a47ad06abd168fbe9e5d581` and both release
-workflows at `79034a2bb7dd9c54da6e2a9f3aec79460420cc8c`. Both release wrappers use
+readiness workflow at `ef0864fd821eb5e66c40e8e666760e02d57a9c1a` and both release
+workflows at `ef0864fd821eb5e66c40e8e666760e02d57a9c1a`. Both release wrappers use
 that updated pin; publication/Linux validation tools use
 `a24559385763f25f8cbd0114197f47bcbf1457fb`.
 
