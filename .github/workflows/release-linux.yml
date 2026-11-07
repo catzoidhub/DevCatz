@@ -20,7 +20,9 @@ jobs:
   linux:
     if: github.ref == 'refs/heads/main'
     # Allowlist this exact reusable workflow SHA in the runner group, never this wrapper.
-    uses: catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@8ff6dd8e23a9d82a4d4c83198b689bde3f80dce9
+    uses: catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@c461c844f8fe04c09a47ad06abd168fbe9e5d581
     with:
       tag: ${{ inputs.tag }}
       upload: ${{ inputs.upload }}
+    secrets:
+      DEVCATZ_MEMBERS_READ_TOKEN: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}

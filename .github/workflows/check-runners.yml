@@ -14,6 +14,8 @@ permissions:
 jobs:
   readiness:
     # The runner group must allow this exact reusable workflow SHA, not this dispatcher.
-    uses: catzoidhub/DevCatz/.github/workflows/runner-readiness.yml@6b3a2beedb60c94847ccffb67744850d2115451e
+    uses: catzoidhub/DevCatz/.github/workflows/runner-readiness.yml@c461c844f8fe04c09a47ad06abd168fbe9e5d581
     with:
       tag: ${{ inputs.tag }}
+    secrets:
+      DEVCATZ_MEMBERS_READ_TOKEN: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}

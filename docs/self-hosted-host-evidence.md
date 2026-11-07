@@ -31,14 +31,29 @@ inaccessible to `devcatz`. Full filesystem/network isolation has not been audite
 
 Administrative SSH access and Windows Server 2022 Datacenter x64 were verified.
 The existing mailbox runner service was running as its separate `gha-mailbox`
-account. Approximately 445 GiB was free. No DevCatz account or directory existed
-at this baseline; Windows provisioning and account readiness remain pending.
+account. Approximately 445 GiB was free. Created the separate standard `devcatz`
+account with only the local Users group and isolated `C:\DevCatz` directories.
+Installed checksum-verified Node 22.23.4, Bun 1.4.4, MinGit 2.56.0.4 and
+PowerShell 7.6.9 in its own tools directory.
+
+The pinned readiness helper passed over temporary account-local SSH as `devcatz`:
+medium integrity, privileged groups excluded, all four tools executed and the
+temporary write/read/cleanup probe passed. Temporary SSH access and test artifacts
+were removed; revocation was checked. The mailbox runner remained running under
+its original account/process. No mailbox, SQL, network or global SSH configuration
+was changed. This does not yet prove runner service execution.
+
+The attempted scheduled task was blocked by batch-logon policy (Security event
+4625, status 0xc000015b); its task was removed. Service-logon rights must be granted
+specifically to `devcatz` when installing the runner service. Batch-logon rights
+were not broadened.
 
 ## Remaining evidence
 
-No DevCatz runner is registered or enabled. Organization runner-group permissions
-are blocked by the current GitHub credential's missing administration scope;
-environment policy, a dedicated membership-read credential, and runner-group
-enforcement still require configuration and live verification. Neither native
+No DevCatz runner is registered or enabled. GitHub API inspection confirmed group
+`devcatz-release` (ID 3) uses selected-repository access to only DevCatz, deliberate
+public-repository opt-in, and immutable selected-workflow restrictions. Environment
+`devcatz-release` permits only branch `main`. The membership-read credential and
+live policy enforcement still require verification. Neither native
 build, optional signing, workflow rejection/rerun/offline checks, nor controlled
 release publication has been exercised. No release assets were changed.

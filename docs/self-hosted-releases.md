@@ -1,16 +1,15 @@
 # Dedicated DevCatz release runners
 
 Implementation for [#3](https://github.com/catzoidhub/DevCatz/issues/3), under
-[#2](https://github.com/catzoidhub/DevCatz/issues/2). Windows packaging/publication
-and Linux packaging remain the responsibility of #4/#5. The existing Windows
-release workflow is unchanged by #3 and does not yet use this gate.
+[#2](https://github.com/catzoidhub/DevCatz/issues/2). Both platform release workflows
+reuse this gate; their runbooks cover packaging and publication for #4/#5.
 
 ## Current evidence and blockers
 
-Only local fixture tests and static workflow checks have been performed. No host
-login, account creation, runner registration, dedicated membership credential,
-GitHub policy configuration, dispatch, offline queue experiment or native build
-has been verified. The parent reported no runners, secrets or variables configured.
+Local fixture tests, typecheck and dedicated-account readiness on both real hosts
+have passed. The restricted runner group and main-only environment are configured;
+see [current host and policy evidence](self-hosted-host-evidence.md) for remaining
+registration, credential, service, workflow and native-build verification.
 Do not enable runners until the platform restrictions below are confirmed. Missing
 `DEVCATZ_RUNNER_POLICY_READY=true` or either credential fails validation.
 
@@ -105,6 +104,8 @@ There is no checkout or dependency installation in this action. It only calls th
 fixed GitHub API origin and reads manifest bytes through the contents API.
 
 1. A manual dispatcher on main calls an audited, SHA-pinned reusable workflow.
+   Declare and explicitly forward `DEVCATZ_MEMBERS_READ_TOKEN` in that call, even
+   when its value only exists in the called job's environment.
 2. Its hosted `authorize` job uses environment `devcatz-release` and invokes the
    action with `tag`, `membership-token` and `github-token`. Expose `sha` as a job
    output. Hosting the API-only gate does not provide a hosted build fallback.

@@ -2,9 +2,9 @@
 
 Implements the workflow and local validation for [#4](https://github.com/catzoidhub/DevCatz/issues/4)
 under [#2](https://github.com/catzoidhub/DevCatz/issues/2). Real Windows build,
-SignPath and GitHub Release publication verification are still blocked by missing
-hosts/runner registrations, policy setup and dedicated credentials. Fixture tests
-and static checks below are implementation evidence only.
+SignPath and GitHub Release publication verification remain outstanding. Dedicated
+account/tool readiness passed on the real host; see [host evidence](self-hosted-host-evidence.md).
+Fixture tests and static checks below are implementation evidence only.
 
 ## Enable only after runner-policy verification
 
@@ -12,7 +12,7 @@ Follow [the shared runner runbook](self-hosted-releases.md) first: dedicated
 non-administrator Windows x64 account/work directory, the `devcatz-release`
 organization runner group, public-repository opt-in, only this repository, and
 **immutable selected reusable workflows**. The group must allow the full
-`catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@5661962d5f7f5af186541f08690d28aadf1c7c82`
+`catzoidhub/DevCatz/.github/workflows/build-windows-release.yml@c461c844f8fe04c09a47ad06abd168fbe9e5d581`
 used by the dispatcher. Do not allow `release-windows.yml`, mutable refs, or
 label-only access. Preserve the pinned commits when integrating; the dispatcher
 pin is committed after the reusable workflow so it names an existing commit.
@@ -168,5 +168,5 @@ Use a **controlled disposable test release**, with accepted source/tag, to verif
 successful upload and a second collision attempt. Compare every existing asset's
 downloaded bytes before/after rejection. Exercise partial/concurrent publication
 there if possible; never use production assets for destructive experiments.
-No real host access, runner dispatch, signing, release mutation or controlled
-publication test has been performed by this implementation.
+Runner dispatch, native builds, signing, release mutation and controlled
+publication remain unverified.
