@@ -8,14 +8,14 @@ Do not register/start runners before those restrictions are verified.
 ## Integration status and pins
 
 The shared publication action is pinned to
-`315c741184808aaeae1e4a167e8d06c5ef7cc57a`; the dispatcher calls the completed
-reusable workflow at `c461c844f8fe04c09a47ad06abd168fbe9e5d581`. Allowlist that
-exact `catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@c461c844f8fe04c09a47ad06abd168fbe9e5d581` in the
+`a24559385763f25f8cbd0114197f47bcbf1457fb`; the dispatcher calls the completed
+reusable workflow at `79034a2bb7dd9c54da6e2a9f3aec79460420cc8c`. Allowlist that
+exact `catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@79034a2bb7dd9c54da6e2a9f3aec79460420cc8c` in the
 restricted `devcatz-release` group. Never allowlist the dispatcher or a branch.
 Preserve all referenced commits when integrating; do not squash away the pins.
 
 The Linux configuration/output checker is pinned independently to
-`bfa1925f2d2c6f9767440a9b6a246c729cecdfe1`. The owner/source gate and account/tool
+`a24559385763f25f8cbd0114197f47bcbf1457fb`. The owner/source gate and account/tool
 check use `a056b5ddcbe378bca0fb678023b22cc05ca0ae67`.
 
 The real Linux account/tool readiness check passed over administrative SSH; see
@@ -87,6 +87,11 @@ The contents-write publication job is skipped entirely when upload is false.
 An explicit upload uses a fresh hosted gate, downloads by the immutable artifact
 ID from the successful Linux job (also on a publication-only rerun), then calls
 the shared create-only publication action with exact newline-separated paths.
+It passes `expected-sha` from the Linux build's validated commit output, preserved
+through download, and rechecks the peeled tag and original release ID/tag name
+before and after each upload. Apply the shared runbook's
+[required tag/release mutation freeze and residual-race guidance](self-hosted-releases.md#publication-source-binding-and-required-mutation-freeze);
+these API checks cannot make source binding atomic.
 Its token is supplied only to that action step; membership secrets are supplied
 only to validation steps.
 
@@ -107,6 +112,18 @@ mapping. AppImage differential updates use the **embedded** blockmap; there is n
 separate `.AppImage.blockmap` asset to publish. Debian updates use the `.deb`
 entry in the same metadata and the packaged `resources/package-type` identity.
 These checks do not execute package contents or install scripts.
+
+Blockmap validation regenerates the authoritative map from exactly the AppImage
+payload preceding the compressed map and four-byte footer, then compares the
+complete parsed maps. This verifies chunk names/offsets, sizes, complete coverage
+and checksums, rejecting both malformed-but-decompressible maps and well-formed
+maps for stale payload bytes even when outer SHA-512 metadata has been updated.
+The locked `app-builder-lib@26.15.3` dependency provides `buildBlockMap` (Rabin
+chunks, base64-encoded 18-byte BLAKE2b checksums); this version does not install
+`app-builder-bin`. The checker reuses that generator just like the Windows tool,
+without adding a dependency or implementing chunking/hashing. It streams the
+payload to a private temporary directory, requiring disk space for one payload
+copy, and cleans it on success or failure without modifying retained packages.
 
 The supported output here is `latest-linux.yml`. The app also has an optional
 beta feed; beta-channel feed delivery and metadata routing are not verified by
@@ -156,4 +173,7 @@ Local evidence only: dependency installation with lifecycle scripts disabled;
 `node --test tests/linux-release.test.cjs tests/release-source.test.cjs tests/runner-readiness.test.cjs`;
 builder configuration schema validation and parsed preservation of existing platform
 settings; actionlint on the workflows. Linux tests use synthetic package bytes and
-fixture responses at the `dpkg-deb` command boundary, not native Electron packages.
+fixture responses at the `dpkg-deb` command boundary, with real blockmaps generated
+by the installed builder, not native Electron packages. Publication tests use
+simulated GitHub responses; actual native/update/publication verification still
+requires the main rollout.

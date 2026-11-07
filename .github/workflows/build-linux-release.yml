@@ -66,7 +66,7 @@ jobs:
       - name: Checkout immutable Linux packaging configuration and checks
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: bfa1925f2d2c6f9767440a9b6a246c729cecdfe1
+          ref: a24559385763f25f8cbd0114197f47bcbf1457fb
           path: release-tools
           persist-credentials: false
           sparse-checkout: |
@@ -108,7 +108,7 @@ jobs:
           RELEASE_TAG: ${{ steps.source.outputs.tag }}
           UPLOAD: ${{ inputs.upload }}
         run: |
-          printf 'Linux source: `%s` at `%s`\n\nPackaging/checks: `bfa1925f2d2c6f9767440a9b6a246c729cecdfe1`\n\nRelease publication requested: `%s`\n' "$RELEASE_TAG" "$SOURCE_SHA" "$UPLOAD" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Linux source: `%s` at `%s`\n\nPackaging/checks: `a24559385763f25f8cbd0114197f47bcbf1457fb`\n\nRelease publication requested: `%s`\n' "$RELEASE_TAG" "$SOURCE_SHA" "$UPLOAD" >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     # This hosted job only transfers immutable artifacts; Linux builds stay self-hosted.
@@ -134,9 +134,10 @@ jobs:
           path: linux-artifacts
           merge-multiple: true
       - name: Publish without replacing release assets
-        uses: catzoidhub/DevCatz/.github/actions/publish-release@315c741184808aaeae1e4a167e8d06c5ef7cc57a
+        uses: catzoidhub/DevCatz/.github/actions/publish-release@a24559385763f25f8cbd0114197f47bcbf1457fb
         with:
           tag: ${{ steps.source.outputs.tag }}
+          expected-sha: ${{ needs.linux.outputs.sha }}
           files: |
             ${{ github.workspace }}/linux-artifacts/DevCatz-${{ needs.linux.outputs.version }}-x64.AppImage
             ${{ github.workspace }}/linux-artifacts/DevCatz-${{ needs.linux.outputs.version }}-amd64.deb

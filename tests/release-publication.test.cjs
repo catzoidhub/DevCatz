@@ -14,7 +14,8 @@ function fixture(t, names = ['DevCatz-Setup-1.1.0.exe', 'latest.yml']) {
   const requests = []
   const fetch = async (url, options = {}) => {
     requests.push([url, options.method || 'GET'])
-    if (url.includes('/tags/')) return Response.json({ id: 7 })
+    if (url.includes('/git/ref/tags/')) return Response.json({ object: { type: 'commit', sha: 'a'.repeat(40) } })
+    if (url.includes('/releases/tags/') || url.endsWith('/releases/7')) return Response.json({ id: 7, tag_name: 'v1.1.0' })
     if (url.startsWith('https://api.github.com/') && url.includes('/assets?')) return Response.json([...assets.keys()].map(name => ({ name })))
     if (url.startsWith('https://uploads.github.com/') && options.method === 'POST') {
       const name = new URL(url).searchParams.get('name')
@@ -24,9 +25,75 @@ function fixture(t, names = ['DevCatz-Setup-1.1.0.exe', 'latest.yml']) {
     }
     throw new Error(`Unexpected request: ${url}`)
   }
-  return { input: { repository: 'catzoidhub/DevCatz', tag: 'v1.1.0', files: paths.join('\n'), githubToken: 'test-token' },
+  return { input: { repository: 'catzoidhub/DevCatz', tag: 'v1.1.0', expectedSha: 'a'.repeat(40), files: paths.join('\n'), githubToken: 'test-token' },
     paths, assets, requests, fetch }
 }
+
+test('a tag moved after build validation cannot receive any retained files', async t => {
+  const f = fixture(t)
+  const fetch = (url, options) => url.includes('/git/ref/tags/')
+    ? Promise.resolve(Response.json({ object: { type: 'commit', sha: 'b'.repeat(40) } })) : f.fetch(url, options)
+  await assert.rejects(publishRelease(f.input, { fetch }), /binding.*before upload/i)
+  assert.equal(f.assets.size, 0)
+})
+
+test('a retargeted, replaced or deleted release after asset preflight receives no files', async t => {
+  for (const release of [{ id: 7, tag_name: 'v2.0.0' }, { id: 8, tag_name: 'v1.1.0' }, null]) {
+    const f = fixture(t)
+    const fetch = (url, options) => url.endsWith('/releases/7')
+      ? Promise.resolve(Response.json(release, { status: release ? 200 : 404 })) : f.fetch(url, options)
+    await assert.rejects(publishRelease(f.input, { fetch }), /binding.*before upload/i)
+    assert.equal(f.assets.size, 0)
+  }
+})
+
+test('publication requires the validated immutable SHA before any API request', async t => {
+  const f = fixture(t)
+  for (const expectedSha of [undefined, '', 'main', 'a'.repeat(39), `${'a'.repeat(40)}\n`]) {
+    await assert.rejects(publishRelease({ ...f.input, expectedSha }, { fetch: f.fetch }), /immutable expected-sha/)
+  }
+  assert.equal(f.requests.length, 0)
+})
+
+test('publication peels annotated tags and rejects malformed or cyclic Git objects', async t => {
+  const f = fixture(t)
+  const fetch = (url, options) => url.includes('/git/ref/tags/')
+    ? Promise.resolve(Response.json({ object: { type: 'tag', sha: 'c'.repeat(40) } }))
+    : url.includes('/git/tags/') ? Promise.resolve(Response.json({ object: { type: 'commit', sha: f.input.expectedSha } }))
+      : f.fetch(url, options)
+  assert.equal((await publishRelease(f.input, { fetch })).length, 2)
+  for (const object of [{ type: 'tag', sha: 'c'.repeat(40) }, { type: 'tree', sha: f.input.expectedSha },
+    { type: 'commit', sha: 'invalid' }, {}]) {
+    const bad = fixture(t)
+    await assert.rejects(publishRelease(bad.input, { fetch: (url, options) => url.includes('/git/')
+      ? Promise.resolve(Response.json({ object })) : bad.fetch(url, options) }), /binding.*before upload/i)
+    assert.equal(bad.assets.size, 0)
+  }
+})
+
+test('source or release drift during any upload reports confirmed assets, including the final upload', async t => {
+  for (const drift of ['tag', 'release']) for (const upload of [1, 2, 3]) {
+    const f = fixture(t, ['package.AppImage', 'package.deb', 'latest-linux.yml'])
+    let changed = false
+    const fetch = async (url, options) => {
+      if (changed && drift === 'tag' && url.includes('/git/ref/tags/')) {
+        return Response.json({ object: { type: 'commit', sha: 'b'.repeat(40) } })
+      }
+      if (changed && drift === 'release' && url.endsWith('/releases/7')) return Response.json({ id: 7, tag_name: 'v2.0.0' })
+      const response = await f.fetch(url, options)
+      if (options?.method === 'POST' && f.assets.size === upload) changed = true
+      return response
+    }
+    await assert.rejects(publishRelease(f.input, { fetch }), error => {
+      assert.match(error.message, /Partial publication.*binding.*after upload/)
+      for (const name of [...f.assets.keys()]) assert(error.message.includes(name))
+      return true
+    })
+    assert.equal(f.assets.size, upload)
+    assert.deepEqual([...f.assets.values()], ['asset 0', 'asset 1', 'asset 2'].slice(0, upload))
+    assert(f.requests.every(([, method]) => ['GET', 'POST'].includes(method)))
+  }
+})
 
 test('publishes exact retained files to an existing release without changing other assets', async t => {
   const f = fixture(t)
