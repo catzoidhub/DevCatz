@@ -137,7 +137,7 @@ jobs:
           path: linux-artifacts
           merge-multiple: true
       - name: Publish without replacing release assets
-        uses: catzoidhub/DevCatz/.github/actions/publish-release@a24559385763f25f8cbd0114197f47bcbf1457fb
+        uses: catzoidhub/DevCatz/.github/actions/publish-release@256531de305d974dae311bd108c65ec5194dbf85
         with:
           tag: ${{ steps.source.outputs.tag }}
           expected-sha: ${{ needs.linux.outputs.sha }}

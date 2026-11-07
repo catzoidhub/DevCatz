@@ -123,9 +123,9 @@ test('preflights every asset page before uploading any Windows or Linux file', a
 })
 
 test('missing release or failed asset lookup fails closed without uploads', async t => {
-  for (const endpoint of ['/tags/', '/assets?']) {
+  for (const endpoint of ['/releases?', '/assets?']) {
     const f = fixture(t)
-    const fetch = (url, options) => url.includes(endpoint)
+    const fetch = (url, options) => url.includes(endpoint) || (endpoint === '/releases?' && url.includes('/tags/'))
       ? Promise.resolve(Response.json({ message: 'private API details' }, { status: 404 })) : f.fetch(url, options)
     await assert.rejects(publishRelease(f.input, { fetch }), /preflight.*HTTP 404/)
     assert.equal(f.assets.size, 0)
@@ -179,4 +179,53 @@ test('publishes the same exact-file contract for Linux package names', async t =
   const f = fixture(t, ['DevCatz-1.1.0-x64.AppImage', 'devcatz_1.1.0_amd64.deb', 'latest-linux.yml'])
   assert.deepEqual(await publishRelease(f.input, { fetch: f.fetch }), ['DevCatz-1.1.0-x64.AppImage', 'devcatz_1.1.0_amd64.deb', 'latest-linux.yml'])
   assert.equal(f.assets.size, 3)
+})
+
+
+test('finds an existing draft by exact tag across release pages when the published-tag endpoint returns 404', async t => {
+  const f = fixture(t)
+  const pages = []
+  const fetch = (url, options) => {
+    if (url.includes('/releases/tags/')) return Promise.resolve(Response.json({}, { status: 404 }))
+    if (url.includes('/releases?')) {
+      const page = Number(new URL(url).searchParams.get('page'))
+      pages.push(page)
+      return Promise.resolve(Response.json(page === 1
+        ? Array.from({ length: 100 }, (_, i) => ({ id: i + 100, tag_name: `vother-${i}` }))
+        : [{ id: 7, tag_name: 'v1.1.0', draft: true }]))
+    }
+    return f.fetch(url, options)
+  }
+  assert.deepEqual(await publishRelease(f.input, { fetch }), ['DevCatz-Setup-1.1.0.exe', 'latest.yml'])
+  assert.deepEqual(pages, [1, 2])
+})
+
+test('missing or inaccessible drafts and malformed release lists fail before uploading', async t => {
+  for (const body of [[], {}, [null, { tag_name: 'other' }]]) {
+    const f = fixture(t)
+    const fetch = (url, options) => url.includes('/releases/tags/')
+      ? Promise.resolve(Response.json({}, { status: 404 }))
+      : url.includes('/releases?') ? Promise.resolve(Response.json(body)) : f.fetch(url, options)
+    await assert.rejects(publishRelease(f.input, { fetch }), /preflight/i)
+    assert.equal(f.assets.size, 0)
+  }
+})
+
+
+test('malformed successful by-tag responses never fall back to a draft or upload', async t => {
+  for (const body of [null, false, 0, '']) {
+    const f = fixture(t)
+    let listed = false
+    const fetch = (url, options) => {
+      if (url.includes('/releases/tags/')) return Promise.resolve(Response.json(body))
+      if (url.includes('/releases?')) {
+        listed = true
+        return Promise.resolve(Response.json([{ id: 7, tag_name: 'v1.1.0', draft: true }]))
+      }
+      return f.fetch(url, options)
+    }
+    await assert.rejects(publishRelease(f.input, { fetch }), /Invalid release preflight response/)
+    assert.equal(listed, false)
+    assert.equal(f.assets.size, 0)
+  }
 })
