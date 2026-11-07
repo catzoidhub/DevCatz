@@ -1,0 +1,144 @@
+name: Build Linux release (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing v-prefixed release tag in main history
+        required: true
+        type: string
+      upload:
+        description: Publish validated files to an existing release without replacing assets
+        type: boolean
+        default: false
+    secrets:
+      DEVCATZ_MEMBERS_READ_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    environment: devcatz-release
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - id: source
+        uses: catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        with:
+          tag: ${{ inputs.tag }}
+          membership-token: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
+          github-token: ${{ github.token }}
+
+  linux:
+    needs: authorize
+    environment: devcatz-release
+    timeout-minutes: 90
+    runs-on:
+      group: devcatz-release
+      labels: [self-hosted, Linux, X64, devcatz, devcatz-linux-x64]
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+      artifact-id: ${{ steps.artifacts.outputs.artifact-id }}
+    steps:
+      # Failed-job reruns must recheck owners and tag movement before touching source.
+      - id: source
+        uses: catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        with:
+          tag: ${{ inputs.tag }}
+          expected-sha: ${{ needs.authorize.outputs.sha }}
+          membership-token: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
+          github-token: ${{ github.token }}
+      - name: Check dedicated account and installed tools
+        uses: catzoidhub/DevCatz/.github/actions/runner-readiness@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        with:
+          expected-user: ${{ vars.DEVCATZ_LINUX_RUNNER_USER }}
+      - name: Checkout locally validated source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          path: source
+          persist-credentials: false
+      - name: Checkout immutable Linux packaging configuration and checks
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: bfa1925f2d2c6f9767440a9b6a246c729cecdfe1
+          path: release-tools
+          persist-credentials: false
+          sparse-checkout: |
+            electron-builder.yml
+            .github/linux-release
+          sparse-checkout-cone-mode: false
+      - name: Install locked dependencies
+        working-directory: source
+        run: bun install --frozen-lockfile
+      - name: Build validated source
+        working-directory: source
+        run: bun run build
+      - name: Package AppImage and Debian (x64)
+        working-directory: source
+        # Older accepted tags lack Linux config. Always use the separately reviewed pin.
+        run: >-
+          node node_modules/electron-builder/cli.js --linux AppImage deb --x64 --publish never
+          --config ../release-tools/electron-builder.yml
+          -c.extraMetadata.homepage=https://github.com/catzoidhub/DevCatz
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Validate package names, architecture and update metadata
+        id: packages
+        working-directory: source
+        env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+        run: NODE_PATH="$PWD/node_modules" node ../release-tools/.github/linux-release/validate.cjs "$PWD/dist" "$RELEASE_VERSION"
+      - name: Retain validated Linux outputs
+        id: artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.packages.outputs.files }}
+          if-no-files-found: error
+          retention-days: 14
+      - name: Record build source and packaging pin
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          RELEASE_TAG: ${{ steps.source.outputs.tag }}
+          UPLOAD: ${{ inputs.upload }}
+        run: |
+          printf 'Linux source: `%s` at `%s`\n\nPackaging/checks: `bfa1925f2d2c6f9767440a9b6a246c729cecdfe1`\n\nRelease publication requested: `%s`\n' "$RELEASE_TAG" "$SOURCE_SHA" "$UPLOAD" >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    # This hosted job only transfers immutable artifacts; Linux builds stay self-hosted.
+    if: inputs.upload
+    needs: linux
+    runs-on: ubuntu-latest
+    environment: devcatz-release
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - id: source
+        uses: catzoidhub/DevCatz/.github/actions/validate-release@a056b5ddcbe378bca0fb678023b22cc05ca0ae67
+        with:
+          tag: ${{ inputs.tag }}
+          expected-sha: ${{ needs.linux.outputs.sha }}
+          membership-token: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
+          github-token: ${{ github.token }}
+      - name: Download the validated build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.linux.outputs.artifact-id }}
+          path: linux-artifacts
+          merge-multiple: true
+      - name: Publish without replacing release assets
+        uses: catzoidhub/DevCatz/.github/actions/publish-release@315c741184808aaeae1e4a167e8d06c5ef7cc57a
+        with:
+          tag: ${{ steps.source.outputs.tag }}
+          files: |
+            ${{ github.workspace }}/linux-artifacts/DevCatz-${{ needs.linux.outputs.version }}-x64.AppImage
+            ${{ github.workspace }}/linux-artifacts/DevCatz-${{ needs.linux.outputs.version }}-amd64.deb
+            ${{ github.workspace }}/linux-artifacts/latest-linux.yml
+          github-token: ${{ github.token }}

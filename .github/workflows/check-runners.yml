@@ -1,0 +1,21 @@
+name: Check dedicated release runners
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v-prefixed release tag in main history
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    # The runner group must allow this exact reusable workflow SHA, not this dispatcher.
+    uses: catzoidhub/DevCatz/.github/workflows/runner-readiness.yml@c461c844f8fe04c09a47ad06abd168fbe9e5d581
+    with:
+      tag: ${{ inputs.tag }}
+    secrets:
+      DEVCATZ_MEMBERS_READ_TOKEN: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
