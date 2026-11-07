@@ -20,8 +20,7 @@ jobs:
   linux:
     if: github.ref == 'refs/heads/main'
     # Allowlist this exact reusable workflow SHA in the runner group, never this wrapper.
-    # Publication's placeholder pin inside it must be resolved and this pin updated before enabling.
-    uses: catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@d8732012303204bcade550a3288e8262c529fb40
+    uses: catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@8ff6dd8e23a9d82a4d4c83198b689bde3f80dce9
     with:
       tag: ${{ inputs.tag }}
       upload: ${{ inputs.upload }}

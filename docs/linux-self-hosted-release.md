@@ -7,12 +7,10 @@ Do not register/start runners before those restrictions are verified.
 
 ## Integration status and pins
 
-This is **not yet deployable**. The publication action reference is deliberately
-`0000000000000000000000000000000000000000`, a temporary full-SHA placeholder. The
-Windows implementer owns that shared action. The parent must replace the placeholder
-with its reviewed immutable commit, commit the updated reusable Linux workflow,
-and update the manual dispatcher's pin to that new workflow commit. Allowlist that
-exact `catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@<SHA>` in the
+The shared publication action is pinned to
+`315c741184808aaeae1e4a167e8d06c5ef7cc57a`; the dispatcher calls the completed
+reusable workflow at `8ff6dd8e23a9d82a4d4c83198b689bde3f80dce9`. Allowlist that
+exact `catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@8ff6dd8e23a9d82a4d4c83198b689bde3f80dce9` in the
 restricted `devcatz-release` group. Never allowlist the dispatcher or a branch.
 Preserve all referenced commits when integrating; do not squash away the pins.
 
@@ -20,10 +18,10 @@ The Linux configuration/output checker is pinned independently to
 `bfa1925f2d2c6f9767440a9b6a246c729cecdfe1`. The owner/source gate and account/tool
 check use `a056b5ddcbe378bca0fb678023b22cc05ca0ae67`.
 
-No real Linux host, dedicated account, runner registration, membership credential,
-policy enforcement, workflow dispatch, native build, installation, application
-launch, updater feed/download/install, or release publication has been verified.
-There are no host/run URLs or production verification claims in this change.
+The real Linux account/tool readiness check passed over administrative SSH; see
+[host evidence](self-hosted-host-evidence.md). Runner registration, membership
+credentials, policy enforcement, workflow dispatch, native build, installation,
+application launch, updater behavior and publication remain unverified.
 
 ## Source and packaging contract
 
@@ -130,8 +128,7 @@ Only after inspecting artifacts, dispatch with `-f upload=true` for an existing
 controlled test release. This performs a new build; it does not publish an earlier
 upload-disabled run. The shared action must preflight every intended asset name
 across all pages, reject collisions, create only, and report partial failures.
-Linux implements no separate upload or overwrite logic. Explicit upload will fail
-until the parent replaces the shared-action placeholder and repins the wrapper.
+Linux implements no separate upload or overwrite logic.
 
 For a partial upload, retain the downloadable artifact, inspect the reported
 successful/failed asset names and verify bytes. A rerun must reject already-created
