@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { keyLabel, words } from '@shared/platform';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorUpdate } from '@shared/types';
 import Sparkline from './Sparkline.vue';
@@ -311,7 +311,7 @@ const minutesShown = 10;
           <thead>
             <tr class="select-none">
               <th class="cursor-pointer" @click="sortKey = 'name'">Name {{ sortKey === 'name' ? '↑' : '' }}</th>
-              <th class="w-44 cursor-pointer" :title="`Per core, like ${isWin ? 'Resource Monitor' : 'Activity Monitor'}: 100% = one core busy (this ${words.computer} has more), so a row can go above 100%`" @click="sortKey = 'cpu'">CPU <span class="normal-case opacity-60">(of one core)</span> {{ sortKey === 'cpu' ? '↓' : '' }}</th>
+              <th class="w-44 cursor-pointer" :title="`Per core, like ${isWin ? 'Resource Monitor' : isLinux ? 'top' : 'Activity Monitor'}: 100% = one core busy (this ${words.computer} has more), so a row can go above 100%`" @click="sortKey = 'cpu'">CPU <span class="normal-case opacity-60">(of one core)</span> {{ sortKey === 'cpu' ? '↓' : '' }}</th>
               <th class="w-44 cursor-pointer" @click="sortKey = 'mem'">Memory {{ sortKey === 'mem' ? '↓' : '' }}</th>
               <th class="cursor-pointer whitespace-nowrap" @click="sortKey = 'net'">Network ↓ / ↑ {{ sortKey === 'net' ? '↓' : '' }}</th>
               <th class="cursor-pointer whitespace-nowrap" @click="sortKey = 'io'">Disk I/O R / W {{ sortKey === 'io' ? '↓' : '' }}</th>
@@ -405,7 +405,7 @@ const minutesShown = 10;
       </div>
 
       <p class="text-xs opacity-60">
-        CPU is per core (100% = one core busy); <template v-if="isWin">memory is each process tree’s private working set, like Task Manager; per-site network traffic is not measured on Windows (the Network card counts the whole PC).</template><template v-else>memory is each process tree’s footprint, like Activity Monitor.</template> {{ words.phpServer }} pools are shared by the PHP sites listed
+        CPU is per core (100% = one core busy); <template v-if="isWin">memory is each process tree’s private working set, like Task Manager; per-site network traffic is not measured on Windows (the Network card counts the whole PC).</template><template v-else-if="isLinux">memory is each process tree’s resident memory (RSS); per-site network traffic is not measured on Linux (the Network card counts the whole PC).</template><template v-else>memory is each process tree’s footprint, like Activity Monitor.</template> {{ words.phpServer }} pools are shared by the PHP sites listed
         under them.
         <template v-if="latest?.capabilities.blockIoHint"><br /><span class="text-warning">{{ latest.capabilities.blockIoHint }}</span></template>
         <br />Alerts and the sampling rate: Settings → Monitoring.

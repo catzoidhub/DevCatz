@@ -1,13 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, statfsSync, writeFileSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
 import { cpus, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorSnapshot, MonitorSystem, MonitorUpdate } from '@shared/types';
 import { words } from '@shared/platform';
 import { sizeOf as walkSizeOf } from './depclean';
 import { run } from './env';
-import { isWin } from './platform';
+import { isLinux, isWin } from './platform';
 import { dataDir, store } from './store';
 
 /**
@@ -25,6 +26,11 @@ import { dataDir, store } from './store';
  * Windows: one PowerShell kept running (WinSampler) answers each sample — Win32_Process for the trees, CPU time,
  * working set and I/O bytes, the OS's free memory and page file, the network adapters' byte counters (Windows has
  * no per-process network counters without ETW, so the rows show none), Get-NetTCPConnection for ports.
+ *
+ * Linux: /proc instead of ps and the helper — /proc/<pid>/stat for the trees, CPU time (in clock ticks) and RSS,
+ * /proc/<pid>/io for disk bytes (readable for the user's own processes, which is every one DevCatz starts),
+ * /proc/meminfo and /proc/pressure/memory for the system, /proc/net/dev for the adapters (per-process network
+ * needs root there too, so the rows show none, like Windows) and `ss` for ports.
  */
 
 /** A site or service: its main pids and the folders whose size is shown. */
@@ -282,6 +288,94 @@ function dockerBytes(v: string): number {
   return Number(m[1]) * (m[2]?.includes('i') ? 1024 : 1000) ** pow;
 }
 
+/** Linux: one pass over /proc per sample (see the comment at the top). */
+class LinuxSampler {
+  private page = 4096;
+  private hz = 100;
+  private ready: Promise<void>;
+
+  constructor() {
+    this.ready = (async () => {
+      const r = await run('getconf', ['PAGESIZE']).catch(() => null);
+      const t = await run('getconf', ['CLK_TCK']).catch(() => null);
+      if (Number(r?.stdout.trim()) > 0) this.page = Number(r!.stdout.trim());
+      if (Number(t?.stdout.trim()) > 0) this.hz = Number(t!.stdout.trim());
+    })();
+  }
+
+  async query(): Promise<{ procs: Map<number, Proc>; io: Map<number, [number, number, number]>; rx: number; tx: number }> {
+    await this.ready;
+    const procs = new Map<number, Proc>();
+    const io = new Map<number, [number, number, number]>();
+    const pids = (await readdir('/proc').catch(() => [] as string[])).filter((n) => /^\d+$/.test(n));
+    await Promise.all(
+      pids.map(async (n) => {
+        const pid = Number(n);
+        const stat = await readFile(`/proc/${n}/stat`, 'utf8').catch(() => null);
+        if (!stat) return;
+        // The name (field 2) is in parentheses and may hold spaces or ')': the fields start after the last ')'.
+        const f = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        // f[0] = field 3 (state): ppid is field 4, utime 14, stime 15, rss 24.
+        procs.set(pid, { ppid: Number(f[1]), rss: Number(f[21]) * this.page, cpuSec: (Number(f[11]) + Number(f[12])) / this.hz });
+        const txt = await readFile(`/proc/${n}/io`, 'utf8').catch(() => null);
+        if (!txt) return;
+        const v = (k: string) => Number(txt.match(new RegExp(`^${k}: (\\d+)`, 'm'))?.[1] ?? 0);
+        io.set(pid, [v('read_bytes'), v('write_bytes'), 0]);
+      }),
+    );
+    let rx = 0;
+    let tx = 0;
+    const dev = await readFile('/proc/net/dev', 'utf8').catch(() => '');
+    for (const line of dev.split('\n').slice(2)) {
+      const [name, rest] = line.split(':');
+      if (!rest || name.trim() === 'lo') continue;
+      const c = rest.trim().split(/\s+/).map(Number);
+      rx += c[0] || 0;
+      tx += c[8] || 0;
+    }
+    return { procs, io, rx, tx };
+  }
+
+  /** Listening ports and established connections per pid (`ss` names the pid for the user's own sockets). */
+  async sockets(): Promise<Map<number, { ports: Set<number>; conns: number }>> {
+    const out = new Map<number, { ports: Set<number>; conns: number }>();
+    const r = await run('ss', ['-tanpH'], { timeout: 10_000 });
+    for (const line of r.stdout.split('\n')) {
+      const cols = line.trim().split(/\s+/);
+      if (cols.length < 6) continue;
+      const state = cols[0];
+      if (state !== 'LISTEN' && state !== 'ESTAB') continue;
+      const port = Number(cols[3].match(/:(\d+)$/)?.[1]);
+      for (const m of line.matchAll(/pid=(\d+)/g)) {
+        const pid = Number(m[1]);
+        const s = out.get(pid) ?? { ports: new Set<number>(), conns: 0 };
+        out.set(pid, s);
+        if (state === 'LISTEN') {
+          if (port) s.ports.add(port);
+        } else s.conns++;
+      }
+    }
+    return out;
+  }
+
+  /** Used = MemTotal − MemAvailable (what `free` calls used + what cannot be reclaimed); pressure from PSI. */
+  async memory(): Promise<{ total: number; used: number; swapUsed: number; pressure: MonitorSystem['memPressure'] }> {
+    const info = await readFile('/proc/meminfo', 'utf8').catch(() => '');
+    const kb = (k: string) => Number(info.match(new RegExp(`^${k}:\\s+(\\d+)`, 'm'))?.[1] ?? 0) * 1024;
+    const total = kb('MemTotal');
+    const psi = await readFile('/proc/pressure/memory', 'utf8').catch(() => '');
+    const avg = (k: string) => Number(psi.match(new RegExp(`^${k} avg10=([\\d.]+)`, 'm'))?.[1] ?? NaN);
+    const some = avg('some');
+    const full = avg('full');
+    return {
+      total,
+      used: Math.max(0, total - kb('MemAvailable')),
+      swapUsed: Math.max(0, kb('SwapTotal') - kb('SwapFree')),
+      pressure: Number.isNaN(some) ? null : full >= 10 ? 'critical' : some >= 10 ? 'warn' : 'normal',
+    };
+  }
+}
+
 export class Monitor {
   private timer: NodeJS.Timeout | null = null;
   private live = false;
@@ -310,6 +404,7 @@ export class Monitor {
   private savedAt = 0;
   private sockets = new Map<number, { ports: Set<number>; conns: number }>();
   private win = isWin ? new WinSampler() : null;
+  private linux = isLinux ? new LinuxSampler() : null;
   private winLast: WinSample | null = null;
   private prevAdapters: { at: number; rx: number; tx: number } | null = null;
   private adapterRate = { netIn: 0, netOut: 0 };
@@ -583,6 +678,32 @@ export class Monitor {
         netOut: this.adapterRate.netOut,
       };
     }
+    if (this.linux) {
+      const m = await this.linux.memory();
+      let diskTotal = 0;
+      let diskFree = 0;
+      try {
+        const fs = statfsSync('/');
+        diskTotal = fs.blocks * fs.bsize;
+        diskFree = fs.bavail * fs.bsize;
+      } catch {
+        /* no root filesystem? */
+      }
+      const l = loadavg();
+      return {
+        cpu: Math.max(0, Math.min(100, cpu)),
+        cores: c.length,
+        load: [l[0], l[1], l[2]],
+        memTotal: m.total || totalmem(),
+        memUsed: m.used,
+        memPressure: m.pressure,
+        swapUsed: m.swapUsed,
+        diskTotal,
+        diskFree,
+        netIn: this.adapterRate.netIn,
+        netOut: this.adapterRate.netOut,
+      };
+    }
     // Memory Used = app (anonymous) + wired + compressed, from vm_stat.
     const vm = (await run('vm_stat', [])).stdout;
     const page = Number(vm.match(/page size of (\d+)/)?.[1] ?? 16384);
@@ -694,6 +815,16 @@ export class Monitor {
       const span = prev ? (now - prev.at) / 1000 : 0;
       this.adapterRate = span > 0 ? { netIn: Math.max(0, (w.rx - prev!.rx) / span), netOut: Math.max(0, (w.tx - prev!.tx) / span) } : { netIn: 0, netOut: 0 };
       this.prevAdapters = { at: now, rx: w.rx, tx: w.tx };
+    } else if (this.linux) {
+      const l = await this.linux.query();
+      procs = l.procs;
+      ru = l.io;
+      net = new Map();
+      if (this.live) this.sockets = await this.linux.sockets().catch(() => this.sockets);
+      const prev = this.prevAdapters;
+      const span = prev ? (now - prev.at) / 1000 : 0;
+      this.adapterRate = span > 0 ? { netIn: Math.max(0, (l.rx - prev!.rx) / span), netOut: Math.max(0, (l.tx - prev!.tx) / span) } : { netIn: 0, netOut: 0 };
+      this.prevAdapters = { at: now, rx: l.rx, tx: l.tx };
     } else {
       const [ps, r, n] = await Promise.all([
         run('ps', ['-A', '-o', 'pid=,ppid=,rss=,time='], { timeout: 10_000 }),
@@ -857,7 +988,7 @@ export class Monitor {
       system,
       total,
       entities,
-      capabilities: { blockIo: isWin || Boolean(this.helper), net: net.size > 0, docker: this.dockerOk, blockIoHint: this.helperHint },
+      capabilities: { blockIo: isWin || isLinux || Boolean(this.helper), net: net.size > 0, docker: this.dockerOk, blockIoHint: this.helperHint },
     };
   }
 
