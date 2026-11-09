@@ -6,6 +6,7 @@ import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorUpd
 import Sparkline from './Sparkline.vue';
 import StackMark from './StackMark.vue';
 import { stackTag } from '../runtimes';
+import { STACK_ICONS } from '../stackicons';
 import DepsCleanup from './DepsCleanup.vue';
 import { attempt, herd, notify, state } from '../store';
 import { monitorLogo } from '../logos';
@@ -179,6 +180,10 @@ const KIND_COLOR: Record<MonitorKind, string> = {
 const logoOf = (e: MonitorEntity) => monitorLogo(e, state.value?.databases ?? []);
 /** A site's main framework (Laravel, Next.js, Rails …), the same mark as in the site list (TODO §36). */
 const siteTagOf = (e: MonitorEntity) => {
+  // A runtime's own processes: PHP-FPM pools (php-cgi workers on Windows) carry PHP's mark.
+  if (e.kind === 'php') return { label: 'PHP', icon: STACK_ICONS.php };
+  // Containers of the sites' compose projects (Docker tab): Docker's mark.
+  if (e.kind === 'container') return { label: 'Docker', icon: STACK_ICONS.docker };
   if (e.kind !== 'site') return null;
   const p = state.value?.projects.find((x) => `site:${x.id}` === e.id);
   return p ? stackTag(p) : null;

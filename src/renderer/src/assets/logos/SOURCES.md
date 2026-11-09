@@ -137,4 +137,4 @@ Simple Icons 16.36.0 (warp). antigravity.svg — https://antigravity.google/favi
 Ruby frameworks (TODO §37; GitHub organisation avatars, 128 px): sinatra.png — https://github.com/sinatra.png;
 hanami.png — https://github.com/hanami.png; padrino.png — https://github.com/padrino.png; grape.png —
 https://github.com/ruby-grape.png; bridgetown.png — https://github.com/bridgetownrb.png; middleman.png —
-https://github.com/middleman.png; rage.png — https://github.com/rage-rb.png. Ruby, Ruby on Rails and Jekyll: Simple Icons 13.21.0.
+https://github.com/middleman.png; rage.png — https://github.com/rage-rb.png. Ruby, Ruby on Rails, Jekyll and Docker (Monitoring): Simple Icons 13.21.0.
