@@ -361,7 +361,8 @@ export function writeShims(installed: InstalledRuby[], defaultVersion: string | 
   mkdirSync(dir, { recursive: true });
   const names = ['ruby', 'gem', 'bundle', 'bundler', 'irb', 'rake'];
   if (isWin) {
-    for (const n of names) writeCmdShim(dir, n, rb ? join(rb.binDir, n === 'ruby' ? 'ruby.exe' : `${n}.bat`) : null);
+    // RubyInstaller's programs end in .bat (bundle, irb, rake) or .cmd (gem), ruby itself in .exe.
+    for (const n of names) writeCmdShim(dir, n, rb ? (['.exe', '.bat', '.cmd'].map((e) => join(rb.binDir, n + e)).find((f) => existsSync(f)) ?? null) : null);
     writeCmdShim(dir, 'rv', rvPath());
     return;
   }

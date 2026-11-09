@@ -15,6 +15,8 @@ import { isWin } from '../platform';
  */
 
 const has = (root: string, f: string) => existsSync(join(root, f));
+/** A project's own `bin/<name>` script: cmd.exe cannot run a Ruby script by itself, so Windows calls it with ruby. */
+const binstub = (name: string) => (isWin ? `ruby bin/${name}` : `bin/${name}`);
 const ENTRIES = ['app.rb', 'server.rb', 'main.rb', 'web.rb', 'application.rb'];
 /** A script with no Gemfile that serves something; one that only computes is not a site. */
 const SERVES = /\brequire\s+['"](?:webrick|socket|sinatra|rack|puma|roda)['"]|\bTCPServer\.new\b|\bWEBrick::HTTPServer\b|\bRack::Handler\b/;
@@ -102,7 +104,7 @@ function detectRubyStack(root: string, domain: string): StackInfo {
     case 'rails': {
       framework = 'rails';
       port = DEFAULT_PORTS.rails ?? 3000;
-      const rails = has(root, 'bin/rails') ? 'bin/rails' : `${bx}rails`;
+      const rails = has(root, 'bin/rails') ? binstub('rails') : `${bx}rails`;
       command = `${rails} server -b 127.0.0.1 -p ${P(port)}`;
       tasks.push(
         { id: 'db-prepare', tool: 'Rails', label: 'db:prepare', command: `${rails} db:prepare`, cwd: '.' },
@@ -131,7 +133,7 @@ function detectRubyStack(root: string, domain: string): StackInfo {
       break;
     case 'bridgetown':
       port = 4000;
-      command = `${has(root, 'bin/bridgetown') ? 'bin/bridgetown' : `${bx}bridgetown`} start --bind 127.0.0.1 --port ${P(port)}`;
+      command = `${has(root, 'bin/bridgetown') ? binstub('bridgetown') : `${bx}bridgetown`} start --bind 127.0.0.1 --port ${P(port)}`;
       break;
     case 'middleman':
       port = 4567;
@@ -230,7 +232,7 @@ export function rubyJobsCommand(stack: StackInfo): string | null {
     case 'sidekiq':
       return `${bx}sidekiq`;
     case 'solid_queue':
-      return 'bin/jobs';
+      return isWin ? 'ruby bin/jobs' : 'bin/jobs';
     case 'good_job':
       return `${bx}good_job start`;
     default:
