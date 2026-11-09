@@ -10,6 +10,7 @@ import { getShellEnv, run } from './env';
 import { compare } from './node';
 import { newer } from './tools';
 import { exe, isLinux, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
+import { runAsRootLinux } from './linuxadmin';
 import { dataDir } from './store';
 import { githubJson } from './github';
 
@@ -119,6 +120,15 @@ async function buildToolsPath(): Promise<string | null> {
  * asks for administrator rights itself (UAC) and shows its own progress window; a few GB, several minutes.
  */
 export async function installBuildTools(progress: (p: RuntimeInstallProgress) => void, arm = false): Promise<void> {
+  // Linux: the distribution's C toolchain (cc, the linker) behind the password dialog.
+  if (isLinux) {
+    progress({ version: 'Build Tools', phase: 'extract', received: 0, total: 0, detail: 'Installing build-essential (password)' });
+    const r = await runAsRootLinux(
+      'if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential >/dev/null; elif command -v dnf >/dev/null 2>&1; then dnf install -y -q gcc make >/dev/null; else echo "No apt-get or dnf: install a C compiler (gcc) yourself" >&2; exit 1; fi',
+    );
+    if (!r.ok) throw new Error(r.cancelled ? 'Cancelled at the password prompt' : `Installing the build tools failed: ${r.message}`);
+    return;
+  }
   const tmp = dataDir(`.buildtools-${Date.now()}`);
   mkdirSync(tmp, { recursive: true });
   try {

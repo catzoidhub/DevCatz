@@ -1325,7 +1325,7 @@ export class Herd extends EventEmitter {
       };
       if (isWin && stack.apps.some((a) => a.library === 'anchor')) fail(`${rusts.SOLANA_WIN}.`);
       if (!this.rustupVer) fail('Rust is not installed. Install it on the Rust page (sidebar), then Start again.');
-      if (this.rustLinkerMissing) fail(isWin ? 'Rust needs the Visual Studio Build Tools (C++) to link: install them on the Rust page, then Start again.' : 'Rust needs the Xcode Command Line Tools to link: run “xcode-select --install” in Terminal, then Start again.');
+      if (this.rustLinkerMissing) fail(isWin ? 'Rust needs the Visual Studio Build Tools (C++) to link: install them on the Rust page, then Start again.' : isLinux ? 'Rust needs a C compiler to link: Install Build Tools on the Rust page, then Start again.' : 'Rust needs the Xcode Command Line Tools to link: run “xcode-select --install” in Terminal, then Start again.');
       if (rust.needs.length) fail(`This site also needs ${rust.needs.map((n) => RUST_NEED_LABEL[n]).join(', ')}: install ${rust.needs.length > 1 ? 'them' : 'it'} on the site's Overview or the Rust page, then Start again.`);
       this.processes.log(id, 'sys', `Using Rust ${rust.version ?? '?'} (${rust.toolchain ?? 'default'}${rust.reason === 'project' ? ', from rust-toolchain.toml' : ''})`);
     }
