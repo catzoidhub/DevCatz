@@ -4,6 +4,8 @@ import { isWin } from '../platform';
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorUpdate } from '@shared/types';
 import Sparkline from './Sparkline.vue';
+import StackMark from './StackMark.vue';
+import { stackTag } from '../runtimes';
 import DepsCleanup from './DepsCleanup.vue';
 import { attempt, herd, notify, state } from '../store';
 import { monitorLogo } from '../logos';
@@ -175,6 +177,12 @@ const KIND_COLOR: Record<MonitorKind, string> = {
 };
 /** Every service with an official mark shows it (databases, storage, search, WebSocket, WhatsApp, gateways, DevCatz). */
 const logoOf = (e: MonitorEntity) => monitorLogo(e, state.value?.databases ?? []);
+/** A site's main framework (Laravel, Next.js, Rails …), the same mark as in the site list (TODO §36). */
+const siteTagOf = (e: MonitorEntity) => {
+  if (e.kind !== 'site') return null;
+  const p = state.value?.projects.find((x) => `site:${x.id}` === e.id);
+  return p ? stackTag(p) : null;
+};
 
 const minutesShown = 10;
 </script>
@@ -309,7 +317,8 @@ const minutesShown = 10;
               <tr class="cursor-pointer hover:bg-base-200/50" :class="{ 'opacity-50': !e.active, 'bg-base-200/60': expanded === e.id }" @click="expanded = expanded === e.id ? null : e.id">
                 <td class="max-w-0 min-w-56">
                   <div class="flex items-center gap-2">
-                    <img v-if="logoOf(e)" :src="logoOf(e)!" alt="" class="size-5 shrink-0 rounded bg-white object-contain p-px" draggable="false" />
+                    <span v-if="siteTagOf(e)" class="shrink-0" :title="`Built with ${siteTagOf(e)!.label}`"><StackMark :icon="siteTagOf(e)!.icon" :label="siteTagOf(e)!.label" class="size-5" /></span>
+                    <img v-else-if="logoOf(e)" :src="logoOf(e)!" alt="" class="size-5 shrink-0 rounded bg-white object-contain p-px" draggable="false" />
                     <span v-else class="size-2.5 shrink-0 rounded-full" :style="{ background: KIND_COLOR[e.kind] }" />
                     <div class="min-w-0">
                       <div class="flex items-center gap-1.5">
