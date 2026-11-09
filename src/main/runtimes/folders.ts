@@ -7,6 +7,7 @@ import { detectGoApp } from './go';
 import { hasDependencies, mainRank, nodeDriver, portClashes, portFlagCommand } from './node';
 import { phpDriver, phpFolderApp } from './php';
 import { pythonDriver, pythonFolderApp } from './python';
+import { rubyDriver, rubyFolderApp } from './ruby';
 import { detectRustApp, readCargo } from './rust';
 
 /**
@@ -43,10 +44,10 @@ export function projectFolders(root: string): string[] {
   return out;
 }
 
-const isProject = (d: string) => phpDriver.matches(d) || pythonDriver.matches(d) || existsSync(join(d, 'go.mod')) || existsSync(join(d, 'Cargo.toml')) || existsSync(join(d, 'package.json'));
+const isProject = (d: string) => phpDriver.matches(d) || pythonDriver.matches(d) || rubyDriver.matches(d) || existsSync(join(d, 'go.mod')) || existsSync(join(d, 'Cargo.toml')) || existsSync(join(d, 'package.json'));
 
 /** One folder as one app (its own dev command, run from that folder); null when it has nothing to run. */
-function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' | 'php' | 'python' | 'go' | 'rust'; depsMissing: boolean; warnings: string[] } | null {
+function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' | 'php' | 'python' | 'ruby' | 'go' | 'rust'; depsMissing: boolean; warnings: string[] } | null {
   const rel = relative(root, dir);
   if (phpDriver.matches(dir)) {
     const f = phpFolderApp(root, dir);
@@ -55,6 +56,10 @@ function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' |
   if (pythonDriver.matches(dir)) {
     const f = pythonFolderApp(root, dir);
     return f ? { runtime: 'python', ...f } : null;
+  }
+  if (rubyDriver.matches(dir)) {
+    const f = rubyFolderApp(root, dir);
+    return f ? { runtime: 'ruby', ...f } : null;
   }
   if (existsSync(join(dir, 'Cargo.toml'))) {
     const app = detectRustApp(dir, root, '', readCargo(dir));
@@ -88,7 +93,7 @@ function folderApp(root: string, dir: string): { app: AppInfo; runtime: 'node' |
  * service in api/): each becomes an app on `<folder>.<domain>` that Start runs from its folder, while the root stays
  * served by PHP-FPM on the site's own domain. Folders of the root's own runtime (a package in packages/) are left alone.
  */
-export function siblingApps(root: string, domain: string, skip: 'php' | 'python'): Pick<StackInfo, 'apps' | 'warnings'> & { runtimes: NonNullable<StackInfo['subRuntimes']>; depsMissing: boolean } {
+export function siblingApps(root: string, domain: string, skip: 'php' | 'python' | 'ruby'): Pick<StackInfo, 'apps' | 'warnings'> & { runtimes: NonNullable<StackInfo['subRuntimes']>; depsMissing: boolean } {
   const found = projectFolders(root)
     .map((d) => folderApp(root, d))
     .filter((x): x is NonNullable<typeof x> => x !== null && x.runtime !== skip);

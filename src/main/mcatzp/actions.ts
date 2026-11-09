@@ -16,8 +16,8 @@ const SITE = { type: 'string', minLength: 1, maxLength: 200, description: "The s
 const ENGINE = { type: 'string', minLength: 1, maxLength: 40, description: 'A database engine from list_db_engines, such as mysql or postgresql.' };
 const DB_SERVICE = { type: 'string', minLength: 1, maxLength: 200, description: "A database service's id or name from list_services, or its engine when only one service runs it." };
 
-const RUNTIME = { type: 'string', enum: ['node', 'bun', 'go', 'python', 'php'] };
-type Runtime = 'node' | 'bun' | 'go' | 'python' | 'php';
+const RUNTIME = { type: 'string', enum: ['node', 'bun', 'go', 'python', 'ruby', 'php'] };
+type Runtime = 'node' | 'bun' | 'go' | 'python' | 'ruby' | 'php';
 
 const mb = (n: number) => Math.round(n / 1024 / 1024);
 
@@ -51,9 +51,15 @@ export function findSite(projects: Pick<ProjectState, 'id' | 'name' | 'domain'>[
   return named[0].id;
 }
 
+/** Ruby: rv for 3.2+, ruby-build (compiled, minutes) for older ones — whichever list_runtime_versions said. */
+async function rubyInstallOf(api: HerdApi, version: string): Promise<void> {
+  const hit = (await api.rubyRemote()).find((r) => r.version === version || r.minor === version);
+  return api.rubyInstall(version, hit?.via ?? 'rv');
+}
+
 /** Installable versions: a pre-release (v27.0.0-alpha) is listed by its source but cannot be installed. */
 async function runtimeVersions(api: HerdApi, r: Runtime): Promise<{ version: string }[]> {
-  const list: { version: string }[] = await (r === 'node' ? api.nodeRemote() : r === 'bun' ? api.bunRemote() : r === 'go' ? api.goRemote() : r === 'python' ? api.pythonRemote() : api.phpRemote());
+  const list: { version: string }[] = await (r === 'node' ? api.nodeRemote() : r === 'bun' ? api.bunRemote() : r === 'go' ? api.goRemote() : r === 'python' ? api.pythonRemote() : r === 'ruby' ? api.rubyRemote() : api.phpRemote());
   return list.filter((v) => !/-(alpha|beta|rc|canary|nightly)/i.test(v.version));
 }
 
@@ -208,13 +214,13 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
       const d = databaseOf(s, service);
       return reply({ service: d.name, databases: await api.dbList(d.id) });
     }),
-    read('list_runtime_versions', 'List runtime versions', 'The versions of a runtime (node, bun, go, python, php) that can be installed.', OBJECT({ runtime: RUNTIME }, ['runtime']), async ({ runtime }) => {
+    read('list_runtime_versions', 'List runtime versions', 'The versions of a runtime (node, bun, go, python, ruby, php) that can be installed.', OBJECT({ runtime: RUNTIME }, ['runtime']), async ({ runtime }) => {
       return reply((await runtimeVersions(api, runtime as Runtime)).map((v) => v.version));
     }),
-    read('list_runtimes', 'List runtimes', 'The installed versions of Node.js, Bun, Go, Python and PHP, and the default of each.', OBJECT(), async () => {
+    read('list_runtimes', 'List runtimes', 'The installed versions of Node.js, Bun, Go, Python, Ruby and PHP, and the default of each.', OBJECT(), async () => {
       const s = await state();
       const rt = (r: { installed: { version: string }[]; defaultVersion: string | null; installing: RuntimeInstallProgress | null }) => ({ installed: r.installed.map((v) => v.version), default: r.defaultVersion, installing: runtimeProgress(r.installing) ? r.installing!.version : null, progress: runtimeProgress(r.installing), error: r.installing?.error ?? null });
-      return reply({ node: rt(s.node), bun: rt(s.bun), go: rt(s.go), python: rt(s.python), php: rt(s.php) });
+      return reply({ node: rt(s.node), bun: rt(s.bun), go: rt(s.go), python: rt(s.python), ruby: rt(s.ruby), php: rt(s.php) });
     })]),
   ];
 }
@@ -357,7 +363,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
         {
           name: 'install_runtime',
           title: 'Install a runtime',
-          description: 'Installs a version of Node.js, Bun, Go, Python or PHP from list_runtime_versions. It may answer while that goes on: then call list_runtimes for its progress and tell the user how far it is. DevCatz asks the user first.',
+          description: 'Installs a version of Node.js, Bun, Go, Python, Ruby or PHP from list_runtime_versions. It may answer while that goes on: then call list_runtimes for its progress and tell the user how far it is. DevCatz asks the user first.',
           tier: 'change',
           input: OBJECT({ runtime: RUNTIME, version: { type: 'string', minLength: 1, maxLength: 40 } }, ['runtime', 'version']),
           preview: async ({ runtime, version }) => {
@@ -367,7 +373,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           run: async ({ runtime, version }, ctx) => {
             const r = runtime as Runtime;
             const v = await runtimeVersionOf(api, r, version);
-            const go = r === 'node' ? api.nodeInstall(v) : r === 'bun' ? api.bunInstall(v) : r === 'go' ? api.goInstall(v) : r === 'python' ? api.pythonInstall(v) : api.phpInstall(v);
+            const go = r === 'node' ? api.nodeInstall(v) : r === 'bun' ? api.bunInstall(v) : r === 'go' ? api.goInstall(v) : r === 'python' ? api.pythonInstall(v) : r === 'ruby' ? rubyInstallOf(api, v) : api.phpInstall(v);
             return inBackground(api, ctx, go, () => api.installCancel(r), { runtime: r, version: v }, 'Installed', 'Still installing: list_runtimes shows its progress; only cancel_install stops it', (s) => runtimeProgress(s[r].installing));
           },
         },
@@ -472,7 +478,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
   return [...lifecycle, ...creates, ...installs, ...tools, ...cancels];
 }
 
-const RUNTIME_NAMES: Record<Runtime, string> = { node: 'Node.js', bun: 'Bun', go: 'Go', python: 'Python', php: 'PHP' };
+const RUNTIME_NAMES: Record<Runtime, string> = { node: 'Node.js', bun: 'Bun', go: 'Go', python: 'Python', ruby: 'Ruby', php: 'PHP' };
 
 async function runtimeVersionOf(api: HerdApi, r: Runtime, version: unknown): Promise<string> {
   const found = (await runtimeVersions(api, r)).find((v) => v.version === version);

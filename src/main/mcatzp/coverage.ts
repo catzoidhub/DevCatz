@@ -177,6 +177,11 @@ export const MCATZP_COVERAGE = {
   storageInstall: 'tool: install_service',
   // tool: install_uv
   uvInstall: 'tool: install_uv',
+  rvInstall: 'tool: install_rv',
+  rubyRemote: 'tool: list_runtime_versions',
+  rubyInstall: 'tool: install_runtime',
+  rubyUninstall: 'tool: uninstall_runtime',
+  rubySetDefault: 'tool: set_default_runtime',
   // tool: laravel_broadcast_test
   laravelTestBroadcast: 'tool: laravel_broadcast_test',
   // tool: link_site

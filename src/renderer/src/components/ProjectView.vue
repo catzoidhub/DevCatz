@@ -6,7 +6,7 @@ import { attempt, herd, navRequest, notify, siteTabRequest, state } from '../sto
 import { navVisit } from '../nav';
 import AiExplain from './AiExplain.vue';
 import { aiOn } from '../ai';
-import { appCommand, frameworkTag, hasExtras, pythonInstallLabel, siteFrameworks, siteStatus, runsPerApp, runtimesOf, usesGo, usesJs, usesPhp, usesPython, portWhy, isDesktopSite, isDesktopApp } from '../runtimes';
+import { appCommand, frameworkTag, hasExtras, pythonInstallLabel, siteFrameworks, siteStatus, runsPerApp, runtimesOf, usesGo, usesJs, usesPhp, usesPython, usesRuby, portWhy, isDesktopSite, isDesktopApp } from '../runtimes';
 import StackMark from './StackMark.vue';
 import DataLibsCard from './DataLibsCard.vue';
 import { mark } from '../datamarks';
@@ -320,7 +320,7 @@ async function installDeps() {
 
 const runtimes = computed(() => runtimesOf(p.value));
 const perApp = computed(() => runsPerApp(p.value));
-const RUNTIME_ICON = { node: ICONS.hexagon, bun: ICONS.bun, go: ICONS.go, php: ICONS.php, python: STACK_ICONS.python.d, rust: STACK_ICONS.rust.d };
+const RUNTIME_ICON = { node: ICONS.hexagon, bun: ICONS.bun, go: ICONS.go, php: ICONS.php, python: STACK_ICONS.python.d, ruby: STACK_ICONS.ruby.d, rust: STACK_ICONS.rust.d };
 /** Rust sites: what is still missing (Rust itself, a framework CLI, Solana / Anchor, the wasm32 target), each with its install. */
 const RUST_NEED: Record<string, string> = { trunk: 'Trunk', 'dioxus-cli': 'Dioxus CLI', 'cargo-leptos': 'cargo-leptos', 'tauri-cli': 'Tauri CLI', solana: 'Solana CLI', anchor: 'Anchor', wasm32: 'WebAssembly target', 'sqlx-cli': 'SQLx CLI', 'sea-orm-cli': 'SeaORM CLI', 'diesel-cli': 'Diesel CLI' };
 const rustBusy = computed(() => {
@@ -361,6 +361,7 @@ const form = ref({
   secure: true,
   phpVersion: '',
   pythonVersion: '',
+  rubyVersion: '',
   queueWorker: false,
   scheduler: false,
 });
@@ -394,7 +395,7 @@ const domainPreview = computed(() => `${slug(form.value.domain) || '…'}.${tld.
 watch(
   p,
   (v) => {
-    form.value = { name: v.name, domain: domainPart(v.domain), devCommand: v.devCommand ?? '', autoStart: Boolean(v.autoStart), nodeVersion: v.nodeVersion ?? '', managedPorts: v.managedPorts !== false, packageManager: v.packageManager ?? '', goVersion: v.goVersion ?? '', secure: v.secure !== false, phpVersion: v.phpVersion ?? '', pythonVersion: v.pythonVersion ?? '', queueWorker: Boolean(v.queueWorker), scheduler: Boolean(v.scheduler) };
+    form.value = { name: v.name, domain: domainPart(v.domain), devCommand: v.devCommand ?? '', autoStart: Boolean(v.autoStart), nodeVersion: v.nodeVersion ?? '', managedPorts: v.managedPorts !== false, packageManager: v.packageManager ?? '', goVersion: v.goVersion ?? '', secure: v.secure !== false, phpVersion: v.phpVersion ?? '', pythonVersion: v.pythonVersion ?? '', rubyVersion: v.rubyVersion ?? '', queueWorker: Boolean(v.queueWorker), scheduler: Boolean(v.scheduler) };
   },
   { immediate: true },
 );
@@ -409,6 +410,7 @@ async function save() {
         goVersion: form.value.goVersion,
         phpVersion: form.value.phpVersion,
         pythonVersion: form.value.pythonVersion,
+        rubyVersion: form.value.rubyVersion,
       }),
     'Saved',
   );
@@ -563,6 +565,7 @@ async function generateKey() {
             <code>{{ p.stack.python.venv }}</code> was made with Python {{ p.stack.python.venvVersion ?? '?' }}, which is no longer installed, so nothing in it runs.
             DevCatz moves it to the {{ words.trash }}, makes it again with Python {{ p.python.version ?? p.python.spec ?? '3.13' }} and installs the packages.
           </template>
+          <template v-else-if="p.stack.runtime === 'ruby'">The Gemfile’s gems are not installed yet; DevCatz runs <code>bundle install</code> with Ruby {{ p.ruby.version ?? '?' }}.</template>
           <template v-else-if="p.stack.runtime === 'python'">There is no virtualenv (<code>.venv</code>) yet; DevCatz creates it with Python {{ p.python.version ?? p.python.spec ?? '3.13' }} and installs the packages.</template>
           <template v-else><code>node_modules</code> is empty, so the dev command cannot run yet.</template>
         </div>
@@ -576,6 +579,8 @@ async function generateKey() {
               ? 'Install dependencies (composer install)'
               : p.stack.runtime === 'python'
                 ? `Install dependencies (${pythonInstallLabel(p.stack)})`
+                : p.stack.runtime === 'ruby'
+                  ? 'Install dependencies (bundle install)'
                 : (p.stack.packageManager ? `Install dependencies (${p.stack.packageManager} install)` : 'Install dependencies')
         }}
       </button>
@@ -713,7 +718,7 @@ async function generateKey() {
           <div class="label-caps mb-2.5">Runtimes</div>
           <ul class="space-y-2.5">
             <li v-for="r in runtimes" :key="r.kind" class="flex items-start gap-2.5">
-              <svg class="mt-0.5 size-4 shrink-0 opacity-70" :viewBox="r.kind === 'python' || r.kind === 'rust' ? '0 0 24 24' : '0 0 20 20'" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="RUNTIME_ICON[r.kind]" /></svg>
+              <svg class="mt-0.5 size-4 shrink-0 opacity-70" :viewBox="r.kind === 'python' || r.kind === 'ruby' || r.kind === 'rust' ? '0 0 24 24' : '0 0 20 20'" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="RUNTIME_ICON[r.kind]" /></svg>
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="font-medium">{{ r.label }}</span>
@@ -1028,6 +1033,13 @@ async function generateKey() {
               </select>
               <span class="mt-1.5 block text-xs opacity-60">Used when the venv is (re)created by Install dependencies; delete <code>.venv</code> to switch an existing one.</span>
             </label>
+            <label v-if="usesRuby(p.stack)" class="block">
+              <span class="label-caps mb-1.5 block">Ruby version</span>
+              <select v-model="form.rubyVersion" class="select select-sm w-full">
+                <option value="">Auto: {{ p.ruby.version ?? 'none installed' }} ({{ p.ruby.spec ? `the project asks for ${p.ruby.spec}` : 'the default' }})</option>
+                <option v-for="v in state?.ruby.installed ?? []" :key="v.version + v.source" :value="v.version">{{ v.version }}{{ v.source === 'system' ? ' (your own)' : '' }}</option>
+              </select>
+            </label>
             <label v-if="usesGo(p.stack)" class="block">
               <span class="label-caps mb-1.5 block">Go version</span>
               <select v-model="form.goVersion" class="select select-sm w-full">
@@ -1062,7 +1074,7 @@ async function generateKey() {
       <FreeSpaceCard :site-id="p.id" :running="p.status === 'running' || p.status === 'starting'" />
 
       <!-- Background processes -->
-      <div v-if="(usesPhp(p.stack) && p.stack.apps.some((a) => a.framework === 'laravel')) || (usesPython(p.stack) && p.stack.python?.celery)" class="card">
+      <div v-if="(usesPhp(p.stack) && p.stack.apps.some((a) => a.framework === 'laravel')) || (usesPython(p.stack) && p.stack.python?.celery) || (p.stack.runtime === 'ruby' && p.stack.ruby?.jobs)" class="card">
         <div class="card-body gap-4">
           <h2>Runs with Start</h2>
           <template v-if="usesPhp(p.stack) && p.stack.apps.some((a) => a.framework === 'laravel')">
@@ -1073,6 +1085,12 @@ async function generateKey() {
             <label class="flex cursor-pointer items-start gap-3">
               <input v-model="form.scheduler" type="checkbox" class="toggle toggle-sm toggle-primary mt-0.5" />
               <span class="text-sm">Scheduler <span class="mt-0.5 block font-mono text-xs opacity-60">php artisan schedule:work</span></span>
+            </label>
+          </template>
+          <template v-else-if="p.stack.ruby?.jobs">
+            <label class="flex cursor-pointer items-start gap-3">
+              <input v-model="form.queueWorker" type="checkbox" class="toggle toggle-sm toggle-primary mt-0.5" />
+              <span class="text-sm">{{ p.stack.ruby.jobs === 'sidekiq' ? 'Sidekiq' : p.stack.ruby.jobs === 'solid_queue' ? 'Solid Queue' : 'GoodJob' }} worker <span class="mt-0.5 block font-mono text-xs opacity-60">{{ p.stack.ruby.jobs === 'sidekiq' ? 'bundle exec sidekiq' : p.stack.ruby.jobs === 'solid_queue' ? 'bin/jobs' : 'bundle exec good_job start' }}</span></span>
             </label>
           </template>
           <template v-else-if="p.stack.python?.celery">

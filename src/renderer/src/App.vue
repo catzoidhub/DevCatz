@@ -37,7 +37,7 @@ import type { AppState, ProjectState } from '@shared/types';
 import { isWin, WIN_SECTIONS } from './platform';
 import GitConnectButton from './components/GitConnectButton.vue';
 
-const PANELS = ['node', 'bun', 'go', 'rust', 'php', 'python'];
+const PANELS = ['node', 'bun', 'go', 'rust', 'php', 'python', 'ruby'];
 
 /** Sidebar Git chip: changed files and commits to push / pull ("3 · ↑1"). */
 function gitBadge(p: ProjectState): string {
@@ -63,7 +63,7 @@ function gitTitle(p: ProjectState): string {
 type AppSection = 'projects' | 'runtimes' | 'database' | 'storage' | 'websocket' | 'search' | 'git' | 'mail' | 'whatsapp' | 'expose' | 'monitoring' | 'settings';
 const RAIL: { id: AppSection; label: string; short: string; icon: 'projects' | 'terminal' | 'database' | 'bucket' | 'websocket' | 'search' | 'git' | 'mail' | 'gateway' | 'expose' | 'monitoring' }[] = [
   { id: 'projects', label: 'Projects', short: 'Projects', icon: 'projects' },
-  { id: 'runtimes', label: 'Runtimes: PHP, Python, Node.js, Bun, Go', short: 'Runtimes', icon: 'terminal' },
+  { id: 'runtimes', label: 'Runtimes: PHP, Python, Ruby, Node.js, Bun, Go', short: 'Runtimes', icon: 'terminal' },
   { id: 'database', label: 'Database', short: 'Database', icon: 'database' },
   { id: 'storage', label: 'Object Storage', short: 'Storage', icon: 'bucket' },
   { id: 'websocket', label: 'WebSocket', short: 'WebSocket', icon: 'websocket' },

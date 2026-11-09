@@ -148,3 +148,47 @@ describe('static files', () => {
     expect(detect({ 'index.html': '<!doctype html>', 'server.js': 'x.listen(3456)\n' }).stack.apps[0].framework).toBe('node');
   });
 });
+
+/** Ruby (TODO §37): plain Ruby, Rack and the frameworks; each fixture is only the files detection looks at. */
+describe('Ruby', () => {
+  const gemfile = (...gems: string[]) => `source 'https://rubygems.org'\n${gems.map((g) => `gem '${g}'`).join('\n')}\n`;
+  test('Rails: bin/rails server on PORT, its database tasks, before the package.json it keeps', () => {
+    const { stack } = detect({ Gemfile: gemfile('rails', 'puma'), 'Gemfile.lock': 'GEM\n', 'bin/rails': '#!/usr/bin/env ruby\n', 'config/application.rb': '', 'package.json': '{"name":"x"}', '.ruby-version': 'ruby-3.4.7\n' });
+    expect([stack.runtime, stack.apps[0].framework, stack.depsMissing, stack.ruby?.spec]).toEqual(['ruby', 'rails', false, '3.4.7']);
+    expect(stack.apps[0].command).toBe('bin/rails server -b 127.0.0.1 -p ${PORT:-3000}');
+    expect(stack.tasks?.map((t) => t.label)).toContain('db:migrate');
+  });
+  test('Sinatra classic runs its file; modular goes through config.ru and Puma', () => {
+    expect(detect({ Gemfile: gemfile('sinatra'), 'app.rb': "require 'sinatra'\nget('/') { 'hi' }\n" }).stack.apps[0].command).toBe('bundle exec ruby app.rb -o 127.0.0.1 -p ${PORT:-4567}');
+    const modular = detect({ Gemfile: gemfile('sinatra', 'puma'), 'config.ru': 'run App\n' }).stack.apps[0];
+    expect([modular.framework, modular.command]).toEqual(['sinatra', 'bundle exec puma -b tcp://127.0.0.1:${PORT:-4567} config.ru']);
+  });
+  test('Rack frameworks keep their name; without Puma it is rackup', () => {
+    const roda = detect({ Gemfile: gemfile('roda', 'puma'), 'config.ru': 'run App.app\n' }).stack.apps[0];
+    expect([roda.framework, roda.library]).toEqual(['ruby', 'roda']);
+    expect(detect({ Gemfile: gemfile('rack', 'rackup'), 'config.ru': 'run ->(e) {}\n' }).stack.apps[0].command).toBe('bundle exec rackup -o 127.0.0.1 -p ${PORT:-9292}');
+  });
+  test('Jekyll, Hanami, Rage and Sidekiq', () => {
+    expect(detect({ Gemfile: gemfile('jekyll') }).stack.apps[0].framework).toBe('jekyll');
+    expect(detect({ Gemfile: gemfile('hanami') }).stack.apps[0].command).toBe('bundle exec hanami server --host 127.0.0.1 --port ${PORT:-2300}');
+    expect(detect({ Gemfile: gemfile('rage-rb') }).stack.apps[0].library).toBe('rage');
+    expect(detect({ Gemfile: gemfile('rails', 'sidekiq') }).stack.ruby?.jobs).toBe('sidekiq');
+  });
+  test('a Gemfile never resolved: dependencies missing', () => {
+    expect(detect({ Gemfile: gemfile('sinatra'), 'app.rb': "require 'sinatra'\n" }).stack.depsMissing).toBe(true);
+  });
+  test('a plain script that listens, no Gemfile; one that only computes is not a site', () => {
+    const { stack, isProject } = detect({ 'server.rb': "require 'socket'\nTCPServer.new('127.0.0.1', ENV['PORT'])\n" });
+    expect([isProject, stack.runtime, stack.apps[0].command, stack.depsMissing]).toEqual([true, 'ruby', 'ruby server.rb', false]);
+    expect(detect({ 'main.rb': 'puts 1 + 1\n' }).isProject).toBe(false);
+  });
+  test('a React Native app with a Gemfile only for CocoaPods stays a JS app', () => {
+    const { stack } = detect({ Gemfile: gemfile('cocoapods'), 'package.json': '{"name":"app","scripts":{"start":"react-native start"},"dependencies":{"react-native":"0.80.0"}}' });
+    expect(stack.runtime).toBe('node');
+  });
+  test('a Ruby API beside a Vite frontend: one app per folder', () => {
+    const { stack } = detect({ 'api/Gemfile': gemfile('roda', 'puma'), 'api/config.ru': 'run App\n', 'web/package.json': '{"name":"web","scripts":{"dev":"vite"},"devDependencies":{"vite":"7"}}' });
+    expect(stack.layout).toBe('folders');
+    expect(stack.apps.map((a) => [a.dir, a.library ?? a.framework]).sort()).toEqual([['api', 'roda'], ['web', 'vite']]);
+  });
+});

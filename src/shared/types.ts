@@ -39,11 +39,19 @@ export type Framework =
   | 'flask'
   | 'fastapi'
   | 'litestar'
-  | 'python';
+  | 'python'
+  // Ruby (a dev server on a managed port; Rack apps through Puma / rackup)
+  | 'rails'
+  | 'sinatra'
+  | 'hanami'
+  | 'jekyll'
+  | 'ruby';
 
 /** PHP frameworks: served by PHP-FPM from a document root, no dev server of their own. */
 export const PHP_FRAMEWORKS: Framework[] = ['laravel', 'codeigniter', 'yii', 'symfony', 'cakephp', 'wordpress', 'drupal', 'joomla', 'slim', 'php'];
 export const PYTHON_FRAMEWORKS: Framework[] = ['django', 'flask', 'fastapi', 'litestar', 'python'];
+export const RUBY_FRAMEWORKS: Framework[] = ['rails', 'sinatra', 'hanami', 'jekyll', 'ruby'];
+export const isRubyFramework = (f: Framework) => RUBY_FRAMEWORKS.includes(f);
 export const isPhpFramework = (f: Framework) => PHP_FRAMEWORKS.includes(f);
 export const isPythonFramework = (f: Framework) => PYTHON_FRAMEWORKS.includes(f);
 
@@ -288,13 +296,15 @@ export interface StackInfo {
   nodeIssues?: NodeDepIssue[];
   node: string | null;
   /** `go` for Go modules (go.mod), `node` for package.json projects, `python` for pyproject/requirements/manage.py. */
-  runtime: 'node' | 'go' | 'php' | 'python' | 'rust';
+  runtime: 'node' | 'go' | 'php' | 'python' | 'rust' | 'ruby';
   /** Framework commands for the Database tab (CodeIgniter spark, Yii, Symfony console, CakePHP, WP-CLI, Django, Alembic …). */
   tasks?: StackTask[];
   /** ORMs, query builders and migration tools the site uses (Database tab); their CLIs' commands are in `tasks`. */
   dataLibs?: DataLib[];
   /** Python projects: venv, tool and version wishes. */
   python?: PythonStack;
+  /** Ruby projects: Gemfile, Bundler and version wishes. */
+  ruby?: RubyStack;
   /** Dependencies not installed: node_modules (JS) or vendor/ (PHP, `composer install`). */
   depsMissing: boolean;
   /** PHP sites with a package.json: node_modules missing (Vite cannot start). */
@@ -309,7 +319,7 @@ export interface StackInfo {
    */
   layout?: 'workspaces' | 'folders';
   /** Languages of the folder apps besides the stack's own runtime (their tools go on PATH). */
-  subRuntimes?: ('node' | 'php' | 'python' | 'go' | 'rust')[];
+  subRuntimes?: ('node' | 'php' | 'python' | 'go' | 'rust' | 'ruby')[];
 }
 
 export interface ProjectConfig {
@@ -360,6 +370,8 @@ export interface ProjectConfig {
   goVersion?: string;
   /** Python sites: the Python the venv is created with; unset = .python-version / requires-python, then the default. */
   pythonVersion?: string;
+  /** Ruby sites: the Ruby the site runs with; unset = .ruby-version / the Gemfile's `ruby`, then the default. */
+  rubyVersion?: string;
   /** PHP sites: .env values on the old dev domain (e.g. app.test from Laravel Herd) are overridden with this site's domain for requests and processes run by DevCatz (default on). */
   envDomainOverride?: boolean;
   /** DevCatz database service this site uses (Database tab manages it; it starts with the site). */
@@ -669,6 +681,41 @@ export interface PythonChoice {
   missing: boolean;
 }
 
+export interface InstalledRuby {
+  version: string;
+  /** `mrcatz` = installed by DevCatz (rv or ruby-build, into its folder); `system` = the user's own (Homebrew, rbenv …), read-only. */
+  source: 'mrcatz' | 'system';
+  binDir: string;
+  path: string;
+}
+
+export interface RemoteRuby {
+  version: string;
+  minor: string;
+  /** `rv`: prebuilt, seconds (3.2+). `ruby-build`: compiled, minutes (2.7 – 3.1, macOS / Linux). */
+  via: 'rv' | 'ruby-build';
+}
+
+/** Which Ruby a site runs with. */
+export interface RubyChoice {
+  version: string | null;
+  reason: 'site' | 'project' | 'default' | 'newest' | 'none';
+  /** .ruby-version / the Gemfile's `ruby`. */
+  spec: string | null;
+  missing: boolean;
+}
+
+export interface RubyStack {
+  /** A Gemfile: `bundle install` is the dependencies step. */
+  gemfile: boolean;
+  /** Gemfile.lock present (gems were resolved at least once). */
+  lockfile: boolean;
+  /** What the project asks for: .ruby-version, .tool-versions or the Gemfile's `ruby`. */
+  spec: string | null;
+  /** Background jobs found: Sidekiq / Solid Queue / GoodJob (the site's queue switch runs it). */
+  jobs: 'sidekiq' | 'solid_queue' | 'good_job' | null;
+}
+
 export type RuntimeInstallProgress = NodeInstallProgress;
 
 export interface NodeInstallProgress {
@@ -743,6 +790,8 @@ export interface ProjectState extends ProjectConfig {
   launch: { building: string | null; apps: Record<string, 'waiting' | 'starting'> } | null;
   /** Only meaningful for Python sites. */
   python: PythonChoice;
+  /** Only meaningful for Ruby sites. */
+  ruby: RubyChoice;
   /** Only meaningful for PHP/Laravel sites. */
   php: PhpChoice;
   /** S3 libraries and settings of the site. */
@@ -800,6 +849,8 @@ export interface Settings {
   /** Go toolchain used when go.mod allows any (null = the user's own go). */
   goDefault: string | null;
   pythonDefault: string | null;
+  /** Ruby used when a site does not ask for one (null = the newest installed). */
+  rubyDefault: string | null;
   /** PHP version used when composer.json allows it (null = newest installed). */
   phpDefault: string | null;
   httpsPort: number;
@@ -1588,6 +1639,13 @@ export interface AppState {
     /** uv version, null when DevCatz has not installed uv yet. */
     uv: string | null;
     installed: InstalledPython[];
+    defaultVersion: string | null;
+    installing: RuntimeInstallProgress | null;
+  };
+  ruby: {
+    /** rv version, null when DevCatz has not installed rv yet. */
+    rv: string | null;
+    installed: InstalledRuby[];
     defaultVersion: string | null;
     installing: RuntimeInstallProgress | null;
   };
@@ -2832,7 +2890,7 @@ export interface HerdApi {
   appPortEnv(siteId: string, dir: string): Promise<{ files: string[]; keys: string[]; locked: boolean } | null>;
   /** A free port for an app (not another site's, nothing listening). */
   freePortFor(siteId: string, dir: string): Promise<number>;
-  updateProject(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion'>>): Promise<void>;
+  updateProject(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion' | 'rubyVersion'>>): Promise<void>;
   envFiles(id: string): Promise<EnvFileInfo[]>;
   envRead(id: string, path: string): Promise<{ content: string; mtime: number }>;
   /** `mtime` from the read: refuses if the file changed on disk meanwhile. Returns the new mtime. */
@@ -2950,6 +3008,12 @@ export interface HerdApi {
   pythonInstall(version: string): Promise<void>;
   pythonUninstall(version: string): Promise<void>;
   pythonSetDefault(version: string | null): Promise<void>;
+  /** Installs rv (spinel-coop), which then installs Rubies 3.2+ (older ones are compiled with ruby-build). */
+  rvInstall(): Promise<void>;
+  rubyRemote(): Promise<RemoteRuby[]>;
+  rubyInstall(version: string, via: RemoteRuby['via']): Promise<void>;
+  rubyUninstall(version: string): Promise<void>;
+  rubySetDefault(version: string | null): Promise<void>;
   phpRemote(refresh?: boolean): Promise<RemotePhp[]>;
   phpInstall(version: string): Promise<void>;
   phpUninstall(version: string): Promise<void>;
@@ -3361,6 +3425,6 @@ export const API_METHODS: (keyof HerdApi)[] = [
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',
   'installDeps', 'depCommands', 'depRun', 'nodeRemote', 'nodeInstall', 'nodeUninstall', 'nodeSetDefault', 'shimPathSet',
   'bunRemote', 'bunInstall', 'bunUninstall', 'bunSetDefault',
-  'goRemote', 'goInstall', 'goUninstall', 'goSetDefault', 'rustInstall', 'rustRemote', 'rustToolchainInstall', 'rustToolchainUninstall', 'rustSetDefault', 'rustTargetAdd', 'rustToolInstall', 'rustInstallLinker', 'rustToolsCheck', 'rustToolUninstall', 'toolsState', 'toolInstall', 'toolUninstall', 'repairElectron', 'installCancel', 'uvInstall', 'pythonRemote', 'pythonInstall', 'pythonUninstall', 'pythonSetDefault',
+  'goRemote', 'goInstall', 'goUninstall', 'goSetDefault', 'rustInstall', 'rustRemote', 'rustToolchainInstall', 'rustToolchainUninstall', 'rustSetDefault', 'rustTargetAdd', 'rustToolInstall', 'rustInstallLinker', 'rustToolsCheck', 'rustToolUninstall', 'toolsState', 'toolInstall', 'toolUninstall', 'repairElectron', 'installCancel', 'uvInstall', 'pythonRemote', 'pythonInstall', 'pythonUninstall', 'pythonSetDefault', 'rvInstall', 'rubyRemote', 'rubyInstall', 'rubyUninstall', 'rubySetDefault',
   'phpRemote', 'phpInstall', 'phpUninstall', 'phpSetDefault', 'phpGetIni', 'phpSetIni', 'composerInstall', 'phpExtensions', 'phpExtInstall', 'phpExtSetEnabled', 'phpExtRemove', 'phpExtDismiss', 'phpOpenIni', 'restartServices', 'checkUpdates', 'runtimeUpdate', 'goDbInfo', 'goDbTask', 'stackTask', 'dbEngines', 'dbVersions', 'dbDefaults', 'dbCreate', 'dbCancelCreate', 'dbDismiss', 'dbUpdate', 'dbRemove', 'dbAction', 'dbOpenData', 'dbOpenBinaries', 'dbDetect', 'dbList', 'dbCreateDatabase', 'dbBuildAction', 'dbcatzOpen', 'dbcatzInstall', 'dbcatzCancelInstall', 'dbcatzDismiss', 'monitorSnapshot', 'monitorLive', 'monitorHistory', 'monitorExport', 'searchInstall', 'searchUpdate', 'searchCancelInstall', 'searchUninstall', 'searchAction', 'searchOpenData', 'searchIndexes', 'searchCreateIndex', 'searchDeleteIndex', 'searchGetSettings', 'searchSaveSettings', 'searchQuery', 'searchUpsert', 'searchImportFile', 'searchDeleteDoc', 'mailAction', 'mailList', 'mailGet', 'mailRaw', 'mailMarkRead', 'mailDelete', 'mailDeleteAll', 'mailSaveAttachment', 'mailAttachmentData', 'mailForward', 'mailForwardConfig', 'mailSetForwardConfig', 'mailEnv', 'mailSendTest', 'mailOpenData', 'exposeInstall', 'exposeCancelInstall', 'exposeUninstall', 'exposeCheckUpdates', 'exposeUpgrade', 'exposeCloudflareLogin', 'exposeCloudflareLogout', 'exposeSetAccount', 'exposeStart', 'exposeStop', 'exposeRequests', 'exposeClearRequests', 'exposeReplay', 'waInstall', 'waUpdate', 'waCancelInstall', 'waUninstall', 'waAction', 'waOpenData', 'waCheckUpdates', 'taskDismiss', 'gwInstall', 'gwUpdate', 'gwCancelInstall', 'gwUninstall', 'gwAction', 'gwOpenData', 'gwCheckUpdates', 'gwUpgrade', 'gwSetAutoStart', 'gwSend', 'gwEnv', 'gwSms', 'gwClearSms', 'waUpgrade', 'waSessionStart', 'waSessionQr', 'waSessionLogout', 'waSessionRemove', 'waSend', 'waContacts', 'waGroups', 'waMessages', 'waClearMessages', 'waHooks', 'waSetHook', 'waRemoveHook', 'waDeliveries', 'waReplay', 'waEnv', 'gitStatus', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitDiscard', 'gitCommit', 'gitSync', 'gitCancel', 'gitLog', 'gitShow', 'gitBranches', 'gitBranch', 'aiSettings', 'aiSetSettings', 'aiSetKey', 'aiModels', 'aiProbe', 'aiTest', 'aiCancel', 'aiPreviewExplain', 'aiExplain', 'aiPreviewCommit', 'aiCommit', 'aiPreviewDockerEdit', 'aiDockerEdit', 'aiPreviewEnv', 'aiEnv', 'aiPreviewSearch', 'aiSearch', 'aiPreviewWebhook', 'aiWebhook', 'aiPreviewAsk', 'aiAsk', 'aiRunAction', 'worktreeList', 'worktreeCreate', 'worktreeAdd', 'worktreeCheck', 'worktreeRemove', 'worktreePrune', 'gitStashes', 'gitStash', 'gitTags', 'gitTag', 'gitOperation', 'gitSquash', 'gitCherryPick', 'gitRevert', 'gitReset', 'gitRestoreFile', 'gitOpenFile', 'gitIgnoreSuggestions', 'gitIgnoreAdd', 'gitSetIdentity', 'gitAddRemote', 'gitPulls', 'gitCreatePull', 'gitCheckoutPull', 'gitAddAccount', 'gitRemoveAccount', 'gitRepos', 'gitSshKeys', 'gitSshGenerate', 'gitSshAddToAccount', 'gitClone', 'gitCancelClone', 'searchUpgrade', 'wsUpgrade', 'storageUpgrade', 'servicesCheckUpdates', 'serviceSetAutoStart', 'searchTasks', 'searchCancelTasks', 'searchClearTasks', 'searchBackups', 'searchCreateBackup', 'searchDeleteBackup', 'searchRevealBackup', 'searchRestoreBackup', 'searchExport', 'searchKeys', 'searchCreateKey', 'searchDeleteKey', 'searchEnv', 'storageEnv', 'scoutCommand', 'wsInstall', 'wsUpdate', 'wsCancelInstall', 'wsUninstall', 'wsAction', 'wsOpenData', 'wsStats', 'wsPublish', 'wsClientAuth', 'wsEnv', 'reverbEnv', 'laravelBroadcast', 'laravelTestBroadcast', 'storageInstall', 'storageUpdate', 'storageCancelInstall', 'storageUninstall', 'storageAction', 'storageOpenData', 'openLogsFolder', 'pickFile', 's3Buckets', 's3CreateBucket', 's3DeleteBucket', 's3SetPublic', 's3List', 's3Upload', 's3CancelUpload', 's3Download', 's3Delete', 's3MkDir', 'dockerStatus', 'dockerFiles', 'dockerServices', 'dockerGenerate', 'dockerWrite', 'dockerListFiles', 'dockerDevPreview', 'dockerDocatzEnv', 'dockerDocatzEnvReplace', 'dockerCancel', 'dockerDevWrite', 'dockerComposeEnv', 'dockerReadFile', 'dockerSaveFile', 'dockerCompose', 'startEngine', 'setFavorite', 'setSiteGroup', 'renameGroup', 'deleteGroup', 'toggleGroup', 'moveGroup', 'siteMenu', 'groupMenu', 'setSiteOrder', 'dbSetFavorite', 'dbSetGroup', 'dbGroupAction', 'dbSetOrder', 'dbMenu', 'dbGroupMenu', 'laravelLog', 'herdSites', 'setTld', 'installResolver', 'uninstallResolver', 'restartDns', 'installCleanUrls', 'uninstallCleanUrls',
 ];

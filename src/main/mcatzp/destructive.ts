@@ -252,7 +252,7 @@ export function destructiveActions(api: HerdApi, scopes: Scopes): ChangeAction[]
     if (!x?.installed) throw new Error(`No installed object storage ${String(ref)}`);
     return x.kind;
   };
-  const RT = { type: 'string', enum: ['node', 'bun', 'go', 'python', 'php'] };
+  const RT = { type: 'string', enum: ['node', 'bun', 'go', 'python', 'ruby', 'php'] };
 
   const services: ChangeAction[] = !scopes.services
     ? []
@@ -276,11 +276,11 @@ export function destructiveActions(api: HerdApi, scopes: Scopes): ChangeAction[]
         }),
         asked('uninstall_runtime', 'Uninstall a runtime version', 'Removes a version of a runtime; install_runtime brings it back. Sites asking for it stop working until then.', { runtime: RT, version: { type: 'string', minLength: 1, maxLength: 40 } }, ['runtime', 'version'], async (a) => {
           const s = await state();
-          if (!s[a.runtime as 'node' | 'bun' | 'go' | 'python' | 'php'].installed.some((x) => x.version === a.version)) throw new Error(`${String(a.runtime)} ${String(a.version)} is not installed (list_runtimes shows them)`);
+          if (!s[a.runtime as 'node' | 'bun' | 'go' | 'python' | 'ruby' | 'php'].installed.some((x) => x.version === a.version)) throw new Error(`${String(a.runtime)} ${String(a.version)} is not installed (list_runtimes shows them)`);
           return { title: `Uninstall ${String(a.runtime)} ${String(a.version)}?`, facts: [{ label: 'Note', value: 'Sites that use it stop working until it is back' }], page: String(a.runtime) };
         }, async (a) => {
           const v = String(a.version);
-          await (a.runtime === 'node' ? api.nodeUninstall(v) : a.runtime === 'bun' ? api.bunUninstall(v) : a.runtime === 'go' ? api.goUninstall(v) : a.runtime === 'python' ? api.pythonUninstall(v) : api.phpUninstall(v));
+          await (a.runtime === 'node' ? api.nodeUninstall(v) : a.runtime === 'bun' ? api.bunUninstall(v) : a.runtime === 'go' ? api.goUninstall(v) : a.runtime === 'python' ? api.pythonUninstall(v) : a.runtime === 'ruby' ? api.rubyUninstall(v) : api.phpUninstall(v));
           return ok({ uninstalled: `${String(a.runtime)} ${v}` });
         }),
         asked('uninstall_runtime_tool', 'Uninstall a runtime tool', 'Removes a tool from list_runtime_tools; install_runtime_tool brings it back.', { runtime: { type: 'string', enum: ['node', 'go', 'python'] }, tool: S('An id from list_runtime_tools.', 60) }, ['runtime', 'tool'], async (a) => {

@@ -84,6 +84,8 @@ import { AppUpdater } from './updater';
 import { browsersState, editorIcons, validBrowser } from './browsers';
 import { Monitor, type MonitorTarget } from './monitor';
 import * as pythons from './python';
+import * as rubies from './ruby';
+import { rubyJobsCommand } from './runtimes/ruby';
 import type {
   AppInfo,
   AppState,
@@ -104,6 +106,9 @@ import type {
   BunChoice,
   GoChoice,
   InstalledPython,
+  InstalledRuby,
+  RemoteRuby,
+  RubyChoice,
   PythonChoice,
   InstalledGo,
   InstalledRust,
@@ -385,6 +390,9 @@ export class Herd extends EventEmitter {
   private goInstalling: RuntimeInstallProgress | null = null;
   private installedPythons: InstalledPython[] = [];
   private pythonInstalling: RuntimeInstallProgress | null = null;
+  private installedRubies: InstalledRuby[] = [];
+  private rubyInstalling: RuntimeInstallProgress | null = null;
+  private rvVer: string | null = null;
   private uvVer: string | null = null;
   private remote: RemoteLists = {};
   private updates: UpdatesState = { list: [], checkedAt: null, checking: false, error: null, updating: null };
@@ -477,6 +485,7 @@ export class Herd extends EventEmitter {
     await this.refreshGos();
     await this.refreshRust();
     await this.refreshPythons();
+    await this.refreshRubies();
     // Windows (Catzoid #57): PHP runs as php-cgi workers (fpm.ts).
     await this.refreshPhps();
     await phps.writeCaBundle(this.certs.caPath).catch(() => undefined);
@@ -809,7 +818,7 @@ export class Herd extends EventEmitter {
     this.rescan();
   }
 
-  update(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion'>>): void {
+  update(id: string, patch: Partial<Pick<ProjectConfig, 'name' | 'domain' | 'devCommand' | 'autoStart' | 'nodeVersion' | 'managedPorts' | 'packageManager' | 'goVersion' | 'secure' | 'phpVersion' | 'queueWorker' | 'scheduler' | 'reverb' | 'wsServer' | 'wsPath' | 'searchEngine' | 'storageService' | 'envLocked' | 'envDomainOverride' | 'redisDb' | 'redisCacheDb' | 'redisConnDbs' | 'dbService' | 'pythonVersion' | 'rubyVersion'>>): void {
     const current = this.find(id);
     if (!current) return;
     if (patch.domain !== undefined) {
@@ -832,6 +841,7 @@ export class Herd extends EventEmitter {
     if (patch.packageManager !== undefined && !patch.packageManager) patch.packageManager = undefined;
     if (patch.goVersion !== undefined && !patch.goVersion) patch.goVersion = undefined;
     if (patch.pythonVersion !== undefined && !patch.pythonVersion) patch.pythonVersion = undefined;
+    if (patch.rubyVersion !== undefined && !patch.rubyVersion) patch.rubyVersion = undefined;
     if (patch.secure === true) patch.secure = undefined; // the default
     if (patch.phpVersion !== undefined && !patch.phpVersion) patch.phpVersion = undefined;
     if (patch.envLocked === true) patch.envLocked = undefined; // locked is the default
@@ -943,7 +953,7 @@ export class Herd extends EventEmitter {
     const taken = new Set(this.projects.flatMap((p) => [p.domain, ...(this.stacks.get(p.id)?.apps.map((a) => a.domain) ?? [])]));
     let domain = `${label}.${parent.domain}`;
     for (let i = 2; taken.has(domain) || this.domainOwner(domain); i++) domain = `${label}-${i}.${parent.domain}`;
-    const KEEP = ['nodeVersion', 'packageManager', 'goVersion', 'secure', 'phpVersion', 'devCommand', 'managedPorts', 'pythonVersion', 'envDomainOverride', 'envLocked', 'dbService', 'wsServer', 'wsPath', 'searchEngine', 'storageService', 'redisDb', 'redisCacheDb', 'redisConnDbs'] as const;
+    const KEEP = ['nodeVersion', 'packageManager', 'goVersion', 'secure', 'phpVersion', 'devCommand', 'managedPorts', 'pythonVersion', 'rubyVersion', 'envDomainOverride', 'envLocked', 'dbService', 'wsServer', 'wsPath', 'searchEngine', 'storageService', 'redisDb', 'redisCacheDb', 'redisConnDbs'] as const;
     const project: ProjectConfig = { id: idFor(sitePath), name: `${parent.name} · ${branch}`, path: sitePath, domain, worktreeOf: parent.id };
     for (const k of KEEP) if (parent[k] !== undefined) (project as unknown as Record<string, unknown>)[k] = parent[k];
     const id = project.id;
@@ -1225,7 +1235,9 @@ export class Herd extends EventEmitter {
           ? stack.python?.venvBroken
             ? `${stack.python.venv} was made with Python ${stack.python.venvVersion ?? '?'}, which is no longer installed: use "Install dependencies" to make it again (the old one goes to the ${words.trash}).`
             : 'No virtualenv yet (.venv): use "Install dependencies" first (uv creates it and installs the packages).'
-          : stack.layout === 'folders'
+          : stack.runtime === 'ruby'
+            ? 'Gems are not installed yet: use "Install dependencies" first (bundle install).'
+            : stack.layout === 'folders'
             ? `${stack.warnings.find((w) => w.startsWith('Dependencies missing')) ?? 'Dependencies are missing in some folders.'} It installs every folder's (npm / composer / uv / go).`
             : `Dependencies are not installed (node_modules is empty). Use "Install dependencies" (${stack.packageManager} install) first.`;
       this.processes.log(id, 'sys', msg);
@@ -1263,6 +1275,25 @@ export class Herd extends EventEmitter {
         throw new Error(msg);
       }
       this.processes.log(id, 'sys', `Using Python ${py.version ?? '?'} (${py.reason === 'venv' ? `${stack.python?.venv}` : py.reason})`);
+    } else if (stack.runtime === 'ruby') {
+      const rb = this.rubyChoice(p, stack);
+      if (!rb.version) {
+        const msg = 'Ruby is not installed. Install it on the Ruby page (sidebar), then Start again.';
+        this.processes.log(id, 'sys', msg);
+        throw new Error(msg);
+      }
+      this.processes.log(id, 'sys', `Using Ruby ${rb.version} (${rb.reason}${rb.missing && rb.spec ? `; the project asks for ${rb.spec}, not installed` : ''})`);
+      // A Gemfile.lock alone does not mean the gems are in this Ruby (a clone, another Ruby): Bundler says so in a moment.
+      if (stack.ruby?.gemfile && !p.devCommand) {
+        const check = await run('bundle', ['check'], { cwd: p.path, timeout: 30_000, env: this.runtimeEnv(p) });
+        if (check.code !== 0) {
+          stack.depsMissing = true;
+          this.changed();
+          const msg = `The gems are not installed for Ruby ${rb.version}: use "Install dependencies" (bundle install) first.`;
+          this.processes.log(id, 'sys', msg);
+          throw new Error(msg);
+        }
+      }
     } else {
       const node = this.nodeChoice(p);
       // Nothing to run npm / pnpm / yarn with: say so instead of "npm: command not found".
@@ -1313,7 +1344,15 @@ export class Herd extends EventEmitter {
     const ports = this.portEnv(p, stack, perApp);
     if (ports.summary) this.processes.log(id, 'sys', ports.summary);
     const celery = stack.runtime === 'python' ? stack.python?.celery : null;
-    if (!perApp && celery && (p.queueWorker || p.scheduler)) {
+    const rubyJobs = stack.runtime === 'ruby' ? rubyJobsCommand(stack) : null;
+    if (!perApp && rubyJobs && p.queueWorker) {
+      // Ruby + Sidekiq / Solid Queue / GoodJob: the web server plus the job worker when the site's queue switch is on.
+      const env = { ...base, ...ports.shared, ...Object.assign({}, ...ports.apps.values()) };
+      this.processes.startMany(id, [
+        { label: 'web', cwd: p.path, command, env },
+        { label: 'jobs', cwd: p.path, command: rubyJobs, env },
+      ]);
+    } else if (!perApp && celery && (p.queueWorker || p.scheduler)) {
       // Python + Celery: the web server plus the worker / beat the site's switches ask for.
       const env = { ...base, ...ports.shared, ...Object.assign({}, ...ports.apps.values()) };
       this.processes.startMany(id, [
@@ -2037,6 +2076,7 @@ export class Herd extends EventEmitter {
     const pm = this.stacks.get(id)?.packageManager;
     if (p && this.stacks.get(id)?.runtime === 'php') return this.installPhpDeps(p);
     if (p && this.stacks.get(id)?.runtime === 'python') return this.installPythonDeps(p, this.stacks.get(id)!);
+    if (p && this.stacks.get(id)?.runtime === 'ruby') return this.installRubyDeps(p);
     if (p && this.stacks.get(id)?.runtime === 'rust') return this.installRustDeps(p);
     if (!p) throw new Error('This site is not linked any more');
     // A button that did nothing at all looked broken: say why there is nothing to run.
@@ -2075,7 +2115,7 @@ export class Herd extends EventEmitter {
     this.changed();
     try {
       const steps = await this.folderInstallSteps(p, [...new Set(stack.apps.map((a) => a.dir))]);
-      if (!steps.length) throw new Error('No package.json, composer.json, go.mod, Cargo.toml or pyproject.toml in the site’s folders to install from');
+      if (!steps.length) throw new Error('No package.json, composer.json, go.mod, Cargo.toml, pyproject.toml or Gemfile in the site’s folders to install from');
       await this.runInstallSteps(p, steps);
     } finally {
       this.dbTasks.delete(p.id);
@@ -2098,6 +2138,11 @@ export class Herd extends EventEmitter {
       }
       if (has('composer.json')) steps.push({ dir: app.dir, command: 'composer install --no-interaction' });
       if (has('go.mod')) steps.push({ dir: app.dir, command: 'go mod download' });
+      // A Ruby folder (a Rails API beside a frontend): bundle install with the site's Ruby (runtimeEnv puts it first).
+      if (has('Gemfile') && rel !== '.') {
+        if (!this.installedRubies.length) throw new Error('Ruby is not installed. Install it on the Ruby page (sidebar) first.');
+        steps.push({ dir: app.dir, command: 'bundle install' });
+      }
       if (has('Cargo.toml')) {
         if (!this.rustupVer) throw new Error('Rust is not installed. Install it on the Rust page (sidebar) first.');
         steps.push({ dir: app.dir, command: 'cargo fetch' });
@@ -2707,6 +2752,7 @@ export class Herd extends EventEmitter {
     await this.refreshGos();
     await this.refreshRust();
     await this.refreshPythons();
+    await this.refreshRubies();
     await this.refreshPhps();
     this.syncFpm();
     this.systemNode = await nodes.systemNode();
@@ -2833,6 +2879,12 @@ export class Herd extends EventEmitter {
       }
       dirs.push(join(pythons.pythonDir(), 'bin'));
       pyEnv.PYTHONUNBUFFERED = '1';
+    }
+    // Ruby: the site's Ruby first (ruby, gem, bundle, and the gems' programs: rails, puma, jekyll …).
+    if (stackNow?.runtime === 'ruby' || stackNow?.subRuntimes?.includes('ruby')) {
+      const rb = this.rubyChoice(p);
+      const inst = this.installedRubies.find((i) => i.version === rb.version);
+      if (inst) dirs.unshift(inst.binDir);
     }
     // Tools installed on the Runtimes pages (pnpm, air, swag, poetry …), after the site's own runtimes.
     dirs.push(...tools.toolPathDirs());
@@ -3386,6 +3438,83 @@ export class Herd extends EventEmitter {
     } finally {
       this.dbTasks.delete(p.id);
       await this.refreshPythons();
+      this.rescan();
+    }
+  }
+
+  // ------------------------------------------------------------------- ruby
+
+  async refreshRubies(): Promise<void> {
+    this.rvVer = await rubies.rvVersion();
+    this.installedRubies = await rubies.listInstalled().catch(() => []);
+    const def = store.settings.rubyDefault;
+    if (def && !this.installedRubies.some((i) => i.version === def)) store.updateSettings({ rubyDefault: null });
+    rubies.writeShims(this.installedRubies, store.settings.rubyDefault);
+  }
+
+  rubyChoice(p: ProjectConfig, stack: StackInfo | undefined = this.stacks.get(p.id)): RubyChoice {
+    return rubies.chooseRuby(stack?.ruby?.spec ?? null, p.rubyVersion, this.installedRubies, store.settings.rubyDefault);
+  }
+
+  async rvInstall(): Promise<void> {
+    await this.trackInstall((x) => (this.rubyInstalling = x), 'rv', (report) => rubies.installRv(report));
+    await this.refreshRubies();
+    this.changed();
+  }
+
+  async rubyRemote(): Promise<RemoteRuby[]> {
+    if (!rubies.rvPath()) await this.rvInstall();
+    return rubies.listRemote();
+  }
+
+  async rubyInstall(version: string, via: RemoteRuby['via']): Promise<void> {
+    if (this.rubyInstalling && this.rubyInstalling.phase !== 'done' && this.rubyInstalling.phase !== 'error') {
+      throw new Error(`Already installing ${this.rubyInstalling.version}`);
+    }
+    if (via === 'rv' && !rubies.rvPath()) await this.rvInstall();
+    await this.trackInstall((x) => (this.rubyInstalling = x), version, (report) => rubies.install(version, via, report));
+    await this.refreshRubies();
+    if (!store.settings.rubyDefault) {
+      const own = this.installedRubies.find((i) => i.source === 'mrcatz');
+      if (own) store.updateSettings({ rubyDefault: own.version });
+      rubies.writeShims(this.installedRubies, store.settings.rubyDefault);
+    }
+    this.rescan();
+  }
+
+  async rubyUninstall(version: string): Promise<void> {
+    const inst = this.installedRubies.find((i) => i.version === version && i.source === 'mrcatz');
+    if (!inst) throw new Error(`Ruby ${version} is not managed by DevCatz`);
+    rubies.uninstall(version);
+    await this.refreshRubies();
+    this.rescan();
+    this.changed();
+  }
+
+  async rubySetDefault(version: string | null): Promise<void> {
+    store.updateSettings({ rubyDefault: version });
+    await this.refreshRubies();
+    this.changed();
+  }
+
+  /** `bundle install` with the site's Ruby (gems go into that Ruby, so they leave with it). */
+  private async installRubyDeps(p: ProjectConfig): Promise<void> {
+    if (!this.stacks.get(p.id)?.ruby?.gemfile) {
+      this.processes.log(p.id, 'sys', 'No Gemfile: this site runs on Ruby alone, nothing to install.');
+      return;
+    }
+    const rb = this.rubyChoice(p);
+    const inst = this.installedRubies.find((i) => i.version === rb.version);
+    if (!inst) throw new Error('Ruby is not installed: install it on the Ruby page (sidebar) first');
+    if (this.dbTasks.has(p.id)) throw new Error(`Busy: ${this.dbTasks.get(p.id)}`);
+    this.dbTasks.set(p.id, 'installing gems');
+    this.changed();
+    try {
+      this.processes.log(p.id, 'sys', `Using Ruby ${inst.version}: bundle install`);
+      const code = await stream(p.path, 'bundle install', (t) => this.processes.log(p.id, 'sys', t), this.runtimeEnv(p));
+      if (code !== 0) throw new Error(`bundle install failed (exit ${code}); see the log`);
+    } finally {
+      this.dbTasks.delete(p.id);
       this.rescan();
     }
   }
@@ -5051,6 +5180,7 @@ export class Herd extends EventEmitter {
       rust: this.rustChoice(p),
       launch: this.launchState.get(p.id) ?? null,
       python: this.pythonChoice(p),
+      ruby: this.rubyChoice(p),
       php: this.phpChoice(p),
       realtime: detectRealtime(p.path),
       search: detectSearch(p.path),
@@ -5159,6 +5289,12 @@ export class Herd extends EventEmitter {
         defaultVersion: store.settings.pythonDefault,
         installing: this.pythonInstalling,
       },
+      ruby: {
+        rv: this.rvVer,
+        installed: this.installedRubies,
+        defaultVersion: store.settings.rubyDefault,
+        installing: this.rubyInstalling,
+      },
       php: {
         installed: this.installedPhps,
         defaultVersion: store.settings.phpDefault,
@@ -5245,6 +5381,7 @@ function gitignoreFor(stack: StackInfo | undefined): string {
   const blocks: string[] = ['# Secrets\n.env\n.env.*\n!.env.example', '# macOS and editors\n.DS_Store\n.idea/\n.vscode/\n*.swp'];
   if (runtimes.has('node') || stack?.packageManager) blocks.push('# Node\nnode_modules/\ndist/\nbuild/\n.astro/\n.nuxt/\n.output/\n.next/\n.svelte-kit/\n.turbo/\ncoverage/\n*.log\nnpm-debug.log*\nyarn-error.log*');
   if (runtimes.has('php')) blocks.push(laravel ? '# Laravel\n/vendor/\n/public/hot\n/public/storage\n/storage/*.key\n/storage/pail\n.phpunit.result.cache\nHomestead.json\nHomestead.yaml' : '# PHP\n/vendor/\n.phpunit.result.cache');
+  if (runtimes.has('ruby')) blocks.push('# Ruby\n.bundle/\nvendor/bundle/\nlog/*.log\ntmp/\n.byebug_history\n.sass-cache/\n_site/\n.jekyll-cache/');
   if (runtimes.has('python')) blocks.push('# Python\n.venv/\nvenv/\n__pycache__/\n*.py[cod]\n.pytest_cache/\n.mypy_cache/\n.ruff_cache/\n*.egg-info/\ninstance/\ndb.sqlite3');
   if (runtimes.has('go')) blocks.push('# Go\nbin/\ntmp/\n*.exe\n*.test\n*.out');
   if (runtimes.has('rust')) blocks.push('# Rust\n/target/\n**/*.rs.bk\n.anchor/\ntest-ledger/\ndist/');

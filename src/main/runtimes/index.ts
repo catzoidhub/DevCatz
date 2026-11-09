@@ -3,6 +3,7 @@ import { goDriver } from './go';
 import { phpDriver } from './php';
 import { nodeDriver } from './node';
 import { pythonDriver } from './python';
+import { rubyDriver } from './ruby';
 import { rustDriver } from './rust';
 import { staticDriver } from './static';
 import type { RuntimeDriver } from './types';
@@ -15,7 +16,8 @@ import { detectFolders, projectFolders, siblingApps } from './folders';
  * in a Django app); Rust (Cargo.toml) before Node too, since Leptos / Yew / Anchor projects keep a package.json for
  * Tailwind or tests; a Go module with a package.json (frontend tooling) is treated as a Node project.
  */
-export const DRIVERS: RuntimeDriver[] = [phpDriver, pythonDriver, rustDriver, nodeDriver, goDriver, staticDriver];
+// Ruby before Node too: a Rails app keeps a package.json for jsbundling / Tailwind.
+export const DRIVERS: RuntimeDriver[] = [phpDriver, pythonDriver, rubyDriver, rustDriver, nodeDriver, goDriver, staticDriver];
 
 export function isProjectDir(dir: string): boolean {
   return DRIVERS.some((d) => d.matches(dir));
@@ -43,7 +45,7 @@ export function detectStack(root: string, domain: string): StackInfo {
   // A PHP or Python site with projects of other runtimes in its folders (Laravel + frontend/ with Vite, Django +
   // frontend/, FastAPI + api/ with NestJS): the root keeps the site's domain (PHP-FPM, or its own dev server), each
   // folder runs as an app on its own subdomain and port.
-  if (base?.runtime === 'php' || base?.runtime === 'python') {
+  if (base?.runtime === 'php' || base?.runtime === 'python' || base?.runtime === 'ruby') {
     const extra = siblingApps(root, domain, base.runtime);
     if (extra.apps.length) {
       base.apps.push(...extra.apps);

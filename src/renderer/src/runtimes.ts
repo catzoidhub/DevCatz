@@ -1,10 +1,10 @@
 import { words } from '@shared/platform';
-import { isPhpFramework, isPythonFramework, type BunChoice, type NodeChoice, type ProjectState, type StackInfo } from '@shared/types';
+import { isPhpFramework, isPythonFramework, isRubyFramework, type BunChoice, type NodeChoice, type ProjectState, type StackInfo } from '@shared/types';
 import { STACK_ICONS, type StackIcon } from './stackicons';
 
 /** One language runtime a site uses, for the Runtimes card and the version pickers. */
 export interface RuntimeRow {
-  kind: 'node' | 'bun' | 'go' | 'php' | 'python' | 'rust';
+  kind: 'node' | 'bun' | 'go' | 'php' | 'python' | 'ruby' | 'rust';
   label: string;
   version: string | null;
   /** Why this version, in words. */
@@ -20,6 +20,7 @@ export const usesJs = (stack: StackInfo) =>
   (stack.runtime === 'node' && stack.apps.some((a) => a.framework !== 'go' && a.framework !== 'rust' && a.framework !== 'static' && a.library !== 'deno')) || ((stack.runtime === 'php' || stack.runtime === 'python') && stack.apps.some((a) => a.kind === 'assets'));
 export const usesPhp = (stack: StackInfo) => stack.runtime === 'php';
 export const usesPython = (stack: StackInfo) => stack.runtime === 'python';
+export const usesRuby = (stack: StackInfo) => stack.runtime === 'ruby' || Boolean(stack.subRuntimes?.includes('ruby'));
 
 /** "Install dependencies (uv sync)" — what the button runs for a Python site. */
 export function pythonInstallLabel(stack: StackInfo): string {
@@ -48,7 +49,7 @@ function choiceWhy(c: BunChoice, file: string): string {
 
 export function runtimesOf(p: ProjectState): RuntimeRow[] {
   const rows: RuntimeRow[] = [];
-  const js = p.stack.apps.filter((a) => a.framework !== 'go' && a.framework !== 'rust' && !isPhpFramework(a.framework) && !isPythonFramework(a.framework)).map((a) => appName(a.dir, a.name));
+  const js = p.stack.apps.filter((a) => a.framework !== 'go' && a.framework !== 'rust' && !isPhpFramework(a.framework) && !isPythonFramework(a.framework) && !isRubyFramework(a.framework)).map((a) => appName(a.dir, a.name));
   const go = p.stack.apps.filter((a) => a.framework === 'go').map((a) => appName(a.dir, a.name));
   if (usesJs(p.stack)) {
     rows.push({ kind: 'node', label: 'Node.js', version: p.node.version, why: nodeWhy(p.node), missing: p.node.missing, apps: js });
@@ -85,6 +86,19 @@ export function runtimesOf(p: ProjectState): RuntimeRow[] {
               ? 'no Python yet: Install dependencies fetches one'
               : `${c.reason === 'default' ? 'default' : 'newest installed'}${c.spec ? `; the project asks for ${c.spec}` : ''}`;
     rows.unshift({ kind: 'python', label: 'Python', version: c.version, why, missing: !c.version || (c.missing && c.reason !== 'venv'), apps: [appName('.', p.name)] });
+  }
+  if (usesRuby(p.stack)) {
+    const c = p.ruby;
+    const why =
+      c.reason === 'site'
+        ? 'chosen for this site'
+        : c.reason === 'project'
+          ? `matches ${c.spec} (.ruby-version / Gemfile)`
+          : c.reason === 'none'
+            ? 'no Ruby yet: install one on the Ruby page'
+            : `${c.reason === 'default' ? 'default' : 'newest installed'}${c.spec ? `; the project asks for ${c.spec}${c.missing ? ', not installed' : ''}` : ''}`;
+    const rb = p.stack.apps.filter((a) => isRubyFramework(a.framework)).map((a) => appName(a.dir, a.name));
+    rows.unshift({ kind: 'ruby', label: 'Ruby', version: c.version, why, missing: !c.version || c.missing, apps: rb.length ? rb : [appName('.', p.name)] });
   }
   return rows;
 }
@@ -171,6 +185,11 @@ const TAGS: Record<string, [string, string]> = {
   fastapi: ['FastAPI', 'fastapi'],
   litestar: ['Litestar', 'litestar'],
   python: ['Python', 'python'],
+  rails: ['Ruby on Rails', 'rubyonrails'],
+  sinatra: ['Sinatra', 'sinatra'],
+  hanami: ['Hanami', 'hanami'],
+  jekyll: ['Jekyll', 'jekyll'],
+  ruby: ['Ruby', 'ruby'],
 };
 
 /**
@@ -228,6 +247,24 @@ const LIBRARIES: Record<string, [string, string]> = {
   express: ['Express', 'express'],
   bun: ['Bun', 'bun'],
   deno: ['Deno', 'deno'],
+  // Ruby: the project's own logo where it has one, else the Ruby mark.
+  bridgetown: ['Bridgetown', 'bridgetown'],
+  middleman: ['Middleman', 'middleman'],
+  padrino: ['Padrino', 'padrino'],
+  rage: ['Rage', 'rage'],
+  grape: ['Grape', 'grape'],
+  roda: ['Roda', 'ruby'],
+  cuba: ['Cuba', 'ruby'],
+  hobbit: ['Hobbit', 'ruby'],
+  scorched: ['Scorched', 'ruby'],
+  nyny: ['NYNY', 'ruby'],
+  camping: ['Camping', 'ruby'],
+  ramaze: ['Ramaze', 'ruby'],
+  ramverk: ['Ramverk', 'ruby'],
+  goliath: ['Goliath', 'ruby'],
+  cramp: ['Cramp', 'ruby'],
+  volt: ['Volt', 'ruby'],
+  rack: ['Rack', 'ruby'],
 };
 
 /** The name and mark of a framework; a Go / Python app's own web framework (`library`) wins when known. */
@@ -239,7 +276,7 @@ export function frameworkTag(fw: string, library?: string | null): { label: stri
 /** The site's framework (or language) for the site list: its web app's mark and name (Laravel, Nuxt, Go, …). */
 export function stackTag(p: ProjectState): { label: string; icon: StackIcon } {
   const web = p.stack.apps.find((a) => a.kind === 'web') ?? p.stack.apps[0];
-  return frameworkTag(web?.framework ?? (p.stack.runtime === 'go' || p.stack.runtime === 'python' || p.stack.runtime === 'rust' ? p.stack.runtime : 'node'), web?.library);
+  return frameworkTag(web?.framework ?? (p.stack.runtime === 'go' || p.stack.runtime === 'python' || p.stack.runtime === 'rust' || p.stack.runtime === 'ruby' ? p.stack.runtime : 'node'), web?.library);
 }
 
 /**

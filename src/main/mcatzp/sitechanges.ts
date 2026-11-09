@@ -164,13 +164,13 @@ export function siteChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
     }),
   ];
 
-  const RT = { type: 'string', enum: ['node', 'bun', 'go', 'python', 'php'] };
+  const RT = { type: 'string', enum: ['node', 'bun', 'go', 'python', 'ruby', 'php'] };
   const runtimes: ChangeAction[] = !scopes.services
     ? []
     : [
         global('set_default_runtime', 'Set a default runtime version', 'Sets which installed version a runtime uses by default; left out, none.', { runtime: RT, version: VERSION }, ['runtime'], 'runtimes', (a) => ({ title: `Use ${String(a.version ?? 'no default')} for ${String(a.runtime)}?`, facts: [] }), async (a) => {
           const v = typeof a.version === 'string' ? a.version : null;
-          await (a.runtime === 'node' ? api.nodeSetDefault(v) : a.runtime === 'bun' ? api.bunSetDefault(v) : a.runtime === 'go' ? api.goSetDefault(v) : a.runtime === 'python' ? api.pythonSetDefault(v) : api.phpSetDefault(v));
+          await (a.runtime === 'node' ? api.nodeSetDefault(v) : a.runtime === 'bun' ? api.bunSetDefault(v) : a.runtime === 'go' ? api.goSetDefault(v) : a.runtime === 'python' ? api.pythonSetDefault(v) : a.runtime === 'ruby' ? api.rubySetDefault(v) : api.phpSetDefault(v));
           return ok({ runtime: a.runtime, default: v });
         }),
         global('update_runtime', 'Update a runtime', 'Installs the newer patch release of an installed runtime (see list_updates).', { runtime: { type: 'string', enum: ['node', 'bun', 'go', 'php'] }, from: VERSION }, ['runtime', 'from'], 'runtimes', (a) => ({ title: `Update ${String(a.runtime)} ${String(a.from)}?`, facts: [] }), async (a, ctx) => inBackground(api, ctx, api.runtimeUpdate(a.runtime as RuntimeKind, String(a.from)), () => api.installCancel(String(a.runtime)), { runtime: a.runtime }, 'Updated', 'Still updating: list_updates shows it; only cancel_install stops it', () => null)),
@@ -183,6 +183,7 @@ export function siteChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
           return ok({ result: 'Done' });
         }),
         global('install_uv', 'Install uv', 'Installs uv, which then installs Pythons and creates venvs.', {}, [], 'python', () => ({ title: 'Install uv?', facts: [] }), async (_a, ctx) => inBackground(api, ctx, api.uvInstall(), () => api.installCancel('python'), { tool: 'uv' }, 'Installed', 'Still installing: list_runtimes shows it', () => null)),
+        global('install_rv', 'Install rv', 'Installs rv, which then installs Rubies (3.2 and newer; older ones are compiled with ruby-build).', {}, [], 'ruby', () => ({ title: 'Install rv?', facts: [] }), async (_a, ctx) => inBackground(api, ctx, api.rvInstall(), () => api.installCancel('ruby'), { tool: 'rv' }, 'Installed', 'Still installing: list_runtimes shows it', () => null)),
         global('install_composer', 'Install Composer', 'Installs Composer for PHP.', {}, [], 'php', () => ({ title: 'Install Composer?', facts: [] }), async (_a, ctx) => inBackground(api, ctx, api.composerInstall(), () => api.installCancel('composer'), { tool: 'composer' }, 'Installed', 'Still installing: list_runtimes shows it', () => null)),
         global('php_extension', 'Install or switch a PHP extension', 'Installs an extension for a PHP version, or switches one on or off (see php_extensions).', { version: VERSION, action: { type: 'string', enum: ['install', 'enable', 'disable'] }, extension: S('The package or module name.', 100) }, ['version', 'action', 'extension'], 'php:extensions', (a) => ({ title: `${String(a.action)} ${String(a.extension)} on PHP ${String(a.version)}?`, facts: [] }), async (a, ctx) => {
           if (a.action === 'install') return inBackground(api, ctx, api.phpExtInstall(String(a.version), String(a.extension)), () => api.installCancel('php'), { extension: a.extension }, 'Installed', 'Still installing: php_extensions shows it', () => null);

@@ -31,7 +31,7 @@ import { firewallWords, forwardFromWsl, wslReaches } from './wslhost';
 
 interface Hooks {
   projects(): ProjectConfig[];
-  runtime(siteId: string): 'node' | 'go' | 'php' | 'python' | 'rust' | null;
+  runtime(siteId: string): 'node' | 'go' | 'php' | 'python' | 'rust' | 'ruby' | null;
   framework(siteId: string): string | null;
   takenDomains(): string[];
   changed(): void;

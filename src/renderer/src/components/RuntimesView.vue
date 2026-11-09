@@ -6,6 +6,7 @@ import GoView from './GoView.vue';
 import NodeView from './NodeView.vue';
 import PhpView from './PhpView.vue';
 import PythonView from './PythonView.vue';
+import RubyView from './RubyView.vue';
 import RustView from './RustView.vue';
 import { ICONS } from '../icons';
 import { STACK_ICONS } from '../stackicons';
@@ -16,13 +17,13 @@ import { isWin, WIN_RUNTIMES } from '../platform';
  * Runtimes (rail): the languages DevCatz installs and runs sites with. The
  * list on the left, the chosen runtime's versions and settings on the right.
  */
-export type RuntimeId = 'php' | 'go' | 'rust' | 'python' | 'bun' | 'node';
+export type RuntimeId = 'php' | 'go' | 'rust' | 'python' | 'ruby' | 'bun' | 'node';
 const current = defineModel<RuntimeId>({ required: true });
 
 const s = computed(() => state.value!);
 /** Newer versions of the runtime plus newer releases of its tools (Tools tab). */
 const updatesFor = (r: string) => s.value.updates.list.filter((u) => u.runtime === r).length + s.value.toolUpdates.filter((u) => u.page === r).length;
-const sitesOn = (r: 'php' | 'go' | 'python' | 'node' | 'rust') => s.value.projects.filter((p) => p.stack.runtime === r || p.stack.subRuntimes?.includes(r as 'rust')).length;
+const sitesOn = (r: 'php' | 'go' | 'python' | 'ruby' | 'node' | 'rust') => s.value.projects.filter((p) => p.stack.runtime === r || p.stack.subRuntimes?.includes(r as 'rust')).length;
 const plural = (n: number) => `${n} site${n === 1 ? '' : 's'}`;
 
 const all = computed(() => [
@@ -43,6 +44,15 @@ const all = computed(() => [
     version: s.value.python.defaultVersion ?? s.value.python.installed[0]?.version ?? null,
     detail: s.value.python.uv ? `uv ${s.value.python.uv} · ${plural(sitesOn('python'))}` : 'uv not installed',
     updates: updatesFor('python'),
+  },
+  {
+    id: 'ruby' as const,
+    label: 'Ruby',
+    icon: STACK_ICONS.ruby.d,
+    box: '0 0 24 24',
+    version: s.value.ruby.defaultVersion ?? s.value.ruby.installed[0]?.version ?? null,
+    detail: s.value.ruby.rv ? `rv ${s.value.ruby.rv} · ${plural(sitesOn('ruby'))}` : 'rv not installed',
+    updates: updatesFor('ruby'),
   },
   {
     id: 'node' as const,
@@ -113,6 +123,7 @@ onMounted(() => void herd.refreshRuntimes().catch(() => undefined));
   <main class="flex min-w-0 flex-1 flex-col bg-base-100">
     <PhpView v-if="current === 'php'" />
     <PythonView v-else-if="current === 'python'" />
+    <RubyView v-else-if="current === 'ruby'" />
     <NodeView v-else-if="current === 'node'" />
     <BunView v-else-if="current === 'bun'" />
     <GoView v-else-if="current === 'go'" />

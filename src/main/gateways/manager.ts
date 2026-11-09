@@ -34,7 +34,7 @@ import { words } from '@shared/platform';
 
 interface Hooks {
   projects(): ProjectConfig[];
-  runtime(siteId: string): 'node' | 'go' | 'php' | 'python' | 'rust' | null;
+  runtime(siteId: string): 'node' | 'go' | 'php' | 'python' | 'rust' | 'ruby' | null;
   framework(siteId: string): string | null;
   takenDomains(): string[];
   /** Ports used elsewhere (WhatsApp engines …), for the conflict check. */

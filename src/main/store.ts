@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS: Settings = {
   bunDefault: null,
   goDefault: null,
   pythonDefault: null,
+  rubyDefault: null,
   phpDefault: null,
   httpsPort: 8443,
   httpPort: 8180,
