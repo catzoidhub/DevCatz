@@ -213,7 +213,7 @@ export interface BuildTarget {
 export interface DepFolder {
   /** Relative to the site, e.g. `node_modules`, `apps/web/node_modules`, `vendor`, `.venv`. */
   path: string;
-  kind: 'node_modules' | 'vendor' | 'venv' | 'target';
+  kind: 'node_modules' | 'vendor' | 'venv' | 'target' | 'bundle';
   bytes: number;
 }
 /** A site's dependency folders and how long ago it was used. */

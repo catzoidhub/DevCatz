@@ -7,7 +7,8 @@ import { isWin } from './platform';
 
 /**
  * Free disk space (TODO §30): the dependency folders of a site — node_modules (every app and package of a
- * monorepo), Composer's vendor/, a Python venv, Cargo's target/ — that can be thrown away and installed again with
+ * monorepo), Composer's vendor/, a Python venv, Cargo's target/ (also a crate in a subfolder: Tauri's src-tauri/),
+ * Bundler's vendor/bundle (when the gems are kept in the project) — that can be thrown away and installed again with
  * "Install dependencies". Only real folders inside the project count: never a symlink, never outside it.
  */
 
@@ -28,10 +29,26 @@ export function depFolders(p: ProjectConfig, stack: StackInfo | undefined): { ab
     add(dir, 'node_modules', 'node_modules');
     if (existsSync(join(dir, 'composer.json'))) add(dir, 'vendor', 'vendor');
     for (const v of VENVS) if (existsSync(join(dir, v, 'pyvenv.cfg'))) add(dir, v, 'venv');
-    // Cargo's build folder: often the biggest of all (gigabytes); rebuilt on the next Start.
-    if (existsSync(join(dir, 'Cargo.toml'))) add(dir, 'target', 'target');
+    // Cargo's build folder: often the biggest of all (gigabytes); rebuilt on the next Start. A crate one folder down
+    // counts too (Tauri's src-tauri/, a frontend app with its Rust backend in server/).
+    for (const crate of [dir, ...subdirs(dir)]) if (existsSync(join(crate, 'Cargo.toml'))) add(crate, 'target', 'target');
+    // Bundler with the gems in the project (BUNDLE_PATH / `bundle config set path vendor/bundle`); by default they
+    // live in the Ruby itself, shared by every site on it, and there is nothing in the project to free.
+    if (existsSync(join(dir, 'Gemfile'))) add(join(dir, 'vendor'), 'bundle', 'bundle');
   }
   return out;
+}
+
+const SKIP = new Set(['node_modules', 'target', 'vendor', '.git', '.venv', 'venv', 'dist', 'build', 'out']);
+/** The folders right under `dir` (not dependency or build folders themselves). */
+function subdirs(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !SKIP.has(e.name))
+      .map((e) => join(dir, e.name));
+  } catch {
+    return [];
+  }
 }
 
 /** A real directory (not a symlink) whose real path is inside `root`. */

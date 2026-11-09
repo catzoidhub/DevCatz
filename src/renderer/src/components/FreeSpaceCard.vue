@@ -4,7 +4,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import type { SiteDeps } from '@shared/types';
 import ConfirmDialog from './ConfirmDialog.vue';
 import CatMood from './CatMood.vue';
-import { attempt, freeSpaceRequest, herd } from '../store';
+import { attempt, freeSpaceRequest, herd, state } from '../store';
 import { bytes } from '../monitor';
 import { ago } from '../depsize';
 
@@ -13,6 +13,8 @@ import { ago } from '../depsize';
  * size; tick and move them to the Trash on an old project. "Install dependencies" brings them back.
  */
 const props = defineProps<{ siteId: string; running: boolean }>();
+/** A Ruby site keeps its gems in the Ruby it runs on (shared by every site on it, user 2026-11-09): not a folder here. */
+const rubySite = computed(() => state.value?.projects.find((p) => p.id === props.siteId && (p.stack.runtime === 'ruby' || p.stack.subRuntimes?.includes('ruby'))) ?? null);
 const info = ref<SiteDeps | null>(null);
 const loading = ref(false);
 const picked = ref<string[]>([]);
@@ -76,11 +78,15 @@ async function free() {
       <div v-else-if="info && !info.folders.length" class="flex items-center gap-3 text-sm opacity-70">
         <CatMood mood="success" class="size-8 shrink-0" />No dependency folders: nothing to free here.
       </div>
+      <p v-if="info && rubySite?.stack.ruby?.gemfile" class="text-xs opacity-60">
+        This site’s gems are in Ruby {{ rubySite.ruby.version ?? '' }} itself, shared with every site on it, so they take no room in this folder.
+        Uninstalling that Ruby (Runtimes → Ruby) frees them.
+      </p>
       <template v-else-if="info">
         <label v-for="f in info.folders" :key="f.path" class="flex cursor-pointer items-center gap-3 rounded-box border border-base-300/60 px-3 py-2">
           <input type="checkbox" class="checkbox checkbox-sm" :checked="picked.includes(f.path)" :disabled="running" @change="toggle(f.path, ($event.target as HTMLInputElement).checked)" />
           <code class="min-w-0 flex-1 truncate text-xs">{{ f.path }}</code>
-          <span class="badge badge-ghost badge-sm">{{ f.kind === 'venv' ? 'Python venv' : f.kind === 'vendor' ? 'Composer' : f.kind === 'target' ? 'Cargo build' : 'npm / bun' }}</span>
+          <span class="badge badge-ghost badge-sm">{{ f.kind === 'venv' ? 'Python venv' : f.kind === 'vendor' ? 'Composer' : f.kind === 'target' ? 'Cargo build' : f.kind === 'bundle' ? 'Bundler gems' : 'npm / bun' }}</span>
           <span class="w-20 text-right font-mono text-sm tabular-nums">{{ bytes(f.bytes) }}</span>
         </label>
         <div class="flex items-center gap-3 pt-1">
