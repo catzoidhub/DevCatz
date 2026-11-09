@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { checksumFor, downloadVerified } from './download';
 import type { InstalledNode, NodeInstallProgress, RemoteNode } from '@shared/types';
 import { getShellEnv, run, userPathHas } from './env';
-import { exe, isWin, moveDir, pathKey, removeTemp, splitPath, TAR } from './platform';
+import { exe, isLinux, isWin, moveDir, pathKey, removeTemp, splitPath, TAR } from './platform';
 import { dataDir } from './store';
+import { runAsRootLinux } from './linuxadmin';
 
 /**
  * Node.js versions, managed the way Laravel Herd manages PHP/Node:
@@ -18,8 +19,9 @@ import { dataDir } from './store';
 const DIST = 'https://nodejs.org/dist';
 const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
 /** Build name on nodejs.org and the key index.json lists it under. */
-const BUILD = isWin ? 'win-x64' : `darwin-${ARCH}`;
-const INDEX_KEY = isWin ? 'win-x64-zip' : `osx-${ARCH}-tar`;
+const BUILD = isWin ? 'win-x64' : isLinux ? `linux-${ARCH}` : `darwin-${ARCH}`;
+// Linux: index.json lists the tarballs under `linux-x64` / `linux-arm64` (glibc builds).
+const INDEX_KEY = isWin ? 'win-x64-zip' : isLinux ? `linux-${ARCH}` : `osx-${ARCH}-tar`;
 const EXT = isWin ? 'zip' : 'tar.gz';
 /** Where a version's `node` lives: <version>/bin, or the version folder itself on Windows. */
 const binOf = (versionDir: string) => (isWin ? versionDir : join(versionDir, 'bin'));
@@ -124,10 +126,36 @@ export async function install(version: string, progress: (p: NodeInstallProgress
     const { code, stderr } = await run(TAR, [isWin ? '-xf' : '-xzf', archive, '-C', tmp], { timeout: 180_000 });
     if (code !== 0) throw new Error(`tar: ${stderr.trim()}`);
     await moveDir(join(tmp, name), target);
+    if (isLinux) await linuxLibraries(target);
     progress({ version, phase: 'done', received, total });
   } finally {
     removeTemp(tmp);
   }
+}
+
+/**
+ * Linux: nodejs.org's builds need libatomic1, which a fresh Ubuntu (arm64 at least) does not have — node then fails
+ * with "libatomic.so.1: cannot open shared object file". Asked for once through the password dialog (apt / dnf);
+ * where that cannot work, the error says what to install.
+ */
+async function linuxLibraries(versionDir: string): Promise<void> {
+  const node = join(binOf(versionDir), 'node');
+  const missing = async () => {
+    const r = await run(node, ['--version'], { timeout: 20_000 });
+    return r.code === 0 ? [] : [...new Set([...r.stderr.matchAll(/(lib[\w.+-]+\.so[\w.]*): cannot open shared object file/g)].map((m) => m[1]))];
+  };
+  const libs = await missing();
+  if (!libs.length) return;
+  const pkgs = libs.map((l) => (l.startsWith('libatomic') ? 'libatomic1' : null));
+  if (pkgs.every(Boolean)) {
+    const root = await runAsRootLinux(
+      `if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${pkgs.join(' ')} >/dev/null; elif command -v dnf >/dev/null 2>&1; then dnf install -y -q libatomic >/dev/null; fi`,
+    );
+    if (!(await missing()).length) return;
+    if (root.cancelled) throw new Error(`Cancelled: Node.js needs ${libs.join(', ')} (sudo apt install libatomic1), then Install again`);
+    if (!root.ok) console.warn('installing', pkgs.join(' '), 'failed:', root.message);
+  }
+  throw new Error(`Node.js is installed but needs ${libs.join(', ')} from your package manager (e.g. sudo apt install libatomic1)`);
 }
 
 export function uninstall(version: string): void {

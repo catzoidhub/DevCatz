@@ -3394,6 +3394,11 @@ export class Herd extends EventEmitter {
 
   async refreshPhps(): Promise<void> {
     this.installedPhps = await phps.listInstalled();
+    try {
+      phpext.pruneLeftovers(this.installedPhps.map((i) => i.version));
+    } catch (e) {
+      console.warn('PHP leftovers:', (e as Error).message);
+    }
     // Windows: php.ini written before extensions moved to conf.d/20-<name>.ini still loads them itself: rewrite it once.
     for (const p of this.installedPhps) {
       if (isWin && p.source === 'mrcatz' && phps.iniNeedsUpgrade(p.version)) {
@@ -3635,7 +3640,9 @@ export class Herd extends EventEmitter {
   async phpUninstall(version: string): Promise<void> {
     this.fpm.stop(version);
     phps.uninstall(version);
-    phpext.pruneIni(version);
+    // Only when no other PHP of that version (Herd's, Homebrew's) still uses the settings folder.
+    if (!(await phps.listInstalled()).some((i) => i.version === version)) phpext.removeVersionLeftovers(version);
+    else phpext.pruneIni(version);
     await this.refreshPhps();
     this.syncFpm();
     this.changed();

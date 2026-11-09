@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import type { FpmStatus, InstalledPhp } from '@shared/types';
@@ -131,6 +131,8 @@ export class FpmManager {
     const v = pool.php.version;
     const etc = etcDir(v);
     const conf = join(etc, 'php-fpm.conf');
+    const pidFile = join(etc, 'php-fpm.pid');
+    stopStale(pidFile, conf);
     rmSync(pool.socket, { force: true });
     writeFileSync(
       conf,
@@ -139,6 +141,7 @@ export class FpmManager {
         '[global]',
         `error_log = ${this.logFile(v)}`,
         'daemonize = no',
+        `pid = ${pidFile}`,
         '',
         '[mrcatz]',
         `listen = ${pool.socket}`,
@@ -335,4 +338,33 @@ export class FpmManager {
       error: p.error,
     }));
   }
+}
+
+/**
+ * A pool left over from a DevCatz that did not get to stop it (killed, crashed, a power cut): its master still runs
+ * from our config, holds the socket and keeps sockets it inherited. Its pid file names it; it is ours only when that
+ * process is a php-fpm master on this very config, so a reused pid is never touched.
+ */
+function stopStale(pidFile: string, conf: string): void {
+  let pid = 0;
+  try {
+    pid = Number(readFileSync(pidFile, 'utf8').trim());
+  } catch {
+    return;
+  }
+  if (!Number.isInteger(pid) || pid <= 1) return;
+  const ps = spawnSync('ps', ['-p', String(pid), '-o', 'args='], { encoding: 'utf8' });
+  if (ps.status !== 0 || !/php-fpm/.test(ps.stdout) || !ps.stdout.includes(conf)) return;
+  try {
+    // The master takes its workers with it on SIGQUIT (graceful) / SIGTERM.
+    process.kill(pid, 'SIGTERM');
+    console.log(`php-fpm: stopped a leftover pool (pid ${pid})`);
+  } catch {
+    /* already gone */
+  }
+  for (let i = 0; i < 20; i++) {
+    if (spawnSync('ps', ['-p', String(pid)]).status !== 0) break;
+    spawnSync('sleep', ['0.1']);
+  }
+  rmSync(pidFile, { force: true });
 }

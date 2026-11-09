@@ -8,7 +8,7 @@ import { downloadVerified } from './download';
 import { spawn } from 'node:child_process';
 import { getShellEnv, run } from './env';
 import { compare, shimDir } from './node';
-import { isWin, moveDir, removeTemp, TAR } from './platform';
+import { isLinux, isWin, moveDir, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -28,6 +28,8 @@ import { dataDir } from './store';
  */
 const BASE = 'https://dl.static-php.dev/static-php-cli/bulk';
 const ARCH = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
+/** static-php.dev's OS in a file name: php-8.4.23-fpm-macos-aarch64.tar.gz, …-linux-x86_64.tar.gz (static, musl). */
+const OS_NAME = isLinux ? 'linux' : 'macos';
 const VERSION = /^\d+\.\d+\.\d+$/;
 const HERD_BIN = join(homedir(), 'Library/Application Support/Herd/bin');
 /** static-php.dev starts at 8.0; older apps (Laravel ≤ 8, CodeIgniter 3, …) get PHP from shivammathur/php via Homebrew. */
@@ -90,7 +92,7 @@ async function remoteVersions(): Promise<string[]> {
   const files = (await res.json()) as { name: string }[];
   const kinds = new Map<string, Set<string>>();
   for (const f of files) {
-    const m = f.name.match(new RegExp(`^php-(\\d+\\.\\d+\\.\\d+)-(cli|fpm)-macos-${ARCH}\\.tar\\.gz$`));
+    const m = f.name.match(new RegExp(`^php-(\\d+\\.\\d+\\.\\d+)-(cli|fpm)-${OS_NAME}-${ARCH}\\.tar\\.gz$`));
     if (m) kinds.set(m[1], (kinds.get(m[1]) ?? new Set()).add(m[2]));
   }
   const versions = [...kinds].filter(([, k]) => k.has('cli') && k.has('fpm')).map(([v]) => v);
@@ -141,7 +143,8 @@ export async function listRemote(force = false): Promise<RemotePhp[]> {
     })
     .sort((a, b) => compare(b.version, a.version));
   // Windows: every minor php.net's Windows releases still list (7.4 included) is a download; there is no Homebrew.
-  if (isWin) return builds;
+  // Linux: static-php.dev's PHP 8 only for now (older minors would come from the distro or a PPA; TODO §35).
+  if (isWin || isLinux) return builds;
   return [...builds, ...LEGACY_MINORS.filter((m) => !byMinor.has(m)).map((minor) => ({ minor, version: minor, via: 'homebrew' as const }))];
 }
 
@@ -225,7 +228,7 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
   try {
     let done = 0;
     for (const kind of ['cli', 'fpm'] as const) {
-      const file = `php-${version}-${kind}-macos-${ARCH}.tar.gz`;
+      const file = `php-${version}-${kind}-${OS_NAME}-${ARCH}.tar.gz`;
       const archive = join(tmp, file);
       // No upstream checksum: the SHA-256 is recorded in SHA256SUMS next to the binaries.
       const digest = await downloadVerified(`${BASE}/${file}`, archive, '', (r, t) =>
@@ -379,8 +382,9 @@ const caBundle = () => join(dataDir('php-etc'), 'cacert.pem');
  * plus DevCatz's local CA, so Http::get('https://other-site.localhost') works.
  */
 export async function writeCaBundle(localCa: string | null): Promise<void> {
-  if (isWin) {
-    // Windows: Node's bundled roots plus the ones in Windows' own store (no `security` command), then DevCatz's local CA.
+  if (isWin || isLinux) {
+    // Windows / Linux: Node's bundled roots plus the system's own store (Linux: /etc/ssl/certs, which holds DevCatz's CA
+    // once trusted) (no `security` command), then DevCatz's local CA.
     let system: string[] = [];
     try {
       system = getCACertificates('system');

@@ -6,7 +6,8 @@ import type { PhpExtCatalogItem, PhpExtension, PhpExtTask } from '@shared/types'
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { brewBin, etcDir, phpDir } from './php';
-import { isWin, TAR } from './platform';
+import { dataDir } from './store';
+import { isLinux, isWin, TAR } from './platform';
 
 /**
  * PHP extensions beyond the ones compiled into static-php.dev's build: built
@@ -49,9 +50,16 @@ export const CATALOG: PhpExtCatalogItem[] = [
 const VERSION = /^\d+\.\d+\.\d+$/;
 const PKG = /^[A-Za-z][A-Za-z0-9_]{1,40}$/;
 
-/** A folder without spaces for autotools: ~/Library/Caches/DevCatz, else the temp folder. */
+/** The user's cache folder for DevCatz: ~/Library/Caches (macOS), $XDG_CACHE_HOME or ~/.cache (Linux), %LOCALAPPDATA% (Windows). */
+function cacheRoot(): string {
+  if (isWin) return join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'DevCatz', 'Cache');
+  if (isLinux) return join(process.env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'DevCatz');
+  return join(homedir(), 'Library/Caches/DevCatz');
+}
+
+/** A folder without spaces for autotools: the cache folder, else the temp folder. */
 function noSpaceDir(...parts: string[]): string {
-  const home = join(homedir(), 'Library/Caches/DevCatz');
+  const home = cacheRoot();
   const base = /\s/.test(home) ? join(tmpdir(), 'devcatz') : home;
   const d = join(base, ...parts);
   mkdirSync(d, { recursive: true });
@@ -212,6 +220,30 @@ function readMeta(version: string, module: string): Meta | null {
 }
 
 /** Drops ini files whose module is gone (PHP uninstalled and reinstalled, folder cleaned up). */
+/**
+ * After a PHP version is uninstalled: its extension toolkit (phpize, headers) and its settings folder go too, so
+ * nothing of that version stays on disk. Also run at start-up for versions removed before this existed.
+ */
+export function removeVersionLeftovers(version: string): void {
+  for (const base of [cacheRoot(), join(tmpdir(), 'devcatz')]) rmSync(join(base, 'php-dev', version), { recursive: true, force: true });
+  rmSync(etcDir(version), { recursive: true, force: true });
+}
+
+/** Leftovers of versions no longer installed from any source (DevCatz, Herd, Homebrew …). */
+export function pruneLeftovers(installed: string[]): void {
+  const keep = new Set(installed);
+  const etcRoot = dataDir('php-etc');
+  for (const root of [etcRoot, join(cacheRoot(), 'php-dev'), join(tmpdir(), 'devcatz', 'php-dev')]) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(root);
+    } catch {
+      continue;
+    }
+    for (const v of names) if (/^\d+\.\d+\.\d+$/.test(v) && !keep.has(v)) rmSync(join(root, v), { recursive: true, force: true });
+  }
+}
+
 export function pruneIni(version: string): void {
   const d = join(etcDir(version), 'conf.d');
   for (const f of readdirSync(d)) {

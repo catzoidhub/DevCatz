@@ -2,5 +2,6 @@ node_modules/
 out/
 dist/
 dist-win/
+dist-linux/
 .DS_Store
 *.log
