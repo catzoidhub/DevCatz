@@ -36,6 +36,15 @@ const busy = computed(() => {
 });
 const percent = computed(() => (busy.value?.total ? Math.round((busy.value.received / busy.value.total) * 100) : 0));
 
+async function installBuildTools() {
+  const ok = await askConfirm({
+    title: 'Install the MSYS2 build tools?',
+    text: 'Gems with native code (Puma’s nio4r, bcrypt, json …) are compiled with MSYS2, RubyInstaller’s devkit. DevCatz downloads MSYS2 from its GitHub release (SHA-256 checked) next to its Rubies and runs ridk install for the MinGW toolchain: about 1 GB, several minutes.',
+    confirm: 'Install',
+    tone: 'primary',
+  });
+  if (ok && (await attempt(() => herd.rubyBuildToolsInstall().then(() => true)))) notify('success', 'MSYS2 build tools installed');
+}
 async function installRv() {
   if (await attempt(() => herd.rvInstall().then(() => true))) {
     notify('success', 'rv installed');
@@ -99,12 +108,20 @@ const tab = ref<Tab>('installed');
       <button class="btn btn-sm btn-primary shrink-0" :disabled="!!busy" @click="installRv">Install rv</button>
     </div>
 
+    <div v-if="isWin && b.rv && b.installed.some((i) => i.source === 'mrcatz') && !b.msys2" role="alert" class="alert flex flex-wrap">
+      <div class="min-w-48 flex-1">
+        <div class="font-medium">Build tools for gems with native code</div>
+        <div class="text-xs opacity-80">Most web apps need them (Puma, Rails): MSYS2 with the MinGW toolchain, about 1 GB, installed once for every Ruby here.</div>
+      </div>
+      <button class="btn btn-sm shrink-0" :disabled="!!busy" @click="installBuildTools">Install build tools</button>
+    </div>
+
     <!-- Progress -->
     <div v-if="busy" class="alert">
       <span class="loading loading-spinner loading-sm" />
       <div class="flex-1">
         <div class="text-sm">
-          Installing {{ /^(rv|ruby-build)/.test(busy.version) ? busy.version : `Ruby ${busy.version}` }}…
+          Installing {{ /^(rv|ruby-build|MSYS2)/.test(busy.version) ? busy.version : `Ruby ${busy.version}` }}…
           <span v-if="busy.total" class="opacity-60">{{ (busy.received / 1048576).toFixed(1) }} / {{ (busy.total / 1048576).toFixed(1) }} MB</span>
           <span v-else-if="busy.detail" class="font-mono text-xs opacity-60">{{ busy.detail }}</span>
         </div>
@@ -147,6 +164,7 @@ const tab = ref<Tab>('installed');
               </tbody>
             </table>
           </div>
+          <p v-if="isWin && b.msys2" class="text-xs opacity-60">Build tools for native gems: MSYS2 at <code class="selectable">{{ b.msys2 }}</code>.</p>
           <p class="text-xs opacity-60">
             A site runs with the Ruby it asks for (<code>.ruby-version</code>, <code>.tool-versions</code> or the Gemfile’s <code>ruby</code>), else the default.
           </p>

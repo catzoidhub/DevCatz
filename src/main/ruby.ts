@@ -244,6 +244,66 @@ async function buildPrerequisites(): Promise<Record<string, string>> {
   return {};
 }
 
+// ------------------------------------------------- Windows: MSYS2 build tools
+
+/**
+ * Windows: gems with native code (nio4r for Puma, bcrypt, json …) are compiled with RubyInstaller's devkit, MSYS2 —
+ * without it `bundle install` stops at "MSYS2 could not be found. Please run ridk install". DevCatz puts MSYS2 next to
+ * its Rubies (ruby/versions/msys64), one of the places RubyInstaller looks, so every Ruby there shares it; an MSYS2
+ * the user already has at C:\msys64 counts too.
+ */
+export const msys2Dir = () => join(rubyVersionsDir(), 'msys64');
+const MSYS2_SPOTS = () => [msys2Dir(), 'C:\\msys64'];
+/** Where a usable MSYS2 is (with the UCRT gcc ridk installs), null when there is none. */
+export function msys2Path(): string | null {
+  if (!isWin) return null;
+  return MSYS2_SPOTS().find((d) => existsSync(join(d, 'ucrt64', 'bin', 'gcc.exe'))) ?? null;
+}
+export const MSYS2_MISSING = /MSYS2 could not be found|ridk install/;
+
+/**
+ * Installs MSYS2 from its latest GitHub release (the base archive, SHA-256 checked) and the UCRT toolchain through
+ * RubyInstaller's own `ridk install 2 3` (system update, then the MinGW development toolchain). About 1 GB, minutes.
+ */
+export async function installMsys2(progress: (p: RuntimeInstallProgress) => void): Promise<void> {
+  if (!isWin) throw new Error('MSYS2 is for Windows');
+  const ruby = (await listInstalled()).find((r) => r.source === 'mrcatz');
+  if (!ruby) throw new Error('Install a Ruby first: its ridk installs the toolchain');
+  const label = 'MSYS2 build tools';
+  if (!existsSync(join(msys2Dir(), 'usr', 'bin', 'bash.exe'))) {
+    const rels = await githubJson<{ tag_name: string; assets: { name: string; browser_download_url: string; digest?: string }[] }[]>('/repos/msys2/msys2-installer/releases?per_page=5');
+    const rel = rels.find((r) => !r.tag_name.startsWith('nightly'));
+    const asset = rel?.assets.find((a) => /^msys2-base-x86_64-\d+\.sfx\.exe$/.test(a.name) && a.digest?.startsWith('sha256:'));
+    if (!asset) throw new Error('No MSYS2 release with a checksum found');
+    const tmp = join(rubyDir(), `.msys2-${Date.now()}`);
+    mkdirSync(tmp, { recursive: true });
+    try {
+      const sfx = join(tmp, asset.name);
+      await downloadVerified(asset.browser_download_url, sfx, asset.digest!.slice(7), (received, total) => progress({ version: label, phase: 'download', received, total }));
+      progress({ version: label, phase: 'extract', received: 0, total: 0, detail: 'Unpacking MSYS2…' });
+      // A 7-Zip self-extractor: -o is the folder msys64\ goes into.
+      const x = await run(sfx, ['-y', `-o${rubyVersionsDir()}`], { timeout: 30 * 60_000 });
+      if (x.code !== 0 || !existsSync(join(msys2Dir(), 'usr', 'bin', 'bash.exe'))) throw new Error(`Unpacking MSYS2 failed: ${(x.stderr || x.stdout).trim().slice(-300)}`);
+    } finally {
+      removeTemp(tmp);
+    }
+    // The first login sets up its keyring and home folder.
+    progress({ version: label, phase: 'extract', received: 0, total: 0, detail: 'Setting up MSYS2 (first start)…' });
+    await run(join(msys2Dir(), 'usr', 'bin', 'bash.exe'), ['-lc', 'true'], { timeout: 15 * 60_000, env: { MSYSTEM: 'UCRT64', CHERE_INVOKING: '1' } });
+  }
+  progress({ version: label, phase: 'extract', received: 0, total: 0, detail: 'ridk install 2 3 — system update and the MinGW toolchain (several minutes)' });
+  const ridk = join(ruby.binDir, 'ridk.cmd');
+  let r = await run(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', ridk, 'install', '2', '3'], { timeout: 90 * 60_000 });
+  // MSYS2's first system update replaces pacman / the runtime itself and can stop the run there (or a download drops):
+  // once more for the toolchain, as `ridk install` asks you to do by hand.
+  if (!msys2Path()) {
+    progress({ version: label, phase: 'extract', received: 0, total: 0, detail: 'ridk install 3 — the MinGW toolchain, second pass' });
+    r = await run(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', ridk, 'install', '3'], { timeout: 90 * 60_000 });
+  }
+  if (!msys2Path()) throw new Error(`ridk install did not finish the toolchain: ${(r.stderr || r.stdout).trim().split('\n').slice(-4).join(' ')}`);
+  progress({ version: label, phase: 'done', received: 0, total: 0 });
+}
+
 // ------------------------------------------------------------------ install
 
 export async function install(version: string, via: RemoteRuby['via'], progress: (p: RuntimeInstallProgress) => void): Promise<void> {

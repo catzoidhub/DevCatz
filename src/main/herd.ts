@@ -1285,7 +1285,10 @@ export class Herd extends EventEmitter {
       this.processes.log(id, 'sys', `Using Ruby ${rb.version} (${rb.reason}${rb.missing && rb.spec ? `; the project asks for ${rb.spec}, not installed` : ''})`);
       // A Gemfile.lock alone does not mean the gems are in this Ruby (a clone, another Ruby): Bundler says so in a moment.
       if (stack.ruby?.gemfile && !p.devCommand) {
-        const check = await run('bundle', ['check'], { cwd: p.path, timeout: 30_000, env: this.runtimeEnv(p) });
+        // Windows: `bundle` is RubyInstaller's bundle.bat, which only cmd.exe runs.
+        const check = isWin
+          ? await run(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', 'bundle', 'check'], { cwd: p.path, timeout: 60_000, env: this.runtimeEnv(p) })
+          : await run('bundle', ['check'], { cwd: p.path, timeout: 30_000, env: this.runtimeEnv(p) });
         if (check.code !== 0) {
           stack.depsMissing = true;
           this.changed();
@@ -3499,6 +3502,14 @@ export class Herd extends EventEmitter {
     this.changed();
   }
 
+  async rubyBuildToolsInstall(): Promise<void> {
+    if (this.rubyInstalling && this.rubyInstalling.phase !== 'done' && this.rubyInstalling.phase !== 'error') {
+      throw new Error(`Already installing ${this.rubyInstalling.version}`);
+    }
+    await this.trackInstall((x) => (this.rubyInstalling = x), 'MSYS2 build tools', (report) => rubies.installMsys2(report));
+    this.changed();
+  }
+
   async rubySetDefault(version: string | null): Promise<void> {
     store.updateSettings({ rubyDefault: version });
     await this.refreshRubies();
@@ -3519,7 +3530,12 @@ export class Herd extends EventEmitter {
     this.changed();
     try {
       this.processes.log(p.id, 'sys', `Using Ruby ${inst.version}: bundle install`);
-      const code = await stream(p.path, 'bundle install', (t) => this.processes.log(p.id, 'sys', t), this.runtimeEnv(p));
+      let needsMsys2 = false;
+      const code = await stream(p.path, 'bundle install', (t) => {
+        if (rubies.MSYS2_MISSING.test(t)) needsMsys2 = true;
+        this.processes.log(p.id, 'sys', t);
+      }, this.runtimeEnv(p));
+      if (code !== 0 && needsMsys2) throw new Error('A gem with native code needs the MSYS2 build tools: install them on the Ruby page (Runtimes → Ruby), then Install dependencies again.');
       if (code !== 0) throw new Error(`bundle install failed (exit ${code}); see the log`);
     } finally {
       this.dbTasks.delete(p.id);
@@ -5299,6 +5315,7 @@ export class Herd extends EventEmitter {
       },
       ruby: {
         rv: this.rvVer,
+        msys2: rubies.msys2Path(),
         installed: this.installedRubies,
         defaultVersion: store.settings.rubyDefault,
         installing: this.rubyInstalling,

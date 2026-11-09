@@ -1018,6 +1018,7 @@ function api(): HerdApi {
     rubyInstall: (version, via) => herd.withCancel('ruby', () => herd.rubyInstall(String(version), via === 'ruby-build' ? 'ruby-build' : 'rv')),
     rubyUninstall: (version) => herd.rubyUninstall(String(version)),
     rubySetDefault: (version) => herd.rubySetDefault(version ? String(version) : null),
+    rubyBuildToolsInstall: () => herd.withCancel('ruby', () => herd.rubyBuildToolsInstall()),
     dockerStatus: () => dockerStatus(),
     dockerFiles: async (id) => herd.dockerFiles(id),
     dockerServices: (id, file) => herd.dockerServices(id, file),

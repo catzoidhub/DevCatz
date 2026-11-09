@@ -178,6 +178,7 @@ export const MCATZP_COVERAGE = {
   // tool: install_uv
   uvInstall: 'tool: install_uv',
   rvInstall: 'tool: install_rv',
+  rubyBuildToolsInstall: 'not a tool',
   rubyRemote: 'tool: list_runtime_versions',
   rubyInstall: 'tool: install_runtime',
   rubyUninstall: 'tool: uninstall_runtime',
