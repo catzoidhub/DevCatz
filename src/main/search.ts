@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { words } from '@shared/platform';
 import { rm } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { release } from 'node:os';
@@ -298,7 +299,7 @@ const ENGINES: Record<SearchKind, Engine> = {
           binary: { package: { link: string; checksum: string } };
         }[];
         const pkg = jre[0]?.binary.package;
-        if (!pkg) throw new Error('No Temurin 21 JRE for this Mac');
+        if (!pkg) throw new Error(`No Temurin 21 JRE for this ${words.computer}`);
         const j = await fetchTmp(pkg.link, 'jre.tar.gz', pkg.checksum, 'sha256', report, signal);
         try {
           await untar(j.file, join(j.tmp, 'x'));
@@ -495,7 +496,7 @@ const ENGINES: Record<SearchKind, Engine> = {
       const mine = Math.max(0, NAMES.length - 1 - (darwin - 21));
       const files = f.bottle.stable.files;
       const pick = isLinux ? (files[linuxTag] ? linuxTag : undefined) : NAMES.slice(Math.min(mine, NAMES.length - 1)).map((n) => (ARM ? `arm64_${n}` : n)).find((n) => files[n]);
-      if (!pick) throw new Error(`No Sonic build for this Mac (Homebrew has ${Object.keys(files).join(', ')})`);
+      if (!pick) throw new Error(`No Sonic build for this ${words.computer} (Homebrew has ${Object.keys(files).join(', ')})`);
       const v = f.versions.stable;
       report({ title: `Installing Sonic ${v}` });
       const token = ((await (await fetch('https://ghcr.io/token?scope=repository:homebrew/core/sonic:pull')).json()) as { token: string }).token;
@@ -507,6 +508,7 @@ const ENGINES: Record<SearchKind, Engine> = {
         if (!existsSync(bin)) throw new Error('sonic not found in the bottle');
         report({ step: S.place, detail: join(dir, 'sonic') });
         chmodSync(bin, 0o755);
+        if (isLinux) relocateBottleInterpreter(bin);
         place(bin, join(dir, 'sonic'));
         await run('xattr', ['-dr', 'com.apple.quarantine', dir]);
       } finally {
@@ -525,6 +527,23 @@ const ENGINES: Record<SearchKind, Engine> = {
     },
   },
 };
+
+/**
+ * A Linux bottle names its loader `@@HOMEBREW_PREFIX@@/lib/ld.so` (Homebrew fills that in when it pours the bottle),
+ * so the binary cannot start as downloaded. The same relocation without Homebrew: the system's loader in place of
+ * the placeholder (it is shorter; the rest of the string is zeroed). Its RPATH placeholders stay harmless: the
+ * libraries it needs (libstdc++, libgcc_s, libc) are the system's.
+ */
+function relocateBottleInterpreter(file: string): void {
+  const loader = ARM ? '/lib/ld-linux-aarch64.so.1' : '/lib64/ld-linux-x86-64.so.2';
+  const want = Buffer.from('@@HOMEBREW_PREFIX@@/lib/ld.so\0');
+  const buf = readFileSync(file);
+  const at = buf.indexOf(want);
+  if (at < 0) return;
+  buf.fill(0, at, at + want.length);
+  buf.write(loader, at, 'latin1');
+  writeFileSync(file, buf);
+}
 
 /** Sonic's config file (same layout as its own config.cfg, 1.10): `inet` it listens on, `store` each store's folder. */
 function sonicConfig(c: SearchConfig, inet: string, store: (p: string) => string): string {
@@ -651,7 +670,7 @@ const isoMs = (d: string | null | undefined): number | null => {
 
 /** OpenSearch's Java: the Temurin JRE DevCatz installed next to it. */
 /** Java for OpenSearch: Temurin next to it on macOS, the bundle's own JDK on Windows. */
-const javaHome = (dir: string) => (isWin ? join(dir, 'opensearch', 'jdk') : join(dir, 'jre', 'Contents', 'Home'));
+const javaHome = (dir: string) => (isWin ? join(dir, 'opensearch', 'jdk') : isLinux ? join(dir, 'jre') : join(dir, 'jre', 'Contents', 'Home'));
 
 export const searchId = (kind: SearchKind) => `search:${kind}`;
 const managedDir = (kind: SearchKind) => dataDir('search', kind);
