@@ -11,6 +11,7 @@ import { exe, isLinux, isMac, isWin, moveDir, removeTemp, TAR } from './platform
 import { runAsRootLinux } from './linuxadmin';
 import { dataDir } from './store';
 import { githubJson } from './github';
+import { words } from '@shared/platform';
 import { DEB_ARCH, debDistro, hasDpkgDeb, newestDeb, parsePackages, unpackDebs } from './debpkg';
 
 /**
@@ -888,7 +889,7 @@ const redis = keyValue({
   exe: 'redis',
   name: 'Redis',
   description: 'In-memory key-value store for cache, queues and sessions.',
-  sourceNote: 'Official source from download.redis.io (SHA-256 from redis-hashes), compiled on this Mac',
+  sourceNote: `Official source from download.redis.io (SHA-256 from redis-hashes), compiled on this ${words.computer}`,
 
   sourceUrl: 'https://github.com/redis/redis',
   hashes: 'https://raw.githubusercontent.com/redis/redis-hashes/master/README',
@@ -899,7 +900,7 @@ const valkey = keyValue({
   exe: 'valkey',
   name: 'Valkey',
   description: 'Open-source (BSD) fork of Redis by the Linux Foundation; drop-in for Redis clients.',
-  sourceNote: 'Official source from github.com/valkey-io/valkey (SHA-256 from valkey-hashes), compiled on this Mac',
+  sourceNote: `Official source from github.com/valkey-io/valkey (SHA-256 from valkey-hashes), compiled on this ${words.computer}`,
 
   sourceUrl: 'https://github.com/valkey-io/valkey',
   hashes: 'https://raw.githubusercontent.com/valkey-io/valkey-hashes/main/README',

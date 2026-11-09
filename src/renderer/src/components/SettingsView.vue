@@ -693,7 +693,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
               <button class="btn btn-sm join-item" @click="pickDb('dbBinRoot')">Choose…</button>
               <button v-if="s.settings.dbBinRoot" class="btn btn-sm join-item" @click="setS3({ dbBinRoot: '' })">Reset</button>
             </div>
-            <span class="mt-1 block text-xs opacity-60">{{ isWin ? 'Downloads go to' : 'Downloads and compiled builds go to' }} <code>&lt;folder&gt;/&lt;engine&gt;/&lt;version&gt;</code>; installed ones stay where they are.<template v-if="!isWin"> MariaDB lives in Homebrew.</template></span>
+            <span class="mt-1 block text-xs opacity-60">{{ isWin ? 'Downloads go to' : 'Downloads and compiled builds go to' }} <code>&lt;folder&gt;/&lt;engine&gt;/&lt;version&gt;</code>; installed ones stay where they are.<template v-if="!isWin && !isLinux"> MariaDB lives in Homebrew.</template></span>
           </label>
           <div>
             <span class="label-caps mb-1 block">Host in .env lines</span>

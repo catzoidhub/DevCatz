@@ -215,7 +215,7 @@ watch(runtimeTabRequest, (t) => {
         <p v-if="!isWin" class="text-xs opacity-70">
           DevCatz keeps <code>node</code>, <code>npm</code>, <code>npx</code> and <code>corepack</code> shims for the default version (and <code>bun</code>,
           <code>go</code>, <code>php</code>, <code>composer</code>, <code>python</code>, <code>pip</code>, <code>uv</code> for theirs). To use them in
-          your terminal, add this line to the <b>end</b> of <code>{{ rcFile }}</code>. It then takes precedence over a node from another tool (nvm, Homebrew …).
+          your terminal, add this line to the <b>end</b> of <code>{{ rcFile }}</code>. It then takes precedence over a node from another tool (nvm, {{ isLinux ? 'apt' : 'Homebrew' }} …).
         </p>
         <div v-if="!isWin" class="join">
           <code class="selectable join-item flex-1 truncate rounded-l-box bg-base-200 px-3 py-1.5 text-xs">{{ pathLine }}</code>

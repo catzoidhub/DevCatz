@@ -143,7 +143,7 @@ const tab = ref<Tab>('installed');
       </template>
       <template v-else>
         Static PHP builds from static-php.dev (CLI + FPM, Laravel's usual extensions). PHP sites are served by one PHP-FPM pool per
-        version, always on; PHP installed by other tools such as Homebrew (e.g. 7.4 for older apps) is usable too.
+        version, always on; PHP installed by other tools such as {{ isLinux ? 'your distribution' : 'Homebrew' }} is usable too.
       </template>
     </p>
     <div class="no-drag mt-3 flex flex-wrap items-center gap-3">
