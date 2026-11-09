@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream data for the .deb (Ubuntu App Center / GNOME Software show it when the package is opened), so the
+     Linux install page has the same care as the DMG window and the Windows installer (user, 2026-11-09). -->
+<component type="desktop-application">
+  <id>com.mrcatz.devcatz</id>
+  <name>DevCatz</name>
+  <summary>Your whole local stack, herded by one cat</summary>
+  <developer id="com.catzoid">
+    <name>Catzoid</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>
+      DevCatz runs your projects on their own names, like shop.localhost over HTTPS, with the right runtime for each, a
+      database a click away, and mail, storage and search when they need them.
+    </p>
+    <ul>
+      <li>Sites on *.localhost (or your own suffix) over HTTPS, with a trusted local certificate</li>
+      <li>PHP, Node.js, Bun, Go, Rust, Python and Ruby, one version per site</li>
+      <li>MySQL, MariaDB, PostgreSQL, MongoDB, Redis, Elasticsearch and SQLite</li>
+      <li>Mail catcher, S3 storage, search engines, WebSockets, tunnels and Docker</li>
+      <li>Git, monitoring and an AI helper, all in one window</li>
+    </ul>
+    <p>Nothing changes outside its own folders until you choose it in the app.</p>
+  </description>
+  <launchable type="desktop-id">devcatz.desktop</launchable>
+  <branding>
+    <color type="primary" scheme_preference="light">#b8adf6</color>
+    <color type="primary" scheme_preference="dark">#3b2f9c</color>
+  </branding>
+  <url type="homepage">https://catzoid.com/devcatz</url>
+  <url type="help">https://catzoid.com/docs</url>
+  <url type="bugtracker">https://github.com/catzoidhub/DevCatz/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Every site with its runtime, domain and status</caption>
+      <image>https://catzoid.com/screens/devcatz/sites-light.webp</image>
+    </screenshot>
+    <screenshot>
+      <caption>Databases a click away</caption>
+      <image>https://catzoid.com/screens/devcatz/database-light.webp</image>
+    </screenshot>
+    <screenshot>
+      <caption>Every mail your sites send, caught locally</caption>
+      <image>https://catzoid.com/screens/devcatz/mail-light.webp</image>
+    </screenshot>
+    <screenshot>
+      <caption>Share a site through a tunnel</caption>
+      <image>https://catzoid.com/screens/devcatz/expose-light.webp</image>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <keywords>
+    <keyword>php</keyword>
+    <keyword>laravel</keyword>
+    <keyword>node</keyword>
+    <keyword>localhost</keyword>
+    <keyword>database</keyword>
+    <keyword>docker</keyword>
+  </keywords>
+  <provides>
+    <binary>devcatz</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.1.0" date="2026-11-04"/>
+  </releases>
+</component>

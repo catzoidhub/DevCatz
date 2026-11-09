@@ -28,6 +28,7 @@ import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3Upload
 import { uninstall, uninstallPlan, UNINSTALL_STEPS } from './uninstall';
 import { isLinux, isMac, isWin } from './platform';
 import { openAtLogin, openedAtLogin, setOpenAtLogin } from './loginitem';
+import { offerAppImageInstall } from './appimage';
 import { LINUX_EDITORS, launchDesktop, linuxEditorFile, openLinuxTerminal } from './linuxapps';
 import { openWeb, refreshBrowsers, refreshEditorIcons } from './browsers';
 import { isSvcKind } from './svcdocker';
@@ -1272,6 +1273,8 @@ app.whenReady().then(async () => {
   // system proxy, as the browser does. Every download / API call in the main process goes through it there.
   if (isWin) globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => net.fetch(input as string, init as never)) as typeof fetch;
   console.log(`DevCatz ${app.getVersion()} starting (packaged=${app.isPackaged})`);
+  // Linux AppImage run from Downloads: the install window first (it restarts DevCatz from ~/Applications).
+  if (await offerAppImageInstall(RESOURCES)) return;
   await loadShellEnv();
   // Theme and AI connection are shared with the other Catzoid apps (shared.ts): theirs wins when set.
   const sharedTheme = readShared().theme;

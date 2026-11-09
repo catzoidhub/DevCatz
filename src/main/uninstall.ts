@@ -8,6 +8,7 @@ import { removeSystemLeftovers, systemLeftovers } from './cleanurls';
 import { isLinux, isWin } from './platform';
 import { runAsRootLinux } from './linuxadmin';
 import { setOpenAtLogin } from './loginitem';
+import { appImageIconFile } from './appimage';
 import { setUserPath, userPathHas } from './env';
 import { shimDir } from './node';
 import { run } from './env';
@@ -60,7 +61,7 @@ function smallLeftovers(): string[] {
   if (isLinux) {
     const cache = process.env.XDG_CACHE_HOME || join(homedir(), '.cache');
     const apps = join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'applications');
-    return [join(cache, 'DevCatz'), join(cache, 'devcatz-updater'), join(apps, 'devcatz.desktop')].filter((p) => existsSync(p));
+    return [join(cache, 'DevCatz'), join(cache, 'devcatz-updater'), join(apps, 'devcatz.desktop'), appImageIconFile()].filter((p) => existsSync(p));
   }
   const lib = join(homedir(), 'Library');
   return [
