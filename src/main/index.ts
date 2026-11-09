@@ -818,7 +818,11 @@ function api(): HerdApi {
     },
     reportPreview: async (kind, message, email, shots) => herd.reports.preview(reportKind(kind), String(message ?? ''), String(email ?? ''), Number(shots) || 0),
     reportSend: (kind, message, email, shots) => herd.reports.sendFeedback(reportKind(kind), String(message ?? ''), String(email ?? ''), Array.isArray(shots) ? shots : []),
-    captureWindow: async () => (win && !win.isDestroyed() ? (await win.webContents.capturePage()).toPNG().toString('base64') : ''),
+    // capturePage never answers on some Linux setups (a VM without a GPU, Wayland): the report goes without the picture.
+    captureWindow: async () =>
+      win && !win.isDestroyed()
+        ? Promise.race([win.webContents.capturePage().then((img) => img.toPNG().toString('base64')), new Promise<string>((r) => setTimeout(() => r(''), 10_000))])
+        : '',
     reportError: async (message, stack) => herd.reports.error('error', 'renderer', String(message ?? ''), stack ? String(stack) : undefined),
     setCrashReports: async (on) => herd.reports.setCrashReports(Boolean(on)),
     crashAskDismiss: async () => herd.reports.dismissAsk(),
@@ -1353,7 +1357,7 @@ app.whenReady().then(async () => {
               { type: 'separator' },
               { label: 'Report a Bug…', click: () => showWindow('report:bug') },
               { label: 'Send Feedback…', click: () => showWindow('report:idea') },
-              { label: 'DevCatz Docs', click: () => void shell.openExternal(`${siteBase()}/docs`) },
+              { label: 'DevCatz Docs', click: () => void openWeb(`${siteBase()}/docs`) },
             ],
           },
         ]),
@@ -1386,7 +1390,7 @@ app.whenReady().then(async () => {
             { label: 'Report a Bug…', click: () => showWindow('report:bug') },
             { label: 'Send Feedback…', click: () => showWindow('report:idea') },
             { type: 'separator' },
-            { label: 'DevCatz Docs', click: () => void shell.openExternal(`${siteBase()}/docs`) },
+            { label: 'DevCatz Docs', click: () => void openWeb(`${siteBase()}/docs`) },
           ],
         },
       ]),

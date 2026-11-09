@@ -274,5 +274,8 @@ export async function openWeb(url: string): Promise<void> {
     if (r.code === 0) return;
     console.warn(`open in ${chosen} failed (${r.stderr.trim()}); using the system default`);
   }
+  // Linux: the default Settings shows ("System default (Firefox)") through its .desktop file, like a chosen one —
+  // xdg-open finds no handler where the desktop's XDG_DATA_DIRS are missing (snap Firefox on Ubuntu 26.04).
+  if (isLinux && /^https?:\/\//i.test(url) && state.systemDefault && (await launchDesktop(state.systemDefault.path, url))) return;
   await shell.openExternal(url);
 }

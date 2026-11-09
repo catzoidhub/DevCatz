@@ -226,16 +226,25 @@ async function legacyVersions(): Promise<Map<string, string>> {
   return out;
 }
 
+/** Linux: a C compiler, which gems with native code (Puma's nio4r, bcrypt, json …) and older Rubies are built with. */
+export const linuxCc = (): boolean | null => (isLinux ? ['/usr/bin/cc', '/usr/local/bin/cc'].some((p) => existsSync(p)) : null);
+/** `bundle install` stopped at a gem with native code because there is no compiler. */
+export const NO_COMPILER = /You have to install development tools first|Failed to build gem native extension/;
+
+/** Linux: the C compiler and the headers Ruby and native gems build against (OpenSSL, libyaml, zlib, libffi), one password. */
+export async function installLinuxBuildTools(progress?: (p: RuntimeInstallProgress) => void, why = 'gems with native code need build tools'): Promise<void> {
+  progress?.({ version: 'Build tools', phase: 'extract', received: 0, total: 0, detail: 'build-essential and headers (password)' });
+  const root = await runAsRootLinux(
+    'if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential libssl-dev libyaml-dev zlib1g-dev libffi-dev libreadline-dev >/dev/null; elif command -v dnf >/dev/null 2>&1; then dnf install -y -q gcc make openssl-devel libyaml-devel zlib-devel libffi-devel readline-devel >/dev/null; else echo "No apt-get or dnf: install a C compiler (gcc) yourself" >&2; exit 1; fi',
+  );
+  if (!root.ok) throw new Error(root.cancelled ? `Cancelled: ${why}` : `Installing the build tools failed: ${root.message}`);
+}
+
 /** What compiling Ruby needs: a C compiler, OpenSSL, libyaml, zlib, libffi headers. */
 async function buildPrerequisites(): Promise<Record<string, string>> {
   if (isLinux) {
     const missing = (await run('which', ['cc'], { timeout: 5000 })).code !== 0 || !existsSync('/usr/include/openssl/ssl.h') || !existsSync('/usr/include/yaml.h');
-    if (missing) {
-      const root = await runAsRootLinux(
-        'if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential libssl-dev libyaml-dev zlib1g-dev libffi-dev libreadline-dev >/dev/null; elif command -v dnf >/dev/null 2>&1; then dnf install -y -q gcc make openssl-devel libyaml-devel zlib-devel libffi-devel readline-devel >/dev/null; fi',
-      );
-      if (!root.ok) throw new Error(root.cancelled ? 'Cancelled: compiling an older Ruby needs build tools and headers' : `Installing the build tools failed: ${root.message}`);
-    }
+    if (missing) await installLinuxBuildTools(undefined, 'compiling an older Ruby needs build tools and headers');
     return {};
   }
   // macOS: the Command Line Tools, and Homebrew's openssl@3 / libyaml (ruby-build finds Homebrew's on its own).

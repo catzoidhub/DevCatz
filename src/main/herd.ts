@@ -496,6 +496,8 @@ export class Herd extends EventEmitter {
     await this.dns.start(tld());
     await this.checkResolution();
     this.caTrusted = await this.certs.isTrusted();
+    // Linux: browser profiles made after Trust (Firefox's first run) get the CA too.
+    this.certs.watchBrowsersLinux();
     this.cleanUrls = await cleanUrlsWorking();
     this.cleanHttp = await cleanHttpWorking();
     this.ipv4Free = !(await isListening('127.0.0.1', 443)) || cleanUrlsCoverIpv4();
@@ -3515,7 +3517,9 @@ export class Herd extends EventEmitter {
     if (this.rubyInstalling && this.rubyInstalling.phase !== 'done' && this.rubyInstalling.phase !== 'error') {
       throw new Error(`Already installing ${this.rubyInstalling.version}`);
     }
-    await this.trackInstall((x) => (this.rubyInstalling = x), 'MSYS2 build tools', (report) => rubies.installMsys2(report));
+    // Linux: build-essential and headers through the system's password prompt; Windows: MSYS2.
+    if (isLinux) await this.trackInstall((x) => (this.rubyInstalling = x), 'Build tools', (report) => rubies.installLinuxBuildTools(report));
+    else await this.trackInstall((x) => (this.rubyInstalling = x), 'MSYS2 build tools', (report) => rubies.installMsys2(report));
     this.changed();
   }
 
@@ -3540,11 +3544,14 @@ export class Herd extends EventEmitter {
     try {
       this.processes.log(p.id, 'sys', `Using Ruby ${inst.version}: bundle install`);
       let needsMsys2 = false;
+      let needsCc = false;
       const code = await stream(p.path, 'bundle install', (t) => {
         if (rubies.MSYS2_MISSING.test(t)) needsMsys2 = true;
+        if (rubies.NO_COMPILER.test(t)) needsCc = true;
         this.processes.log(p.id, 'sys', t);
       }, this.runtimeEnv(p));
       if (code !== 0 && needsMsys2) throw new Error('A gem with native code needs the MSYS2 build tools: install them on the Ruby page (Runtimes → Ruby), then Install dependencies again.');
+      if (code !== 0 && needsCc && rubies.linuxCc() === false) throw new Error('A gem with native code needs a C compiler: Install build tools on the Ruby page (Runtimes → Ruby), then Install dependencies again.');
       if (code !== 0) throw new Error(`bundle install failed (exit ${code}); see the log`);
     } finally {
       this.dbTasks.delete(p.id);
@@ -5344,6 +5351,7 @@ export class Herd extends EventEmitter {
       ruby: {
         rv: this.rvVer,
         msys2: rubies.msys2Path(),
+        cc: rubies.linuxCc(),
         installed: this.installedRubies,
         defaultVersion: store.settings.rubyDefault,
         installing: this.rubyInstalling,

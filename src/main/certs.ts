@@ -246,6 +246,34 @@ export class CertManager {
     return { ok: true, message: missed.length ? `Not added for: ${missed.join(', ')}` : '' };
   }
 
+  private seenNss = new Set<string>();
+  private nssTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * Linux: Firefox makes a profile's NSS database the first time it runs, often after Trust, and does not read the
+   * system store; while the CA is in the system store, each browser database that lacks it gets it (as the user, no
+   * password). Checked at start and every 30 s, certutil only for databases not seen yet.
+   */
+  watchBrowsersLinux(): void {
+    if (!isLinux || this.nssTimer) return;
+    const tick = () => void this.syncBrowsersLinux().catch((e: Error) => console.warn('browser certificates:', e.message));
+    tick();
+    this.nssTimer = setInterval(tick, 30_000);
+    this.nssTimer.unref();
+  }
+
+  private async syncBrowsersLinux(): Promise<void> {
+    const fresh = nssDatabases().filter((db) => existsSync(join(db, 'cert9.db')) && !this.seenNss.has(db));
+    if (!fresh.length || !this.caExists() || !existsSync(join(linuxStore().dir, LINUX_CA_FILE))) return;
+    if ((await run('which', ['certutil'])).code !== 0) return;
+    for (const db of fresh) {
+      this.seenNss.add(db);
+      if ((await run('certutil', ['-d', `sql:${db}`, '-L', '-n', CA_NAME])).code === 0) continue;
+      const r = await run('certutil', ['-d', `sql:${db}`, '-A', '-t', 'C,,', '-n', CA_NAME, '-i', this.caPath]);
+      if (r.code === 0) console.log(`DevCatz Local CA added to ${db}`);
+    }
+  }
+
   async untrust(): Promise<{ ok: boolean; message: string }> {
     const fingerprint = this.thumbprint();
     if (isLinux) {

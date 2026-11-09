@@ -4,7 +4,7 @@ import type { RemoteRuby } from '@shared/types';
 import { words } from '@shared/platform';
 import PageHeader from './PageHeader.vue';
 import { STACK_ICONS } from '../stackicons';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import { attempt, herd, notify, state, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
 import GitConnectButton from './GitConnectButton.vue';
@@ -37,13 +37,22 @@ const busy = computed(() => {
 const percent = computed(() => (busy.value?.total ? Math.round((busy.value.received / busy.value.total) * 100) : 0));
 
 async function installBuildTools() {
-  const ok = await askConfirm({
-    title: 'Install the MSYS2 build tools?',
-    text: 'Gems with native code (Puma’s nio4r, bcrypt, json …) are compiled with MSYS2, RubyInstaller’s devkit. DevCatz downloads MSYS2 from its GitHub release (SHA-256 checked) next to its Rubies and runs ridk install for the MinGW toolchain: about 1 GB, several minutes.',
-    confirm: 'Install',
-    tone: 'primary',
-  });
-  if (ok && (await attempt(() => herd.rubyBuildToolsInstall().then(() => true)))) notify('success', 'MSYS2 build tools installed');
+  const ok = await askConfirm(
+    isLinux
+      ? {
+          title: 'Install the build tools?',
+          text: 'Gems with native code (Puma’s nio4r, bcrypt, json …) are compiled on this computer. DevCatz installs build-essential and the headers they need (OpenSSL, libyaml, zlib, libffi) with your package manager: Linux asks for your password once.',
+          confirm: 'Install',
+          tone: 'primary',
+        }
+      : {
+          title: 'Install the MSYS2 build tools?',
+          text: 'Gems with native code (Puma’s nio4r, bcrypt, json …) are compiled with MSYS2, RubyInstaller’s devkit. DevCatz downloads MSYS2 from its GitHub release (SHA-256 checked) next to its Rubies and runs ridk install for the MinGW toolchain: about 1 GB, several minutes.',
+          confirm: 'Install',
+          tone: 'primary',
+        },
+  );
+  if (ok && (await attempt(() => herd.rubyBuildToolsInstall().then(() => true)))) notify('success', isLinux ? 'Build tools installed' : 'MSYS2 build tools installed');
 }
 async function installRv() {
   if (await attempt(() => herd.rvInstall().then(() => true))) {
@@ -115,13 +124,20 @@ const tab = ref<Tab>('installed');
       </div>
       <button class="btn btn-sm shrink-0" :disabled="!!busy" @click="installBuildTools">Install build tools</button>
     </div>
+    <div v-if="isLinux && b.rv && b.installed.some((i) => i.source === 'mrcatz') && b.cc === false" role="alert" class="alert flex flex-wrap">
+      <div class="min-w-48 flex-1">
+        <div class="font-medium">Build tools for gems with native code</div>
+        <div class="text-xs opacity-80">Most web apps need them (Puma, Rails): a C compiler (build-essential) and a few headers, from your package manager.</div>
+      </div>
+      <button class="btn btn-sm shrink-0" :disabled="!!busy" @click="installBuildTools">Install build tools</button>
+    </div>
 
     <!-- Progress -->
     <div v-if="busy" class="alert">
       <span class="loading loading-spinner loading-sm" />
       <div class="flex-1">
         <div class="text-sm">
-          Installing {{ /^(rv|ruby-build|MSYS2)/.test(busy.version) ? busy.version : `Ruby ${busy.version}` }}…
+          Installing {{ /^(rv|ruby-build|MSYS2|Build tools)/.test(busy.version) ? busy.version : `Ruby ${busy.version}` }}…
           <span v-if="busy.total" class="opacity-60">{{ (busy.received / 1048576).toFixed(1) }} / {{ (busy.total / 1048576).toFixed(1) }} MB</span>
           <span v-else-if="busy.detail" class="font-mono text-xs opacity-60">{{ busy.detail }}</span>
         </div>

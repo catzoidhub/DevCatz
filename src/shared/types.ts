@@ -1650,6 +1650,8 @@ export interface AppState {
     rv: string | null;
     /** Windows: where MSYS2 with the UCRT toolchain is (gems with native code need it); null when missing or not Windows. */
     msys2: string | null;
+    /** Linux: a C compiler is there (gems with native code need it); false when missing, null when not Linux. */
+    cc: boolean | null;
     installed: InstalledRuby[];
     defaultVersion: string | null;
     installing: RuntimeInstallProgress | null;

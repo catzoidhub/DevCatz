@@ -210,12 +210,6 @@ export async function installFrom(
 
 /** Homebrew bottle tag for this macOS (MinIO only ships through Homebrew now). */
 function bottleTag(files: Record<string, unknown>): string {
-  // Linux: Homebrew's x86_64_linux / arm64_linux bottles (static Go binaries, they run on any distribution).
-  if (isLinux) {
-    const tag = process.arch === 'arm64' ? 'arm64_linux' : 'x86_64_linux';
-    if (tag in files) return tag;
-    throw new Error('No Linux build of MinIO for this computer');
-  }
   const major = Number(release().split('.')[0]); // Darwin 25 = macOS 26
   const byDarwin: Record<number, string> = { 25: 'tahoe', 24: 'sequoia', 23: 'sonoma', 26: 'golden_gate' };
   const arch = process.arch === 'arm64' ? 'arm64_' : '';
@@ -233,8 +227,14 @@ const RUSTFS_ASSET = isWin
     ? new RegExp(`^rustfs-linux-${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-gnu-v[\\d.]+\\.zip$`)
     : // Pre-release names too (v1.0.0-beta.9): the last Intel macOS builds are betas.
       process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\w.-]+\.zip$/ : /^rustfs-macos-x86_64-v[\w.-]+\.zip$/;
-/** Windows: MinIO's own builds on its (archived) GitHub releases; the newest releases have none, so a few are looked through. */
-const MINIO_WIN_ASSET = /^minio\.windows-amd64\.RELEASE\.[\dT-]+Z\.exe$/;
+/**
+ * Windows and Linux: MinIO's own builds on its (archived) GitHub releases; the newest releases have none, so a few are
+ * looked through. (Homebrew's Linux bottle needs Homebrew's own loader, @@HOMEBREW_PREFIX@@/lib/ld.so, and does not run.)
+ */
+const MINIO_ASSET = isWin
+  ? /^minio\.windows-amd64\.RELEASE\.[\dT-]+Z\.exe$/
+  : new RegExp(`^minio\\.linux-${process.arch === 'arm64' ? 'arm64' : 'amd64'}\\.RELEASE\\.[\\dT-]+Z$`);
+const minioGithub = isWin || isLinux;
 /** Silo (the same fork under its own name): Windows zips (older ones .tar.gz), macOS tarballs. */
 const SILO_ASSET = isWin
   ? /^silo_[\d.]+_windows_amd64\.(zip|tar\.gz)$/
@@ -276,16 +276,16 @@ export const ENGINES: Record<StorageKind, Engine> = {
     // Windows: dl.min.io answers 410 and package managers now point to the commercial AIStor, but the archived
     // github.com/minio/minio still carries MinIO's own Windows builds (minio.windows-amd64.<release>.exe with a SHA-256)
     // up to RELEASE.2025-09-07 — the last official one (2025-10-15 shipped as source only).
-    description: isWin
-      ? 'The classic S3 server: MinIO’s last official Windows build (2025-09, from its GitHub releases). The project is archived and gets no more updates; Silo continues it.'
+    description: minioGithub
+      ? `The classic S3 server: MinIO’s last official ${isWin ? 'Windows' : 'Linux'} build (2025-09, from its GitHub releases). The project is archived and gets no more updates; Silo continues it.`
       : 'The classic S3 server. Last community release (2025-10, upstream archived), from Homebrew’s build.',
-    sourceUrl: isWin ? 'https://github.com/minio/minio/releases' : 'https://formulae.brew.sh/formula/minio',
+    sourceUrl: minioGithub ? 'https://github.com/minio/minio/releases' : 'https://formulae.brew.sh/formula/minio',
     defaults: { apiPort: 9010, consolePort: 9011, apiDomain: 'minio', consoleDomain: 'console.minio', accessKey: 'minioadmin', secretKey: 'minioadmin' },
-    latest: async () => (isWin ? (await githubAsset('minio/minio', MINIO_WIN_ASSET, 20)).tag : brewLatest('minio')),
+    latest: async () => (minioGithub ? (await githubAsset('minio/minio', MINIO_ASSET, 20)).tag : brewLatest('minio')),
     async install(dir, progress, signal) {
-      if (isWin) {
-        progress({ step: S.find, detail: 'github.com/minio/minio releases (MinIO’s own Windows builds)' });
-        const a = await githubAsset('minio/minio', MINIO_WIN_ASSET, 20);
+      if (minioGithub) {
+        progress({ step: S.find, detail: `github.com/minio/minio releases (MinIO’s own ${isWin ? 'Windows' : 'Linux'} builds)` });
+        const a = await githubAsset('minio/minio', MINIO_ASSET, 20);
         check(signal);
         await installFrom(a.url, a.sha256, dir, 'minio', `MinIO ${a.tag.replace(/^RELEASE\./, '')}`, progress, signal);
         return;

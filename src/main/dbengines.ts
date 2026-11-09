@@ -681,6 +681,21 @@ function pgWindowsCommand(c: DbServiceConfig, root: string, data: string): strin
   return `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}`;
 }
 
+/**
+ * Linux: libxml2 2.14 renamed its library to libxml2.so.16 (Ubuntu 26.04 has no libxml2.so.2 any more), while the
+ * PostgreSQL builds still ask for libxml2.so.2 and stop at once. Their lib/ is on their own RUNPATH, so a link there to
+ * the system's libxml2.so.16 lets them start (initdb, the server and xml / xpath work; the loader notes a missing
+ * version on stderr). Nothing changes where the system has libxml2.so.2.
+ */
+async function linkLibxml2(root: string): Promise<void> {
+  const link = join(root, 'lib', 'libxml2.so.2');
+  if (existsSync(link)) return;
+  const cache = (await run('ldconfig', ['-p']).catch(() => null))?.stdout || (await run('/sbin/ldconfig', ['-p']).catch(() => null))?.stdout || '';
+  if (/^\s*libxml2\.so\.2 /m.test(cache)) return;
+  const lib16 = cache.match(new RegExp(`^\\s*libxml2\\.so\\.16 \\(libc6,${arch ? 'AArch64' : 'x86-64'}[^)]*\\) => (\\S+)`, 'm'))?.[1];
+  if (lib16) symlinkSync(lib16, link);
+}
+
 const postgresql: EngineDef = {
   name: 'PostgreSQL',
   description: 'The advanced open-source SQL database.',
@@ -714,6 +729,7 @@ const postgresql: EngineDef = {
     const sha = (await text(`${b.url}.sha256`)).trim().split(/\s+/)[0];
     if (!/^[a-f0-9]{64}$/.test(sha)) throw new Error('No SHA-256 published for this build');
     await fetchTarball({ ...b, hash: sha, algo: 'sha256' }, dest, step, signal);
+    if (isLinux) await linkLibxml2(dest);
     return dest;
   },
   async version(root) {
@@ -756,6 +772,32 @@ const postgresql: EngineDef = {
 // ------------------------------------------------------------------ Redis / Valkey
 
 let cltOk: boolean | null = null;
+
+/** Linux: a C compiler and make (build-essential); macOS: the Xcode Command Line Tools. */
+async function compilerOk(): Promise<boolean> {
+  if (cltOk === null) cltOk = isLinux ? (await run('which', ['cc'])).code === 0 && (await run('which', ['make'])).code === 0 : (await run('xcode-select', ['-p'])).code === 0;
+  return cltOk;
+}
+
+/**
+ * Linux without a C compiler (a fresh Ubuntu has none): ready builds instead of compiling. Valkey publishes its own
+ * tarballs built on Ubuntu 24.04 (download.valkey.io, SHA-256 next to each); Redis its own apt repository
+ * (packages.redis.io, noble packages, SHA-256 from the index), unpacked with dpkg-deb into DevCatz's folder. Both
+ * run on newer releases too (tested on Ubuntu 26.04).
+ */
+const VALKEY_DL = 'https://download.valkey.io/releases';
+const REDIS_APT = 'https://packages.redis.io/deb';
+
+async function redisDebBuilds(minMajor: number): Promise<RemoteBuild[]> {
+  const entries = parsePackages(await text(`${REDIS_APT}/dists/noble/main/binary-${DEB_ARCH}/Packages`));
+  const all: RemoteBuild[] = [];
+  for (const s of entries.filter((e) => e.name === 'redis-server' && Number(major(e.version)) >= minMajor)) {
+    const tools = newestDeb(entries, 'redis-tools', s.version);
+    if (tools) all.push({ version: s.version, label: minor(s.version), source: 'download', url: `${REDIS_APT}/${s.file}`, hash: s.hash, algo: 'sha256', parts: [{ url: `${REDIS_APT}/${tools.file}`, hash: tools.hash }] });
+  }
+  if (!all.length) throw new Error(`packages.redis.io has no ${DEB_ARCH} Redis packages`);
+  return latestPer(all, minor);
+}
 
 /**
  * Windows: Redis has no official build; github.com/redis-windows/redis-windows publishes the official source
@@ -810,29 +852,31 @@ function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: strin
     sourceUrl: isWin ? (o.exe === 'redis' ? 'https://github.com/redis-windows/redis-windows' : 'https://github.com/SamuelMarks/valkey-windows') : o.sourceUrl,
     async requirement() {
       if (isWin) return winBuilds ? null : `${notOnWindows(o.name)} Use Redis instead: Valkey speaks the same protocol.`;
-      // Linux: a C compiler and make (build-essential); macOS: the Xcode Command Line Tools.
-      if (cltOk === null) cltOk = isLinux ? (await run('which', ['cc'])).code === 0 && (await run('which', ['make'])).code === 0 : (await run('xcode-select', ['-p'])).code === 0;
-      if (cltOk) return null;
-      return isLinux
-        ? `${o.name} is compiled from source and needs a C compiler and make: run \`sudo apt install build-essential\` (Fedora: \`sudo dnf install gcc make\`) in a terminal.`
-        : `${o.name} is compiled from source and needs the Xcode Command Line Tools: run \`xcode-select --install\` in Terminal.`;
+      if (await compilerOk()) return null;
+      // Linux without a compiler: the ready builds (Redis' come as .deb packages).
+      if (isLinux) return o.exe === 'valkey' || (await hasDpkgDeb()) ? null : `${o.name} is compiled from source here and needs a C compiler and make: run \`sudo dnf install gcc make\` (Debian / Ubuntu: \`sudo apt install build-essential\`) in a terminal.`;
+      return `${o.name} is compiled from source and needs the Xcode Command Line Tools: run \`xcode-select --install\` in Terminal.`;
     },
     async builds() {
       if (isWin) {
         if (!winBuilds) throw new Error(notOnWindows(o.name));
         return cached(`${o.exe}-win`, () => (o.exe === 'redis' ? redisWindowsBuilds(o.minMajor) : valkeyWindowsBuilds(o.minMajor)));
       }
-      return cached(o.exe, async () => {
+      const ready = isLinux && !(await compilerOk());
+      if (ready && o.exe === 'redis') return cached('redis-deb', () => redisDebBuilds(o.minMajor));
+      return cached(ready ? `${o.exe}-ready` : o.exe, async () => {
         const readme = await text(o.hashes);
         const all: RemoteBuild[] = [];
         // Release tarballs only (no -rc).
         for (const m of readme.matchAll(new RegExp(`^hash ${o.exe}-(\\d+\\.\\d+\\.\\d+)\\.tar\\.gz sha256 ([a-f0-9]{64}) (\\S+)`, 'gm'))) {
-          all.push({ version: m[1], label: minor(m[1]), source: 'source', url: m[3].replace(/^http:/, 'https:'), hash: m[2], algo: 'sha256' });
+          // Valkey's ready build of the same version; its SHA-256 is read when it is installed.
+          if (ready) all.push({ version: m[1], label: minor(m[1]), source: 'download', url: `${VALKEY_DL}/valkey-${m[1]}-noble-${arch ? 'arm64' : 'x86_64'}.tar.gz`, algo: 'sha256' });
+          else all.push({ version: m[1], label: minor(m[1]), source: 'source', url: m[3].replace(/^http:/, 'https:'), hash: m[2], algo: 'sha256' });
         }
         return latestPer(all.filter((b) => Number(major(b.version)) >= o.minMajor), minor);
       });
     },
-    installSteps: () => (isWin ? DOWNLOAD_STEPS : ['Downloading', 'Verifying the checksum', 'Unpacking', 'Compiling', 'Installing', 'Checking the version']),
+    installSteps: () => (isWin || (isLinux && cltOk === false) ? DOWNLOAD_STEPS : ['Downloading', 'Verifying the checksum', 'Unpacking', 'Compiling', 'Installing', 'Checking the version']),
     async install(b, dest, step, signal) {
       if (isWin) {
         // Redis' zip holds the .exe files and DLLs in one folder (unpacked as bin/); Valkey's has its own bin/ inside.
@@ -840,6 +884,30 @@ function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: strin
         mkdirSync(dest, { recursive: true });
         await fetchTarball(b, o.exe === 'redis' ? join(dest, 'bin') : dest, step, signal);
         if (!existsSync(join(dest, server))) throw new Error(`The download holds no ${exe(`${o.exe}-server`)}`);
+        return dest;
+      }
+      if (b.url?.startsWith(VALKEY_DL)) {
+        const sha = (await text(`${b.url}.sha256`).catch(() => '')).trim().split(/\s+/)[0];
+        if (!/^[a-f0-9]{64}$/.test(sha)) throw new Error(`Valkey publishes no ready Linux build of ${b.version}: pick another version, or install a C compiler (sudo apt install build-essential) to compile it`);
+        await fetchTarball({ ...b, hash: sha }, dest, step, signal);
+        if (!existsSync(join(dest, server))) throw new Error(`The download holds no ${o.exe}-server`);
+        return dest;
+      }
+      if (b.url?.startsWith(REDIS_APT)) {
+        const tmp = `${dest}.partial`;
+        removeTemp(tmp);
+        try {
+          const PHASE = { download: 'Downloading', verify: 'Verifying the checksum', unpack: 'Unpacking' } as const;
+          await unpackDebs([{ url: b.url, hash: b.hash! }, ...(b.parts ?? [])], join(tmp, 'root'), (phase, detail, received, total) => step(PHASE[phase], { detail, received, total }), signal).catch((e) => {
+            throw signal.aborted ? new Cancelled() : e;
+          });
+          rmSync(dest, { recursive: true, force: true });
+          mkdirSync(dest, { recursive: true });
+          cpSync(join(tmp, 'root', 'usr', 'bin'), join(dest, 'bin'), { recursive: true, verbatimSymlinks: true });
+        } finally {
+          removeTemp(tmp);
+        }
+        if (!existsSync(join(dest, server))) throw new Error('redis-server was not found in the packages');
         return dest;
       }
       // Compiled in the system temp folder: Valkey's Makefile breaks on paths with spaces ("Application Support").
@@ -889,7 +957,7 @@ const redis = keyValue({
   exe: 'redis',
   name: 'Redis',
   description: 'In-memory key-value store for cache, queues and sessions.',
-  sourceNote: `Official source from download.redis.io (SHA-256 from redis-hashes), compiled on this ${words.computer}`,
+  sourceNote: `Official source from download.redis.io (SHA-256 from redis-hashes), compiled on this ${words.computer}${isLinux ? '; without a C compiler, Redis’ own packages from packages.redis.io' : ''}`,
 
   sourceUrl: 'https://github.com/redis/redis',
   hashes: 'https://raw.githubusercontent.com/redis/redis-hashes/master/README',
@@ -900,7 +968,7 @@ const valkey = keyValue({
   exe: 'valkey',
   name: 'Valkey',
   description: 'Open-source (BSD) fork of Redis by the Linux Foundation; drop-in for Redis clients.',
-  sourceNote: `Official source from github.com/valkey-io/valkey (SHA-256 from valkey-hashes), compiled on this ${words.computer}`,
+  sourceNote: `Official source from github.com/valkey-io/valkey (SHA-256 from valkey-hashes), compiled on this ${words.computer}${isLinux ? '; without a C compiler, Valkey’s own ready build from download.valkey.io' : ''}`,
 
   sourceUrl: 'https://github.com/valkey-io/valkey',
   hashes: 'https://raw.githubusercontent.com/valkey-io/valkey-hashes/main/README',
