@@ -5,7 +5,7 @@ import { findCommand, getShellEnv, run } from './env';
 import { shimDir, writeCmdShim } from './node';
 import { exe, isWin, joinPath, pathKey, splitPath } from './platform';
 import { uvEnv, uvPath } from './python';
-import { listInstalled as installedRubies, rvEnv, rvPath } from './ruby';
+import { listInstalled as installedRubies, msys2Path, rvEnv, rvPath } from './ruby';
 import { dataDir } from './store';
 
 /**
@@ -82,7 +82,22 @@ const linksFile = () => dataDir('tools', 'links.json');
 /** rv keeps its tools under $XDG_DATA_HOME/rv/tools: pointed into DevCatz's folder. */
 const rvData = () => dataDir('tools', 'rv');
 const rvToolsDir = () => join(rvData(), 'rv', 'tools');
-const rvToolEnv = () => ({ ...rvEnv(), XDG_DATA_HOME: rvData() });
+/**
+ * rv's settings for `rv tool`: its tools folder points into DevCatz's (XDG_DATA_HOME; Windows: rv uses %APPDATA%\\rv,
+ * so APPDATA for that one process). On Windows rv compiles native gems itself, without RubyInstaller's devkit hook:
+ * MSYS2's UCRT toolchain goes on its PATH, as `ridk enable` does.
+ */
+function rvToolEnv(): Record<string, string> {
+  const env = rvEnv();
+  if (!isWin) return { ...env, XDG_DATA_HOME: rvData() };
+  const key = pathKey(env);
+  const msys = msys2Path();
+  return {
+    ...env,
+    APPDATA: rvData(),
+    ...(msys ? { MSYSTEM: 'UCRT64', [key]: joinPath([join(msys, 'ucrt64', 'bin'), join(msys, 'usr', 'bin'), env[key] ?? '']) } : {}),
+  };
+}
 /** Bun's global installs when there is no Node.js: packages here, bins in the npm bin folder (one list for both). */
 const bunGlobal = () => join(npmPrefix(), 'bun-global');
 
@@ -305,6 +320,9 @@ export async function installTool(id: RuntimeToolId, rt: ToolRuntimes, log: (lin
     if (!rvPath()) throw new Error('rv is not installed: install it on the Ruby page first');
     log(`rv tool install ${t.pkg}`);
     r = await run(rvPath()!, ['tool', 'install', '--force', t.pkg], { timeout: 15 * 60_000, env: rvToolEnv() });
+    if (r.code !== 0 && isWin && !msys2Path() && /CompileFailures|native extension/i.test(`${r.stdout}${r.stderr}`)) {
+      throw new Error(`${t.label} has gems with native code: install the build tools on the Ruby page first (Windows)`);
+    }
     if (r.code === 0) {
       // Older versions rv kept beside the new one go: one folder per tool.
       const keep = rvToolFolder(t.pkg);
