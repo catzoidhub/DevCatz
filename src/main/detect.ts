@@ -184,9 +184,57 @@ function databaseFromEnv(root: string, dirs: string[]): DatabaseInfo | null {
   return null;
 }
 
+/**
+ * Rails (§37): the `development` connection of config/database.yml — `<<: *default` merged in, ERB defaults read
+ * (`<%= ENV.fetch("DB_HOST") { "localhost" } %>`, `ENV["X"] || "y"`, with the project's .env values first). Only what
+ * the Database tab needs (adapter, host, port, database), so no YAML library; DATABASE_URL in .env wins (as in Rails).
+ */
+function databaseFromRails(root: string): DatabaseInfo | null {
+  const text = readText(join(root, 'config', 'database.yml'));
+  if (!text) return null;
+  const env = readEnvFiles(...['.env.development.local', '.env.local', '.env.development', '.env'].map((f) => join(root, f)));
+  const erb = (v: string) =>
+    v
+      .replace(/<%=\s*ENV\.fetch\(\s*["'](\w+)["']\s*(?:,\s*["']?([^"')]*)["']?\s*)?\)\s*(?:\{\s*["']?([^"'}]*?)["']?\s*\})?\s*%>/g, (_m, k: string, d1?: string, d2?: string) => env[k] ?? process.env[k] ?? d1 ?? d2 ?? '')
+      .replace(/<%=\s*ENV\[["'](\w+)["']\]\s*(?:\|\|\s*["']?([^"'%]*?)["']?\s*)?%>/g, (_m, k: string, d?: string) => env[k] ?? process.env[k] ?? d ?? '')
+      .replace(/^["']|["']$/g, '')
+      .trim();
+  // Top-level blocks (default:, development: …) with their anchors and indented key: value lines.
+  const blocks = new Map<string, { anchor: string | null; merge: string | null; values: Record<string, string> }>();
+  let cur: { anchor: string | null; merge: string | null; values: Record<string, string> } | null = null;
+  for (const line of text.split('\n')) {
+    if (/^\s*#/.test(line) || !line.trim()) continue;
+    const top = line.match(/^([\w-]+):\s*(?:&(\w+))?\s*$/);
+    if (top) {
+      cur = { anchor: top[2] ?? null, merge: null, values: {} };
+      blocks.set(top[1], cur);
+      continue;
+    }
+    if (!cur || !/^\s{2}\S/.test(line)) continue;
+    const m = line.match(/^\s{2}(<<|[\w]+):\s*(.*?)\s*$/);
+    if (!m) continue;
+    if (m[1] === '<<') cur.merge = m[2].replace(/^\*/, '');
+    else cur.values[m[1]] = erb(m[2]);
+  }
+  const dev = blocks.get('development');
+  if (!dev) return null;
+  const base = dev.merge ? [...blocks.values()].find((b) => b.anchor === dev.merge)?.values ?? {} : {};
+  const v = { ...base, ...dev.values };
+  if (v.url) {
+    const m = v.url.match(/^(\w+):\/\/(?:[^@/]*@)?([^:/?]+)(?::(\d+))?(?:\/([^?#]+))?/);
+    if (m) return { engine: engineOf(m[1]), composeFile: null, service: null, image: null, host: m[2], hostPort: m[3] ? Number(m[3]) : null, database: m[4] ?? null };
+  }
+  const adapter = (v.adapter ?? '').toLowerCase();
+  if (adapter.startsWith('sqlite')) return { engine: 'sqlite', composeFile: null, service: null, image: null, host: null, hostPort: null, database: v.database || null };
+  const engine = /postgres/.test(adapter) ? 'postgres' : /mysql|trilogy/.test(adapter) ? 'mysql' : adapter ? engineOf(adapter) : null;
+  if (!engine) return null;
+  const port = Number(v.port) || (engine === 'postgres' ? 5432 : 3306);
+  return { engine, composeFile: null, service: null, image: null, host: v.host || '127.0.0.1', hostPort: port, database: v.database || null };
+}
+
 export function detectDatabase(root: string, dirs: string[] = []): DatabaseInfo | null {
   const compose = detectComposeDatabase(root);
-  const env = databaseFromEnv(root, dirs);
+  const env = databaseFromEnv(root, dirs) ?? databaseFromRails(root);
   if (compose && env) {
     // DATABASE_URL on this Mac (DBngin, Laravel Herd, Postgres.app) that is not
     // the compose service's published port: the app uses that one, not Docker.

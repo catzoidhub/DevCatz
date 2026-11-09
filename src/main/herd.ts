@@ -2896,6 +2896,15 @@ export class Herd extends EventEmitter {
       const ssl3 = ['/opt/homebrew/opt/openssl@3', '/usr/local/opt/openssl@3'].find((d) => existsSync(d));
       if (ssl3) rubyEnv = { BUNDLE_BUILD__OPENSSL: `--with-openssl-dir=${ssl3}` };
     }
+    // Ruby (Rails, Sinatra …): the project's .env files as dotenv(-rails) reads them (first wins:
+    // .env.development.local, .env.local, .env.development, .env), so DATABASE_URL / REDIS_URL from "Use this database"
+    // and Redis reach Rails (DATABASE_URL overrides config/database.yml), Sidekiq and Action Cable without the dotenv
+    // gem. DevCatz's own values (PORT, PATH) stay DevCatz's.
+    if (stackNow?.runtime === 'ruby' || stackNow?.subRuntimes?.includes('ruby')) {
+      const dot = readEnvFiles(...['.env.development.local', '.env.local', '.env.development', '.env'].map((f) => join(p.path, f)));
+      for (const k of ['PORT', 'PATH', 'Path', 'HOST', 'BUNDLE_GEMFILE']) delete dot[k];
+      rubyEnv = { ...dot, ...rubyEnv };
+    }
     // Tools installed on the Runtimes pages (pnpm, air, swag, poetry …), after the site's own runtimes.
     dirs.push(...tools.toolPathDirs());
     // The site's Redis DB index (any stack).

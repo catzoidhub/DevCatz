@@ -16,7 +16,8 @@ const props = defineProps<{ service: DbServiceState; siteId?: string }>();
 const sites = computed(() => state.value?.projects ?? []);
 const targetSite = ref(props.siteId ?? '');
 const site = computed(() => sites.value.find((p) => p.id === targetSite.value) ?? null);
-const format = ref<DbEnvFormat>(site.value?.stack.runtime === 'php' ? 'laravel' : site.value?.stack.runtime === 'go' ? 'go' : 'laravel');
+// Ruby (Rails, Sinatra …): DATABASE_URL, which Rails prefers over config/database.yml; DevCatz passes .env to it.
+const format = ref<DbEnvFormat>(site.value?.stack.runtime === 'php' ? 'laravel' : site.value?.stack.runtime === 'go' ? 'go' : site.value?.stack.runtime === 'ruby' ? 'url' : 'laravel');
 const hostKind = ref<'local' | 'docker'>(state.value?.settings.dbEnvHost ?? 'local');
 const link = ref(true);
 
@@ -174,13 +175,14 @@ const mask = (k: string, v: string) => (/PASSWORD/i.test(k) && v && v !== 'null'
     <div class="flex flex-wrap items-center gap-2">
       <div class="seg">
         <a class="seg-item" :class="{ 'is-active': format === 'laravel' }" @click="format = 'laravel'">Laravel</a>
-        <a class="seg-item" :class="{ 'is-active': format === 'url' }" title="DATABASE_URL / REDIS_URL … (Prisma, Node, Nuxt)" @click="format = 'url'">URL</a>
+        <a class="seg-item" :class="{ 'is-active': format === 'url' }" title="DATABASE_URL / REDIS_URL … (Rails, Prisma, Node, Nuxt)" @click="format = 'url'">URL</a>
         <a class="seg-item" :class="{ 'is-active': format === 'go' }" title="DSN for GORM / database/sql" @click="format = 'go'">Go</a>
       </div>
       <div v-if="service.engine !== 'sqlite'" class="seg">
         <a class="seg-item" :class="{ 'is-active': hostKind === 'local' }" :title="`Apps running on this ${words.computer}`" @click="hostKind = 'local'">This {{ words.computer }}</a>
         <a class="seg-item" :class="{ 'is-active': hostKind === 'docker' }" title="Apps in containers (host.docker.internal)" @click="hostKind = 'docker'">Docker</a>
       </div>
+      <span v-if="site?.stack.runtime === 'ruby' && format === 'url'" class="text-xs opacity-60" title="Rails uses DATABASE_URL over config/database.yml; DevCatz passes the site's .env files to it, like dotenv-rails">Rails reads it through DevCatz</span>
       <span class="flex-1" />
       <button type="button" class="btn btn-primary btn-xs" @click="copy">Copy .env lines</button>
     </div>

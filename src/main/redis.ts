@@ -2,7 +2,7 @@ import { connect } from 'node:net';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RedisDetails, RedisInfo } from '@shared/types';
-import { readEnvFiles } from './detect';
+import { readEnvFiles, readText } from './detect';
 
 const REDIS_DEPS = [
   'ioredis',
@@ -126,7 +126,21 @@ export function detectRedis(root: string, dirs: string[]): RedisInfo | null {
       /* no go.mod */
     }
   }
-  const client = REDIS_DEPS.find((d) => pkgDeps.has(d)) ?? goClient;
+  // Ruby (§37): the redis / sidekiq / redis-client gems in Gemfile.lock, or Action Cable on the redis adapter.
+  let rubyClient: string | null = null;
+  for (const d of [root, ...dirs]) {
+    const lock = readText(join(d, 'Gemfile.lock')) ?? readText(join(d, 'Gemfile')) ?? '';
+    const gem = lock.match(/^\s+(sidekiq|redis-client|redis|kredis|resque)\s/m)?.[1] ?? lock.match(/gem\s+["'](sidekiq|redis-client|redis|kredis|resque)["']/)?.[1];
+    if (gem) {
+      rubyClient = gem;
+      break;
+    }
+    if (/adapter:\s*redis/.test(readText(join(d, 'config', 'cable.yml')) ?? '')) {
+      rubyClient = 'actioncable';
+      break;
+    }
+  }
+  const client = REDIS_DEPS.find((d) => pkgDeps.has(d)) ?? goClient ?? rubyClient;
   const env = readEnvFiles(...[root, ...dirs].flatMap((d) => [join(d, '.env'), join(d, '.env.local')]));
   const compose = composeRedis(root);
 
