@@ -10,7 +10,7 @@ import mcatzpLogo from '../assets/logos/mcatzp.svg';
 import { STACK_ICONS } from '../stackicons';
 import StackMark from './StackMark.vue';
 import CatMood from './CatMood.vue';
-import { attempt, herd, state } from '../store';
+import { askConfirm, attempt, herd, notify, state } from '../store';
 
 /** Settings → MCatzP: the switch, what is shared, the approved clients and what they did. */
 const s = computed(() => state.value!.settings);
@@ -37,6 +37,24 @@ const outdated = computed(() => {
   return a.localeCompare(b, undefined, { numeric: true }) < 0;
 });
 const updateHow = { homebrew: 'Homebrew', other: 'how you installed it' } as const;
+/** Uninstall (user, 2026-11-10; every Catzoid app has it): out of every assistant, and the shared copy when a Catzoid app installed it. */
+async function uninstallMcatzp() {
+  const where = targets.value.filter((t) => t.current).map((t) => t.label);
+  const ok = await askConfirm({
+    title: 'Uninstall MCatzP?',
+    text: `${where.length ? `It is taken out of ${where.join(', ')}. ` : ''}${
+      setup.value?.source === 'catzoid' ? `The program (${setup.value.path}) is removed. ` : setup.value?.path ? `Your own copy (${setup.value.path}) stays: remove it the way you installed it. ` : ''
+    }Every Catzoid app shares MCatzP, so they lose it too; this app's MCatzP switch turns off. Install it again any time.`,
+    confirm: 'Uninstall',
+  });
+  if (!ok) return;
+  const r = await attempt(() => herd.mcatzpUninstall());
+  if (!r) return;
+  notify('success', r.binary === 'kept' ? `MCatzP taken out of the assistants; your copy at ${r.keptPath} stays` : 'MCatzP uninstalled');
+  setup.value = (await attempt(() => herd.mcatzpSetup(false))) ?? setup.value;
+  void loadTargets();
+}
+
 async function installMcatzp() {
   const next = await attempt(() => herd.mcatzpInstall());
   if (next) setup.value = next;
@@ -210,6 +228,7 @@ const groups = computed(() => {
         <button v-if="installing" class="btn btn-sm" :disabled="installing.phase === 'install'" @click="cancelInstall">Cancel</button>
         <button v-else-if="setup && !setup.path" class="btn btn-primary btn-sm" :disabled="!setup.checked || setup.noBuild" @click="installMcatzp">Install MCatzP</button>
         <button v-else-if="outdated" class="btn btn-sm mcatzp-update" @click="installMcatzp">Update to {{ setup?.latest }}</button>
+        <button v-if="!installing && setup?.path" class="btn btn-ghost btn-sm text-error" title="Take MCatzP out of every assistant and remove the program a Catzoid app installed" @click="uninstallMcatzp">Uninstall…</button>
       </div>
 
       <template v-if="on">

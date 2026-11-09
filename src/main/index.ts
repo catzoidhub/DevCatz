@@ -872,6 +872,18 @@ function api(): HerdApi {
       void checkMcatzpUpdate();
       return mcatzpSetup.setupState();
     },
+    mcatzpUninstall: async () => {
+      if (mcatzpInstalling) throw new Error('MCatzP is being installed');
+      // The channel closes first: assistants connected now lose it rather than a missing program.
+      if (store.settings.mcatzp === true) {
+        await herd.updateSettings({ mcatzp: false });
+        await mcatzp.set(false);
+      }
+      const r = await mcatzpSetup.uninstall();
+      herd.mcatzpUpdate = null;
+      herd.emit('change');
+      return r;
+    },
     mcatzpInstallCancel: async () => mcatzpInstalling?.abort(),
     mcatzpApprovals: async () => mcatzpSetup.approvals(),
     mcatzpTargets: () => mcatzpSetup.targets(),
