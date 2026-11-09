@@ -133,7 +133,7 @@ async function submit() {
           <template v-if="service.kind === 'opensearch' && isWin">OpenSearch's Windows bundle (SHA-512 checked) with its own Java, about 1 GB to download; its plugins are dropped after unpacking.</template>
           <template v-else-if="service.kind === 'opensearch'">{{ isLinux ? 'DevCatz' : 'OpenSearch has no macOS build: DevCatz' }} runs its core distribution (SHA-512 checked) on Eclipse Temurin 21 (SHA-256 checked), about 300 MB.</template>
           <template v-else-if="service.kind === 'typesense'">From dl.typesense.org; the binary’s MD5 shipped in the tarball is checked.</template>
-          <template v-else-if="service.kind === 'manticore'">From repo.manticoresearch.com ({{ isWin ? 'Windows' : 'macOS' }} build, over HTTPS).</template>
+          <template v-else-if="service.kind === 'manticore'">From repo.manticoresearch.com ({{ isWin ? 'Windows build, over HTTPS' : isLinux ? 'its apt packages, SHA-256 checked, unpacked into DevCatz’s folder' : 'macOS build, over HTTPS' }}).</template>
           <template v-else-if="service.kind === 'sonic'">Sonic publishes no {{ words.os }} build: DevCatz downloads Homebrew's (from ghcr.io, SHA-256 from formulae.brew.sh); Homebrew itself is not needed.</template>
           <template v-else>The official build is downloaded from GitHub and its SHA-256 checked.</template>
         </p>

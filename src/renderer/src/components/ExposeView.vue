@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { keyLabel, words } from '@shared/platform';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import QRCode from 'qrcode';
 import type { ExposeRequest, ExposeShare, ExposeTool } from '@shared/types';
@@ -124,7 +124,9 @@ const TOOLS: { tool: ExposeTool; name: string; source: string; providers: string
   { tool: 'cloudflared', name: 'cloudflared', source: 'GitHub (cloudflare/cloudflared), SHA-256 checked', providers: 'Cloudflare quick tunnels · your Cloudflare domain' },
   { tool: 'ngrok', name: 'ngrok', source: isWin
       ? "ngrok's download server, URL and SHA-256 from Scoop's manifest. Microsoft Defender may flag ngrok as potentially unwanted and block it; Cloudflare needs no exception"
-      : "ngrok's download server, URL and SHA-256 from the Homebrew cask", providers: 'ngrok (authtoken in Settings)' },
+      : isLinux
+        ? "ngrok's own apt repository, SHA-256 from its index; the binary is unpacked into DevCatz's folder"
+        : "ngrok's download server, URL and SHA-256 from the Homebrew cask", providers: 'ngrok (authtoken in Settings)' },
   { tool: 'expose', name: 'Expose', source: 'GitHub (exposedev/expose), the phar build; runs on the PHP of the Runtimes page', providers: 'Expose · expose.dev (token in Settings)' },
 ];
 const task = computed(() => expose.value?.installing ?? null);

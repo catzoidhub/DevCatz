@@ -1,6 +1,7 @@
 import { safeStorage } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { DEB_ARCH, newestDeb, parsePackages, unpackDebs } from './debpkg';
 import { rm } from 'node:fs/promises';
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
@@ -118,17 +119,21 @@ async function ngrokScoop(): Promise<{ version: string; url: string; sha256: str
   return { version: m.version, url: a.url, sha256: a.hash.replace(/^sha256:/, '') };
 }
 
-/** ngrok's release for this platform: Homebrew's cask on macOS, Scoop's manifest on Windows. */
 /**
- * Linux: ngrok publishes no checksums for its Linux archives and no package source DevCatz can read one from, and
- * DevCatz installs nothing it cannot verify: ngrok's own apt / yum repository (signed) is the way there.
+ * Linux: ngrok's own apt repository (the one its install guide uses, the same .deb for every distribution) has the
+ * SHA-256 of each package in its index; DevCatz unpacks the ngrok binary from it (debpkg.ts), no system install.
  */
-const ngrokRelease = () =>
-  isWin
-    ? ngrokScoop()
-    : isLinux
-      ? Promise.reject(new Error('ngrok on Linux comes from its own signed repository (ngrok.com/download/linux): install it there; DevCatz uses it from the PATH. Cloudflare Tunnel installs here.'))
-      : ngrokCask();
+const NGROK_APT = 'https://ngrok-agent.s3.amazonaws.com';
+async function ngrokApt(): Promise<{ version: string; url: string; sha256: string; deb: true }> {
+  const res = await fetch(`${NGROK_APT}/dists/bookworm/main/binary-${DEB_ARCH}/Packages`);
+  if (!res.ok) throw new Error(`ngrok's repository: HTTP ${res.status}`);
+  const p = newestDeb(parsePackages(await res.text()), 'ngrok');
+  if (!p) throw new Error(`No ngrok package for ${DEB_ARCH}`);
+  return { version: p.version, url: `${NGROK_APT}/${p.file}`, sha256: p.hash, deb: true };
+}
+
+/** ngrok's release for this platform: Homebrew's cask on macOS, Scoop's manifest on Windows, its apt repository on Linux. */
+const ngrokRelease = (): Promise<{ version: string; url: string; sha256: string; deb?: true }> => (isWin ? ngrokScoop() : isLinux ? ngrokApt() : ngrokCask());
 
 export class ExposeManager {
   private live = new Map<string, Live>();
@@ -230,10 +235,27 @@ export class ExposeManager {
       await installFrom(a.url, a.sha256, dir, 'cloudflared', `cloudflared ${a.tag}`, report, signal);
     } else if (tool === 'ngrok') {
       // ngrok publishes no checksums of its own; Homebrew's cask (macOS) / Scoop's manifest (Windows) carry URL and SHA-256.
-      report({ step: 0, detail: isWin ? 'Scoop manifest (ngrok)' : 'formulae.brew.sh (ngrok cask)' });
+      report({ step: 0, detail: isWin ? 'Scoop manifest (ngrok)' : isLinux ? 'ngrok-agent.s3.amazonaws.com (ngrok’s apt repository)' : 'formulae.brew.sh (ngrok cask)' });
       const c = await ngrokRelease();
       check(signal);
-      await installFrom(c.url, c.sha256, dir, 'ngrok', `ngrok ${c.version}`, report, signal);
+      if (c.deb) {
+        const tmp = join(dir, `.ngrok-${Date.now()}`);
+        try {
+          await unpackDebs([{ url: c.url, hash: c.sha256 }], tmp, (phase, detail, received, total) =>
+            report({ step: phase === 'download' ? 1 : phase === 'verify' ? 2 : 3, detail, received, total }),
+          signal).catch((e) => {
+            throw signal.aborted ? new Cancelled() : e;
+          });
+          const bin = ['usr/local/bin/ngrok', 'usr/bin/ngrok'].map((b) => join(tmp, b)).find((b) => existsSync(b));
+          if (!bin) throw new Error('ngrok was not found in its package');
+          report({ step: 4, detail: join(dir, 'ngrok') });
+          rmSync(join(dir, 'ngrok'), { force: true });
+          renameSync(bin, join(dir, 'ngrok'));
+          chmodSync(join(dir, 'ngrok'), 0o755);
+        } finally {
+          rmSync(tmp, { recursive: true, force: true });
+        }
+      } else await installFrom(c.url, c.sha256, dir, 'ngrok', `ngrok ${c.version}`, report, signal);
     } else {
       // Expose's phar (no published checksum: HTTPS from GitHub); it runs on the PHP DevCatz uses.
       if (!getPhpRuntime()) throw new Error('Expose needs PHP 8.2+: install PHP on the Runtimes page first');

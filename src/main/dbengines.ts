@@ -11,6 +11,7 @@ import { exe, isLinux, isWin, moveDir, removeTemp, TAR } from './platform';
 import { runAsRootLinux } from './linuxadmin';
 import { dataDir } from './store';
 import { githubJson } from './github';
+import { DEB_ARCH, debDistro, hasDpkgDeb, newestDeb, parsePackages, unpackDebs } from './debpkg';
 
 /**
  * Database server builds and how to run them. Each engine comes from its
@@ -465,23 +466,6 @@ async function mariadbWindowsBuilds(): Promise<RemoteBuild[]> {
  * other builds: nothing is installed into the system, and a MariaDB of the distribution is left alone.
  */
 const MARIADB_REPO = 'https://mirror.mariadb.org/repo';
-const DEB_ARCH = arch ? 'arm64' : 'amd64';
-function debDistro(): { os: 'ubuntu' | 'debian'; codename: string } | null {
-  let txt = '';
-  try {
-    txt = readFileSync('/etc/os-release', 'utf8');
-  } catch {
-    return null;
-  }
-  const v = (k: string) => txt.match(new RegExp(`^${k}=["']?([^"'\n]*)`, 'm'))?.[1] ?? '';
-  // Ubuntu and its derivatives (Mint, Pop!_OS …) name the Ubuntu release they follow.
-  const ubuntu = v('UBUNTU_CODENAME') || (v('ID') === 'ubuntu' ? v('VERSION_CODENAME') : '');
-  if (ubuntu) return { os: 'ubuntu', codename: ubuntu };
-  if ((v('ID') === 'debian' || /\bdebian\b/.test(v('ID_LIKE'))) && v('VERSION_CODENAME')) return { os: 'debian', codename: v('VERSION_CODENAME') };
-  return null;
-}
-/** `1:11.4.13+maria~ubu2404` → 11.4.13 */
-const debUpstream = (v: string) => v.replace(/^\d+:/, '').replace(/[+~-].*$/, '');
 
 async function mariadbDebBuilds(): Promise<RemoteBuild[]> {
   const d = debDistro();
@@ -496,17 +480,8 @@ async function mariadbDebBuilds(): Promise<RemoteBuild[]> {
     const base = `${MARIADB_REPO}/${line.release_id}/${d.os}`;
     const index = await text(`${base}/dists/${d.codename}/main/binary-${DEB_ARCH}/Packages`).catch(() => null);
     if (!index) continue; // this line has no packages for this release
-    const newest = (pkg: string) =>
-      index
-        .split(/\n\n+/)
-        .map((st) => ({
-          name: st.match(/^Package: (.+)$/m)?.[1],
-          version: debUpstream(st.match(/^Version: (.+)$/m)?.[1] ?? ''),
-          file: st.match(/^Filename: (.+)$/m)?.[1],
-          hash: st.match(/^SHA256: (.+)$/m)?.[1],
-        }))
-        .filter((p) => p.name === pkg && p.file && p.hash && /^\d+\.\d+\.\d+$/.test(p.version))
-        .sort((a, b) => cmpVersion(a.version, b.version))[0];
+    const entries = parsePackages(index);
+    const newest = (pkg: string) => newestDeb(entries, pkg);
     const server = newest('mariadb-server-core');
     const client = newest('mariadb-client-core');
     if (!server || !client || client.version !== server.version) continue;
@@ -518,7 +493,7 @@ async function mariadbDebBuilds(): Promise<RemoteBuild[]> {
       url: `${base}/${server.file}`,
       hash: server.hash,
       algo: 'sha256',
-      parts: [{ url: `${base}/${client.file}`, hash: client.hash! }],
+      parts: [{ url: `${base}/${client.file}`, hash: client.hash }],
     });
   }
   if (!out.length) throw new Error(`MariaDB's repository has no ${DEB_ARCH} packages for ${d.os} ${d.codename}`);
@@ -529,22 +504,13 @@ async function mariadbDebBuilds(): Promise<RemoteBuild[]> {
 async function fetchDebs(b: RemoteBuild, dest: string, step: Step, signal: AbortSignal): Promise<void> {
   const tmp = `${dest}.partial`;
   removeTemp(tmp);
-  mkdirSync(tmp, { recursive: true });
   try {
-    const files = [{ url: b.url!, hash: b.hash! }, ...(b.parts ?? [])];
-    for (const [i, f] of files.entries()) {
-      const deb = join(tmp, `${i}.deb`);
-      step('Downloading', { detail: f.url.split('/').pop(), received: 0, total: 0 });
-      const digest = await downloadVerified(f.url, deb, '', (received, total) => step('Downloading', { received, total }), undefined, signal).catch((e) => {
-        throw signal.aborted ? new Cancelled() : e;
-      });
-      check(signal);
-      step('Verifying the checksum', { received: undefined, total: undefined, detail: `SHA-256 ${digest.slice(0, 16)}…` });
-      if (digest !== f.hash.toLowerCase()) throw new Error(`Checksum mismatch for ${f.url.split('/').pop()}; download discarded`);
-      step('Unpacking', { detail: f.url.split('/').pop() });
-      const r = await run('dpkg-deb', ['-x', deb, join(tmp, 'root')], { timeout: 300_000 });
-      if (r.code !== 0) throw new Error(`Unpacking ${f.url.split('/').pop()} failed: ${(r.stderr || r.stdout).trim() || 'dpkg-deb is missing'}`);
-    }
+    const PHASE = { download: 'Downloading', verify: 'Verifying the checksum', unpack: 'Unpacking' } as const;
+    await unpackDebs([{ url: b.url!, hash: b.hash! }, ...(b.parts ?? [])], join(tmp, 'root'), (phase, detail, received, total) =>
+      step(PHASE[phase], { detail, received, total }),
+    signal).catch((e) => {
+      throw signal.aborted ? new Cancelled() : e;
+    });
     const usr = join(tmp, 'root', 'usr');
     if (!existsSync(join(usr, 'sbin', 'mariadbd'))) throw new Error('mariadbd was not found in the packages');
     // The server is in sbin; DevCatz looks for every program in bin.
@@ -572,7 +538,7 @@ const mariadb: EngineDef = {
     if (isWin) return null;
     if (isLinux && arch) {
       if (!debDistro()) return 'MariaDB publishes no generic Linux ARM64 build, only packages for Ubuntu and Debian: install mariadb-server with your package manager, or use MySQL here.';
-      if ((await run('/bin/sh', ['-c', 'command -v dpkg-deb'])).code !== 0) return 'Unpacking MariaDB’s packages needs dpkg-deb (the dpkg package).';
+      if (!(await hasDpkgDeb())) return 'Unpacking MariaDB’s packages needs dpkg-deb (the dpkg package).';
     }
     if (isLinux) return null;
     return brewBin() ? null : 'MariaDB comes from Homebrew. Install Homebrew from https://brew.sh first.';

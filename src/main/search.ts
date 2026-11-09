@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { words } from '@shared/platform';
+import { DEB_ARCH, debDistro, hasDpkgDeb, newestDeb, parsePackages, unpackDebs } from './debpkg';
 import { rm } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { release } from 'node:os';
@@ -155,6 +156,33 @@ const ZINC_ASSET = isWin
 const MANTICORE_REPO = isWin
   ? 'https://repo.manticoresearch.com/repository/manticoresearch_windows/release/x64/'
   : 'https://repo.manticoresearch.com/repository/manticoresearch_macos/release/';
+/**
+ * Linux: Manticore publishes .deb packages per distribution (repo.manticoresearch.com/repository/manticoresearch_<release>),
+ * no tarball: DevCatz unpacks searchd's packages from there into its own folder (debpkg.ts; SHA-256 from the
+ * repository's index). Releases without a repository of their own take the nearest older one (Ubuntu 24.04+ → jammy,
+ * Debian 13+ → bookworm), as Manticore's own install script does.
+ */
+function manticoreDebRepo(): { base: string; index: string } {
+  const d = debDistro();
+  if (!d) throw new Error('Manticore for Linux comes as Ubuntu / Debian packages; on this distribution install it from its yum repository (manticoresearch.com/install)');
+  const codename =
+    d.os === 'ubuntu' ? (d.codename === 'focal' || (d.version > 0 && d.version < 22) ? 'focal' : 'jammy') : d.codename === 'bullseye' ? 'bullseye' : 'bookworm';
+  const base = `https://repo.manticoresearch.com/repository/manticoresearch_${codename}`;
+  return { base, index: `${base}/dists/${codename}/main/binary-${DEB_ARCH}/Packages` };
+}
+const MANTICORE_DEBS = ['manticore-server-core', 'manticore-common', 'manticore-tzdata'];
+async function manticoreDebs(): Promise<{ version: string; files: { url: string; hash: string }[] }> {
+  const { base, index } = manticoreDebRepo();
+  const res = await fetch(index);
+  if (!res.ok) throw new Error(`repo.manticoresearch.com: HTTP ${res.status}`);
+  const entries = parsePackages(await res.text());
+  const server = newestDeb(entries, 'manticore-server-core');
+  if (!server) throw new Error(`No Manticore packages for ${DEB_ARCH}`);
+  const files = MANTICORE_DEBS.map((n) => (n === 'manticore-common' ? newestDeb(entries, n, server.version) : newestDeb(entries, n)));
+  if (files.some((f) => !f)) throw new Error('Manticore’s repository misses one of its packages');
+  return { version: server.version, files: files.map((f) => ({ url: `${base}/${f!.file}`, hash: f!.hash })) };
+}
+
 const MANTICORE_FILE = isWin ? '-[\\w-]+-x64-main\\.zip' : `-[\\w-]+-osx[\\d.]+-${ARM ? 'arm64' : 'x86_64'}-main\\.tar\\.gz`;
 
 const ENGINES: Record<SearchKind, Engine> = {
@@ -345,8 +373,24 @@ const ENGINES: Record<SearchKind, Engine> = {
     defaults: { port: 9308, extraPort: 9306, domain: 'manticore' },
     needsKey: false,
     async install(dir, report, signal) {
-      // Linux: Manticore ships .deb / .rpm packages for each distribution, no generic tarball to run from a folder.
-      if (isLinux) throw new Error('Manticore has no generic Linux build: install manticore from its apt / yum repository (manticoresearch.com/install), or use Meilisearch / Typesense here.');
+      if (isLinux) {
+        if (!(await hasDpkgDeb())) throw new Error('Unpacking Manticore’s packages needs dpkg-deb (the dpkg package)');
+        report({ step: S.find, detail: 'repo.manticoresearch.com (apt packages)' });
+        const m = await manticoreDebs();
+        report({ title: `Installing Manticore ${m.version}` });
+        const tmp = join(dir, `.manticore-${Date.now()}`);
+        try {
+          await unpackDebs(m.files, join(tmp, 'root'), (phase, detail, received, total) =>
+            report({ step: phase === 'download' ? S.download : phase === 'verify' ? S.verify : S.unpack, detail, received, total }),
+          signal);
+          if (!existsSync(join(tmp, 'root', 'usr', 'bin', SEARCHD))) throw new Error(`${SEARCHD} not found in the packages`);
+          report({ step: S.place, detail: join(dir, 'manticore') });
+          place(join(tmp, 'root', 'usr'), join(dir, 'manticore'));
+        } finally {
+          rmSync(tmp, { recursive: true, force: true });
+        }
+        return;
+      }
       report({ step: S.find, detail: `repo.manticoresearch.com (${isWin ? 'Windows' : 'macOS'} builds)` });
       const base = MANTICORE_REPO;
       const listing = await (await fetch(base)).text();
@@ -371,6 +415,7 @@ const ENGINES: Record<SearchKind, Engine> = {
       }
     },
     latest: async () => {
+      if (isLinux) return (await manticoreDebs()).version;
       const listing = await (await fetch(MANTICORE_REPO)).text();
       const vs = [...listing.matchAll(new RegExp(`manticore-(\\d+\\.\\d+\\.\\d+)${MANTICORE_FILE}`, 'g'))].map((m) => m[1]);
       const best = vs.reduce<string | null>((a, b) => (!a || isNewer(b, a) ? b : a), null);
