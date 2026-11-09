@@ -163,6 +163,10 @@ export class AppUpdater {
       this.set({ status: 'error', error: 'A development build cannot install updates: use the packaged DevCatz.' });
       return;
     }
+    // The install id / version / channel are for catzoid.com's update check (the .yml request) only. The download goes
+    // through catzoid.com/updates/devcatz/<file>, which redirects to GitHub's release assets, and electron-updater keeps
+    // these headers across that redirect: none on the download (Catzoid #90). The next check (configure) sets them again.
+    autoUpdater.requestHeaders = null;
     this.cancel = new CancellationToken();
     this.set({ status: 'downloading', error: null, progress: { percent: 0, transferred: 0, total: this.st.size ?? 0, bytesPerSecond: 0 } });
     try {
