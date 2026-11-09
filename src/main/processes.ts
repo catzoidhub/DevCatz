@@ -258,11 +258,22 @@ export class ProcessManager extends EventEmitter {
       const { stdout } = await run('ps', ['-A', '-o', 'pgid=']);
       for (const l of stdout.split('\n')) live.add(Number(l.trim()));
     }
-    for (const pgid of pids) {
-      if (live.has(pgid)) {
-        killGroup(pgid, 'SIGTERM');
-        killed++;
+    const reaped = pids.filter((pgid) => live.has(pgid));
+    for (const pgid of reaped) {
+      killGroup(pgid, 'SIGTERM');
+      killed++;
+    }
+    // A server slow to exit kept its port, and the same service started a moment later found it taken ("Port 6001 is
+    // already in use by sockudo"): up to 10 s for them to go, then SIGKILL.
+    if (!isWin && reaped.length) {
+      let left = reaped;
+      for (let waited = 0; left.length && waited < 10_000; waited += 250) {
+        await new Promise((r) => setTimeout(r, 250));
+        const { stdout } = await run('ps', ['-A', '-o', 'pgid=']);
+        const still = new Set(stdout.split('\n').map((l) => Number(l.trim())));
+        left = left.filter((g) => still.has(g));
       }
+      for (const pgid of left) killGroup(pgid, 'SIGKILL');
     }
     // Windows has no process groups: when DevCatz ends without stopping its sites, the cmd.exe it started goes with it
     // but the dev servers under it (node, vite, electron …) live on. They still name that cmd.exe as their parent.

@@ -476,7 +476,10 @@ export class Herd extends EventEmitter {
     const reaped =
       (await this.processes.reapOrphans()) + (await this.storage.processes.reapOrphans()) + (await this.ws.processes.reapOrphans()) +
       (await this.search.processes.reapOrphans()) +
-      (await this.dbs.processes.reapOrphans());
+      (await this.dbs.processes.reapOrphans()) +
+      // Gateways (Stalwart …) and WhatsApp (GOWA) run their own binaries too; left over, they held their ports.
+      (await this.gateways.processes.reapOrphans()) +
+      (await this.whatsapp.processes.reapOrphans());
     if (reaped) console.log(`Stopped ${reaped} dev server(s) left over from a previous run`);
     this.rescan();
     await this.proxy.listen(store.settings.httpsPort, store.settings.httpPort);
