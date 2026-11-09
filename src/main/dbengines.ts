@@ -408,7 +408,7 @@ const mysql: EngineDef = {
     return dest;
   },
   async version(root) {
-    const r = await run(binOf(root, 'mysqld'), ['--version'], { timeout: 15_000 });
+    const r = await run(binOf(root, 'mysqld'), ['--version'], { timeout: 60_000 });
     return r.stdout.match(/Ver\s+([\d.]+)/)?.[1] ?? null;
   },
   async init(c, root, data) {
@@ -607,7 +607,7 @@ const mariadb: EngineDef = {
   },
   async version(root) {
     const bin = firstExisting(binOf(root, 'mariadbd'), binOf(root, 'mysqld'));
-    const r = await run(bin, ['--version'], { timeout: 15_000 });
+    const r = await run(bin, ['--version'], { timeout: 60_000 });
     return r.stdout.match(/Ver\s+([\d.]+)/)?.[1] ?? null;
   },
   async init(c, root, data) {
@@ -716,7 +716,7 @@ const postgresql: EngineDef = {
     return dest;
   },
   async version(root) {
-    const r = await run(binOf(root, 'postgres'), ['--version'], { timeout: 15_000 });
+    const r = await run(binOf(root, 'postgres'), ['--version'], { timeout: 60_000 });
     return r.stdout.match(/(\d+\.\d+)/)?.[1] ?? null;
   },
   async init(c, root, data) {
@@ -863,7 +863,7 @@ function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: strin
       return dest;
     },
     async version(root) {
-      const r = await run(join(root, server), ['--version'], { timeout: 15_000 });
+      const r = await run(join(root, server), ['--version'], { timeout: 60_000 });
       return r.stdout.match(/v=([\d.]+)/)?.[1] ?? null;
     },
     async init(_c, _root, data) {
@@ -943,7 +943,7 @@ const mongodb: EngineDef = {
     return dest;
   },
   async version(root) {
-    const r = await run(binOf(root, 'mongod'), ['--version'], { timeout: 15_000 });
+    const r = await run(binOf(root, 'mongod'), ['--version'], { timeout: 60_000 });
     return r.stdout.match(/db version v([\d.]+)/)?.[1] ?? null;
   },
   async init(_c, _root, data) {
@@ -1071,7 +1071,7 @@ const sqlite: EngineDef = {
         db.close();
       }
     }
-    const r = await run(join(root, 'bin/sqlite3'), ['--version'], { timeout: 10_000 });
+    const r = await run(join(root, 'bin/sqlite3'), ['--version'], { timeout: 60_000 });
     return r.stdout.match(/^([\d.]+)/)?.[1] ?? null;
   },
   async init(_c, _root, data) {

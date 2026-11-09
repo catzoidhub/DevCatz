@@ -651,7 +651,7 @@ export class StorageManager {
     const bin = binaryOf(c);
     if (!existsSync(bin)) return null;
     const args = c.kind === 'seaweedfs' ? ['version'] : ['--version'];
-    const r = await run(bin, args, { timeout: 15_000 });
+    const r = await run(bin, args, { timeout: 60_000 });
     const text = `${r.stdout}\n${r.stderr}`;
     const v =
       c.kind === 'seaweedfs'

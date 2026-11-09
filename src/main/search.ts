@@ -210,7 +210,7 @@ const ENGINES: Record<SearchKind, Engine> = {
     },
     latest: async () => (await githubAsset('meilisearch/meilisearch', MEILI_ASSET)).tag.replace(/^v/, ''),
     async version(dir) {
-      const r = await run(join(dir, MEILI), ['--version'], { timeout: 15_000 });
+      const r = await run(join(dir, MEILI), ['--version'], { timeout: 60_000 });
       return r.stdout.match(/meilisearch\s+([\w.-]+)/)?.[1] ?? null;
     },
     spec(c, dir) {
@@ -273,7 +273,7 @@ const ENGINES: Record<SearchKind, Engine> = {
     },
     latest: async () => (await latestTag('typesense/typesense')).replace(/^v/, ''),
     async version(dir) {
-      const r = await run(join(dir, 'typesense-server'), ['--version'], { timeout: 15_000 });
+      const r = await run(join(dir, 'typesense-server'), ['--version'], { timeout: 60_000 });
       return `${r.stdout}${r.stderr}`.match(/Typesense\s+([\w.-]+)/)?.[1] ?? null;
     },
     spec(c, dir) {
@@ -423,7 +423,7 @@ const ENGINES: Record<SearchKind, Engine> = {
       return best;
     },
     async version(dir) {
-      const r = await run(join(dir, 'manticore', 'bin', SEARCHD), ['--version'], { timeout: 15_000 });
+      const r = await run(join(dir, 'manticore', 'bin', SEARCHD), ['--version'], { timeout: 60_000 });
       return `${r.stdout}${r.stderr}`.match(/Manticore\s+([\d.]+)/)?.[1] ?? null;
     },
     spec(c, dir) {
@@ -562,7 +562,7 @@ const ENGINES: Record<SearchKind, Engine> = {
     },
     latest: () => brewLatest('sonic'),
     async version(dir) {
-      const r = await run(join(dir, 'sonic'), ['--version'], { timeout: 15_000 });
+      const r = await run(join(dir, 'sonic'), ['--version'], { timeout: 60_000 });
       return `${r.stdout}${r.stderr}`.match(/sonic-server\s+([\d.]+)/)?.[1] ?? null;
     },
     spec(c, dir) {

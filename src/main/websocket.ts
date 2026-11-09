@@ -812,7 +812,7 @@ export class WsManager {
     if (!existsSync(bin)) return null;
     const own = ENGINES[c.kind].versionOf;
     if (own) return own(binaryDirOf(c));
-    const r = await run(bin, ENGINES[c.kind].versionArgs, { timeout: 15_000 });
+    const r = await run(bin, ENGINES[c.kind].versionArgs, { timeout: 60_000 });
     const v = `${r.stdout}\n${r.stderr}`.match(ENGINES[c.kind].versionRe)?.[1];
     return r.code === 0 || v ? (v ?? 'unknown') : null;
   }

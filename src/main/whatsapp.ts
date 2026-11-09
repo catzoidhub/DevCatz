@@ -508,7 +508,7 @@ export class WaManager {
           stop: () => this.stop(engine),
           start: () => this.start(engine),
           wasActive,
-          version: async () => ((await run(join(this.binDir('gowa'), GOWA_EXE), ['--help'], { timeout: 15_000 })).code === 0 ? tag : null),
+          version: async () => ((await run(join(this.binDir('gowa'), GOWA_EXE), ['--help'], { timeout: 60_000 })).code === 0 ? tag : null),
           report: t.report,
           signal: abort.signal,
           tailAt: head.length,
