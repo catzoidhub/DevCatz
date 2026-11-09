@@ -86,6 +86,8 @@ function sockudoConfig(c: WsConfig, hook: string | null, inside: boolean) {
     debug: false,
     metrics: { enabled: true, host: inside ? '0.0.0.0' : '127.0.0.1', port: inside ? 9601 : c.extraPort },
     cors: { origin: origins(c), credentials: false },
+    // Sockudo 4.x refuses its in-memory push storage unless told it is a local / dev setup (it is).
+    push: { allow_memory_drivers: true },
     app_manager: {
       driver: 'memory',
       array: {
