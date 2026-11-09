@@ -7,6 +7,7 @@ import Sparkline from './Sparkline.vue';
 import StackMark from './StackMark.vue';
 import { stackTag } from '../runtimes';
 import { STACK_ICONS } from '../stackicons';
+import { ICONS } from '../icons';
 import DepsCleanup from './DepsCleanup.vue';
 import { attempt, herd, notify, state } from '../store';
 import { monitorLogo } from '../logos';
@@ -179,9 +180,9 @@ const KIND_COLOR: Record<MonitorKind, string> = {
 /** Every service with an official mark shows it (databases, storage, search, WebSocket, WhatsApp, gateways, DevCatz). */
 const logoOf = (e: MonitorEntity) => monitorLogo(e, state.value?.databases ?? []);
 /** A site's main framework (Laravel, Next.js, Rails …), the same mark as in the site list (TODO §36). */
+/** A runtime's own processes (PHP-FPM pools, php-cgi workers on Windows): the icon of Runtimes → PHP, in its tile. */
+const RUNTIME_ICON: Partial<Record<MonitorKind, { d: string; box: string }>> = { php: { d: ICONS.php, box: '0 0 20 20' } };
 const siteTagOf = (e: MonitorEntity) => {
-  // A runtime's own processes: PHP-FPM pools (php-cgi workers on Windows) carry PHP's mark.
-  if (e.kind === 'php') return { label: 'PHP', icon: STACK_ICONS.php };
   // Containers of the sites' compose projects (Docker tab): Docker's mark.
   if (e.kind === 'container') return { label: 'Docker', icon: STACK_ICONS.docker };
   if (e.kind !== 'site') return null;
@@ -322,7 +323,13 @@ const minutesShown = 10;
               <tr class="cursor-pointer hover:bg-base-200/50" :class="{ 'opacity-50': !e.active, 'bg-base-200/60': expanded === e.id }" @click="expanded = expanded === e.id ? null : e.id">
                 <td class="max-w-0 min-w-56">
                   <div class="flex items-center gap-2">
-                    <span v-if="siteTagOf(e)" class="shrink-0" :title="`Built with ${siteTagOf(e)!.label}`"><StackMark :icon="siteTagOf(e)!.icon" :label="siteTagOf(e)!.label" class="size-5" /></span>
+                    <span
+                      v-if="RUNTIME_ICON[e.kind]"
+                      class="grid size-5 shrink-0 place-items-center rounded"
+                      style="color: var(--c-runtimes); background: color-mix(in oklch, var(--c-runtimes) 14%, transparent)"
+                      ><svg class="size-3.5" :viewBox="RUNTIME_ICON[e.kind]!.box" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="RUNTIME_ICON[e.kind]!.d" /></svg
+                    ></span>
+                    <span v-else-if="siteTagOf(e)" class="shrink-0" :title="`Built with ${siteTagOf(e)!.label}`"><StackMark :icon="siteTagOf(e)!.icon" :label="siteTagOf(e)!.label" class="size-5" /></span>
                     <img v-else-if="logoOf(e)" :src="logoOf(e)!" alt="" class="size-5 shrink-0 rounded bg-white object-contain p-px" draggable="false" />
                     <span v-else class="size-2.5 shrink-0 rounded-full" :style="{ background: KIND_COLOR[e.kind] }" />
                     <div class="min-w-0">
