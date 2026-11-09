@@ -23,9 +23,13 @@ const info = ref<AboutInfo | null>(null);
 onMounted(async () => (info.value = (await attempt(() => herd.aboutInfo())) ?? null));
 
 // "Apple silicon" / "Intel" are Mac words; Windows says x64 / ARM64.
-const arch = computed(() =>
-  words.computer === 'PC' ? (info.value?.arch === 'arm64' ? 'ARM64' : (info.value?.arch ?? '')) : info.value?.arch === 'arm64' ? 'Apple silicon' : info.value?.arch === 'x64' ? 'Intel' : (info.value?.arch ?? ''),
-);
+/** The build this is, with its OS (user, 2026-11-09): "macOS Apple silicon", "macOS Intel", "Windows x64", "Linux ARM64". */
+const arch = computed(() => {
+  const a = info.value?.arch;
+  if (!a) return '';
+  const cpu = words.os === 'macOS' ? (a === 'arm64' ? 'Apple silicon' : a === 'x64' ? 'Intel' : a) : a === 'arm64' ? 'ARM64' : a;
+  return `${words.os} ${cpu}`;
+});
 const host = computed(() => (info.value ? new URL(info.value.site).host : ''));
 const links = computed(() => {
   const site = info.value?.site;
@@ -59,7 +63,7 @@ function checkForUpdates() {
 function copyDetails() {
   const i = info.value;
   if (!i) return;
-  void navigator.clipboard.writeText(`DevCatz ${i.version} (${i.arch})\n${words.os} ${i.macos}\nElectron ${i.electron} · Chromium ${i.chrome} · Node.js ${i.node}`);
+  void navigator.clipboard.writeText(`DevCatz ${i.version} (${arch.value})\n${words.os} ${i.macos}\nElectron ${i.electron} · Chromium ${i.chrome} · Node.js ${i.node}`);
   notify('success', 'Version details copied');
 }
 </script>
