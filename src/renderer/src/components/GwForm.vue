@@ -6,6 +6,7 @@ import { attempt, herd, notify, state } from '../store';
 import { GW_LOGO } from '../gateways';
 import TaskStepper from './TaskStepper.vue';
 import RunInPicker from './RunInPicker.vue';
+import { engineNote } from '../moveengine';
 
 /** Install (defaults, a fresh password) or edit one email / push / SMS gateway: ports, domain label, login, autostart. */
 const props = defineProps<{ service: GwState; mode: 'install' | 'edit' }>();
@@ -137,7 +138,7 @@ const userLabel = computed(() => (props.service.kind === 'postal' ? 'Admin email
           </label>
         </fieldset>
         <p class="text-xs opacity-60">
-          <template v-if="service.docker">Runs in Docker ({{ words.dockerEngines }} must be running); ports are published on 127.0.0.1 only.</template>
+          <template v-if="service.docker">{{ engineNote(form.container) }} Ports are published on 127.0.0.1 only.</template>
           <template v-else>Downloaded from GitHub releases, SHA-256 checked; listens on 127.0.0.1 only.</template>
           <template v-if="service.category === 'email'"> Outgoing mail goes to the DevCatz mail catcher, so nothing leaves this {{ words.computer }}.</template>
           <template v-if="service.kind === 'jasmin'"> Every SMS goes to the DevCatz SMS catcher instead of an operator.</template>

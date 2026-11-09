@@ -138,3 +138,7 @@ Ruby frameworks (TODO §37; GitHub organisation avatars, 128 px): sinatra.png �
 hanami.png — https://github.com/hanami.png; padrino.png — https://github.com/padrino.png; grape.png —
 https://github.com/ruby-grape.png; bridgetown.png — https://github.com/bridgetownrb.png; middleman.png —
 https://github.com/middleman.png; rage.png — https://github.com/rage-rb.png. Ruby, Ruby on Rails, Jekyll and Docker (Monitoring): Simple Icons 13.21.0.
+
+Container engines (engines/, the "Run in" choice and Site → Docker): orbstack.png — the app's own icon,
+/Applications/OrbStack.app (AppIcon.icns, 192 px); docker.svg (Docker Desktop, Docker Engine), podman.svg, rancher.svg —
+Simple Icons 13.21.0, in each brand's colour.

@@ -26,3 +26,13 @@ export function moveItems(docker: boolean, inDocatz: boolean, name: string, move
     },
   ];
 }
+
+/** The install form's line on where a Docker gateway runs, after the Run in choice (DoCatz starts its own engine). */
+export function engineNote(container: 'docatz' | 'system' | undefined): string {
+  const d = state.value?.docatz;
+  const where = container ?? (d?.forGateways ? 'docatz' : 'system');
+  if (where === 'docatz') return "Runs in DoCatz's container engine, which DevCatz starts when it is stopped.";
+  return d?.otherEngine === 'Docker Engine'
+    ? 'Runs on Docker Engine (DevCatz installs and starts it when needed; Linux asks for your password).'
+    : `Runs on ${d?.otherEngine ?? 'your container engine'}, which must be running.`;
+}

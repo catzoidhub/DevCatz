@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ENGINE_LOGO } from '../engines';
 import { confirmOverwrite } from '../confirms';
 import { words } from '@shared/platform';
 import { isLinux, isWin } from '../platform';
@@ -7,7 +8,6 @@ import AiDocker from './AiDocker.vue';
 import DockerFileDialog from './DockerFileDialog.vue';
 import DockerFilesCard from './DockerFilesCard.vue';
 import DoCatzButton from './DoCatzButton.vue';
-import docatzLogo from '../assets/logos/docatz.png';
 import { aiOn } from '../ai';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComposeEnvPlan, DevComposePreview, DevServiceKind, DockerAction, DockerEngineId, DockerGenOptions, DockerTarget, DockerComposeFile, DockerFile, DockerService, DockerStatus, ProjectState } from '@shared/types';
@@ -355,11 +355,13 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
           </button>
           <DoCatzButton v-else :site-id="project.id" :file="file || null" primary />
           <button v-for="e in installedEngines" :key="e.id" class="btn btn-sm" :disabled="!!starting" @click="start(e.id)">
-            <span v-if="starting === e.id" class="loading loading-spinner loading-xs" />{{ e.start }}
+            <span v-if="starting === e.id" class="loading loading-spinner loading-xs" /><img v-else-if="ENGINE_LOGO[e.id]" :src="ENGINE_LOGO[e.id]" alt="" class="size-4" draggable="false" />{{ e.start }}
           </button>
           <template v-if="!installedEngines.length">
             <span class="ml-1 text-xs opacity-60">or</span>
-            <a v-for="e in ENGINES.filter((x) => x.id !== 'docatz')" :key="e.id" class="link link-hover text-xs opacity-70" @click="herd.openUrl(e.download)">{{ e.name }}</a>
+            <a v-for="e in ENGINES.filter((x) => x.id !== 'docatz')" :key="e.id" class="link link-hover inline-flex items-center gap-1 text-xs opacity-70" @click="herd.openUrl(e.download)"
+              ><img v-if="ENGINE_LOGO[e.id]" :src="ENGINE_LOGO[e.id]" alt="" class="size-3.5" draggable="false" />{{ e.name }}</a
+            >
           </template>
         </div>
       </div>
@@ -379,12 +381,12 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             role="radio"
             :aria-checked="e.used"
             class="flex items-center gap-3 rounded-box border px-3 py-2.5 text-left transition-colors disabled:cursor-default"
-            :class="e.used ? 'border-primary/70 bg-primary/5' : e.running ? 'border-base-300/60 bg-base-200/40 hover:border-primary/50 hover:bg-base-200' : 'border-base-300/60 bg-base-200/20 opacity-70'"
+            :class="e.used ? 'border-primary bg-primary/5 ring-1 ring-primary' : e.running ? 'border-base-300/60 bg-base-200/40 hover:border-primary/50 hover:bg-base-200' : 'border-base-300/60 bg-base-200/20 opacity-70'"
             :disabled="e.used || starting === e.id"
             :title="e.used ? 'This site\'s containers run here' : e.running ? `Run this site's containers on ${engineName(e.id)}` : `Start ${engineName(e.id)} and run this site's containers there`"
             @click="pickEngine(e)"
           >
-            <img v-if="e.id === 'docatz'" :src="docatzLogo" alt="" class="size-8 shrink-0" draggable="false" />
+            <img v-if="ENGINE_LOGO[e.id]" :src="ENGINE_LOGO[e.id]" alt="" class="size-8 shrink-0" :class="/svg/.test(ENGINE_LOGO[e.id]!) ? 'rounded-lg bg-white p-1.5 ring-1 ring-base-content/10' : ''" draggable="false" />
             <span v-else class="grid size-8 shrink-0 place-items-center rounded-lg bg-base-100 ring-1 ring-base-content/10">
               <svg viewBox="0 0 20 20" class="size-4 opacity-70" fill="currentColor"><path d="M3 9h2v2H3V9Zm3 0h2v2H6V9Zm3 0h2v2H9V9Zm0-3h2v2H9V6Zm3 3h2v2h-2V9Zm-6-3h2v2H6V6Zm3-3h2v2H9V3ZM2 12h14.5c.6-.9 1-1.9 1.5-3l1 .5c-.4 1.3-1 2.4-1.8 3.4A8 8 0 0 1 9 17c-3.4 0-6-1.8-7-5Z" /></svg>
             </span>
@@ -401,6 +403,13 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             </span>
             <span class="grid size-4 shrink-0 place-items-center rounded-full border" :class="e.used ? 'border-primary' : 'border-base-content/30'">
               <span v-if="e.used" class="size-2 rounded-full bg-primary" />
+            </span>
+            <span
+              class="grid size-[18px] shrink-0 place-items-center rounded-full border"
+              :class="e.used ? 'border-primary bg-primary text-primary-content' : 'border-base-content/25'"
+              aria-hidden="true"
+            >
+              <svg v-if="e.used" viewBox="0 0 16 16" class="size-3"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </span>
           </button>
         </div>
