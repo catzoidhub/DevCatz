@@ -35,6 +35,8 @@ export interface RemoteBuild {
   algo?: 'sha256' | 'sha512' | 'md5';
   /** Homebrew formula (MariaDB). */
   formula?: string;
+  /** More files that make up the build, unpacked with the first (MariaDB's .deb packages: server and client). */
+  parts?: { url: string; hash: string }[];
   note?: string;
 }
 
@@ -261,8 +263,16 @@ const mysqlShutdown = async (c: DbServiceConfig, root: string) => {
  * libaio.so.1 link goes into the build's own lib/private (on its RUNPATH), so nothing in the system changes.
  */
 async function mysqlLinuxLibraries(root: string, step: Step): Promise<void> {
+  return linuxLibraries('MySQL', binOf(root, 'mysqld'), root, step);
+}
+
+/**
+ * Linux: the shared libraries a server binary lacks (`ldd` … not found), installed from the distribution's packages
+ * behind the password dialog — libaio / libnuma (MySQL), liburing / libpcre2 … (MariaDB's .deb builds).
+ */
+async function linuxLibraries(name: string, bin: string, root: string, step: Step): Promise<void> {
   const missing = async () => {
-    const r = await run('ldd', [binOf(root, 'mysqld')], { timeout: 20_000 });
+    const r = await run('ldd', [bin], { timeout: 20_000 });
     return [...r.stdout.matchAll(/^\s*(\S+) => not found/gm)].map((m) => m[1]);
   };
   let libs = await missing();
@@ -270,10 +280,19 @@ async function mysqlLinuxLibraries(root: string, step: Step): Promise<void> {
   const triplet = `${arch ? 'aarch64' : 'x86_64'}-linux-gnu`;
   const libDir = [`/usr/lib/${triplet}`, `/lib/${triplet}`, '/usr/lib64', '/usr/lib'].find((d) => existsSync(d)) ?? '/usr/lib';
   const pkgs = new Set<string>();
-  for (const l of libs) {
-    if (l.startsWith('libaio')) pkgs.add('libaio1t64 libaio1');
-    else if (l.startsWith('libnuma')) pkgs.add('libnuma1');
-  }
+  const APT: [RegExp, string][] = [
+    [/^libaio/, 'libaio1t64 libaio1'],
+    [/^libnuma/, 'libnuma1'],
+    [/^liburing/, 'liburing2'],
+    [/^libpcre2-8/, 'libpcre2-8-0'],
+    [/^libsnappy/, 'libsnappy1v5'],
+    [/^liblz4/, 'liblz4-1'],
+    [/^libzstd/, 'libzstd1'],
+    [/^libssl|^libcrypto/, 'libssl3t64 libssl3'],
+    [/^libcrypt\./, 'libcrypt1'],
+    [/^libsystemd/, 'libsystemd0'],
+  ];
+  for (const l of libs) for (const [re, p] of APT) if (re.test(l)) pkgs.add(p);
   if (pkgs.size && !(libs.every((l) => l.startsWith('libaio')) && existsSync(join(libDir, 'libaio.so.1t64')))) {
     step('Unpacking', { detail: `Installing ${[...pkgs].join(', ')} (password)` });
     // apt: whichever libaio the release has (t64 on Ubuntu 24.04+ / Debian 13, plain before); dnf: libaio / numactl-libs.
@@ -288,7 +307,7 @@ async function mysqlLinuxLibraries(root: string, step: Step): Promise<void> {
     symlinkSync(join(libDir, 'libaio.so.1t64'), join(priv, 'libaio.so.1'));
   }
   libs = await missing();
-  if (libs.length) throw new Error(`MySQL needs ${libs.join(', ')} from your package manager (e.g. sudo apt install libaio1t64 libnuma1)`);
+  if (libs.length) throw new Error(`${name} needs ${libs.join(', ')} from your package manager (e.g. sudo apt install ${[...pkgs].map((p) => p.split(' ')[0]).join(' ') || 'the matching packages'})`);
 }
 
 const mysql: EngineDef = {
@@ -439,6 +458,104 @@ async function mariadbWindowsBuilds(): Promise<RemoteBuild[]> {
   return out;
 }
 
+/**
+ * Linux ARM64: MariaDB publishes no generic tarball, only packages in its own apt repository (mirror.mariadb.org) for
+ * Ubuntu and Debian. DevCatz takes `mariadb-server-core` and `mariadb-client-core` from there (SHA-256 from the
+ * repository's Packages index), unpacks them with dpkg-deb into its own folder and runs them from there like the
+ * other builds: nothing is installed into the system, and a MariaDB of the distribution is left alone.
+ */
+const MARIADB_REPO = 'https://mirror.mariadb.org/repo';
+const DEB_ARCH = arch ? 'arm64' : 'amd64';
+function debDistro(): { os: 'ubuntu' | 'debian'; codename: string } | null {
+  let txt = '';
+  try {
+    txt = readFileSync('/etc/os-release', 'utf8');
+  } catch {
+    return null;
+  }
+  const v = (k: string) => txt.match(new RegExp(`^${k}=["']?([^"'\n]*)`, 'm'))?.[1] ?? '';
+  // Ubuntu and its derivatives (Mint, Pop!_OS …) name the Ubuntu release they follow.
+  const ubuntu = v('UBUNTU_CODENAME') || (v('ID') === 'ubuntu' ? v('VERSION_CODENAME') : '');
+  if (ubuntu) return { os: 'ubuntu', codename: ubuntu };
+  if ((v('ID') === 'debian' || /\bdebian\b/.test(v('ID_LIKE'))) && v('VERSION_CODENAME')) return { os: 'debian', codename: v('VERSION_CODENAME') };
+  return null;
+}
+/** `1:11.4.13+maria~ubu2404` → 11.4.13 */
+const debUpstream = (v: string) => v.replace(/^\d+:/, '').replace(/[+~-].*$/, '');
+
+async function mariadbDebBuilds(): Promise<RemoteBuild[]> {
+  const d = debDistro();
+  if (!d) throw new Error('MariaDB for this system comes from its apt repository, for Ubuntu and Debian only');
+  const api = 'https://downloads.mariadb.org/rest-api/mariadb';
+  const { major_releases } = await json<{ major_releases: MariaRelease[] }>(`${api}/`);
+  const today = new Date().toISOString().slice(0, 10);
+  const lines = major_releases.filter((r) => r.release_status === 'Stable' && (!r.release_eol_date || r.release_eol_date >= today));
+  const pick = lines.filter((r, i) => i === 0 || /long term/i.test(r.release_support_type ?? ''));
+  const out: RemoteBuild[] = [];
+  for (const line of pick) {
+    const base = `${MARIADB_REPO}/${line.release_id}/${d.os}`;
+    const index = await text(`${base}/dists/${d.codename}/main/binary-${DEB_ARCH}/Packages`).catch(() => null);
+    if (!index) continue; // this line has no packages for this release
+    const newest = (pkg: string) =>
+      index
+        .split(/\n\n+/)
+        .map((st) => ({
+          name: st.match(/^Package: (.+)$/m)?.[1],
+          version: debUpstream(st.match(/^Version: (.+)$/m)?.[1] ?? ''),
+          file: st.match(/^Filename: (.+)$/m)?.[1],
+          hash: st.match(/^SHA256: (.+)$/m)?.[1],
+        }))
+        .filter((p) => p.name === pkg && p.file && p.hash && /^\d+\.\d+\.\d+$/.test(p.version))
+        .sort((a, b) => cmpVersion(a.version, b.version))[0];
+    const server = newest('mariadb-server-core');
+    const client = newest('mariadb-client-core');
+    if (!server || !client || client.version !== server.version) continue;
+    const lts = /long term/i.test(line.release_support_type ?? '');
+    out.push({
+      version: server.version,
+      label: `${line.release_id}${lts ? ' LTS' : ''}`,
+      source: 'download',
+      url: `${base}/${server.file}`,
+      hash: server.hash,
+      algo: 'sha256',
+      parts: [{ url: `${base}/${client.file}`, hash: client.hash! }],
+    });
+  }
+  if (!out.length) throw new Error(`MariaDB's repository has no ${DEB_ARCH} packages for ${d.os} ${d.codename}`);
+  return out;
+}
+
+/** Downloads the .deb files of a build, checks each SHA-256, unpacks their /usr into `dest` (bin, sbin, share). */
+async function fetchDebs(b: RemoteBuild, dest: string, step: Step, signal: AbortSignal): Promise<void> {
+  const tmp = `${dest}.partial`;
+  removeTemp(tmp);
+  mkdirSync(tmp, { recursive: true });
+  try {
+    const files = [{ url: b.url!, hash: b.hash! }, ...(b.parts ?? [])];
+    for (const [i, f] of files.entries()) {
+      const deb = join(tmp, `${i}.deb`);
+      step('Downloading', { detail: f.url.split('/').pop(), received: 0, total: 0 });
+      const digest = await downloadVerified(f.url, deb, '', (received, total) => step('Downloading', { received, total }), undefined, signal).catch((e) => {
+        throw signal.aborted ? new Cancelled() : e;
+      });
+      check(signal);
+      step('Verifying the checksum', { received: undefined, total: undefined, detail: `SHA-256 ${digest.slice(0, 16)}…` });
+      if (digest !== f.hash.toLowerCase()) throw new Error(`Checksum mismatch for ${f.url.split('/').pop()}; download discarded`);
+      step('Unpacking', { detail: f.url.split('/').pop() });
+      const r = await run('dpkg-deb', ['-x', deb, join(tmp, 'root')], { timeout: 300_000 });
+      if (r.code !== 0) throw new Error(`Unpacking ${f.url.split('/').pop()} failed: ${(r.stderr || r.stdout).trim() || 'dpkg-deb is missing'}`);
+    }
+    const usr = join(tmp, 'root', 'usr');
+    if (!existsSync(join(usr, 'sbin', 'mariadbd'))) throw new Error('mariadbd was not found in the packages');
+    // The server is in sbin; DevCatz looks for every program in bin.
+    symlinkSync('../sbin/mariadbd', join(usr, 'bin', 'mariadbd'));
+    rmSync(dest, { recursive: true, force: true });
+    await moveDir(usr, dest);
+  } finally {
+    removeTemp(tmp);
+  }
+}
+
 const mariadb: EngineDef = {
   name: 'MariaDB',
   description: 'Community fork of MySQL, drop-in for most apps.',
@@ -446,17 +563,23 @@ const mariadb: EngineDef = {
   sourceNote: isWin
     ? 'Official Windows x64 ZIP from downloads.mariadb.org (SHA-256)'
     : isLinux
-      ? 'Official Linux x86_64 tarball from downloads.mariadb.org (SHA-256); none is published for ARM64'
+      ? arch
+        ? 'Official packages from MariaDB’s apt repository (mirror.mariadb.org, SHA-256), unpacked into DevCatz’s folder: nothing is installed into the system'
+        : 'Official Linux x86_64 tarball from downloads.mariadb.org (SHA-256)'
       : 'Homebrew (MariaDB publishes no macOS builds); runs with DevCatz’s own data folder and port',
   sourceUrl: isWin || isLinux ? 'https://mariadb.org/download/' : 'https://formulae.brew.sh/formula/mariadb',
   async requirement() {
     if (isWin) return null;
-    if (isLinux) return arch ? 'MariaDB publishes no Linux ARM64 build: install mariadb-server with your package manager, or use MySQL here.' : null;
+    if (isLinux && arch) {
+      if (!debDistro()) return 'MariaDB publishes no generic Linux ARM64 build, only packages for Ubuntu and Debian: install mariadb-server with your package manager, or use MySQL here.';
+      if ((await run('/bin/sh', ['-c', 'command -v dpkg-deb'])).code !== 0) return 'Unpacking MariaDB’s packages needs dpkg-deb (the dpkg package).';
+    }
+    if (isLinux) return null;
     return brewBin() ? null : 'MariaDB comes from Homebrew. Install Homebrew from https://brew.sh first.';
   },
   async builds() {
     if (isWin) return cached('mariadb-win', mariadbWindowsBuilds);
-    if (isLinux) return cached('mariadb-linux', mariadbWindowsBuilds);
+    if (isLinux) return arch ? cached('mariadb-deb', mariadbDebBuilds) : cached('mariadb-linux', mariadbWindowsBuilds);
     return cached('mariadb', async () => {
       const out: RemoteBuild[] = [];
       for (const [formula, tag] of MARIADB_FORMULAS) {
@@ -469,8 +592,14 @@ const mariadb: EngineDef = {
   },
   installSteps: () => (isWin || isLinux ? DOWNLOAD_STEPS : ['Installing with Homebrew', 'Checking the version']),
   async install(b, dest, step, signal) {
+    if (isLinux && b.parts) {
+      await fetchDebs(b, dest, step, signal);
+      await linuxLibraries('MariaDB', join(dest, 'sbin', 'mariadbd'), dest, step);
+      return dest;
+    }
     if (isWin || isLinux) {
       await fetchTarball(b, dest, step, signal);
+      if (isLinux) await linuxLibraries('MariaDB', binOf(dest, 'mariadbd'), dest, step);
       return dest;
     }
     const brew = brewBin();
