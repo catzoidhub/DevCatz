@@ -9,6 +9,7 @@ import { brewBin, etcDir, phpDir } from './php';
 import { dataDir } from './store';
 import { isLinux, isWin, TAR } from './platform';
 import { runAsRootLinux } from './linuxadmin';
+import { DEB_CORE_EXTENSIONS, debExtensions, debInfo } from './phpdeb';
 
 /**
  * PHP extensions beyond the ones compiled into static-php.dev's build: built
@@ -123,6 +124,12 @@ const metaFile = (version: string, module: string) => join(isWin ? peclDir(versi
 
 /** Windows: the zip's own extensions (ext\php_*.dll), each with its on/off state. */
 export function listBundled(version: string): PhpExtension[] {
+  // Linux, a PHP from the ondrej / sury packages: its own .so files, except the ones the base php.ini always loads.
+  if (isLinux && debInfo(join(phpDir(), version)))
+    return debExtensions(join(phpDir(), version))
+      .filter((m) => !DEB_CORE_EXTENSIONS.includes(m) && m !== 'xdebug')
+      .map((module) => ({ module, pkg: module, version, zend: false, enabled: existsSync(iniFile(version, module)) }))
+      .sort((a, b) => a.module.localeCompare(b.module));
   if (!isWin) return [];
   const dir = bundledDir(version);
   if (!existsSync(dir)) return [];
@@ -233,6 +240,7 @@ export function setEnabled(version: string, module: string, on: boolean): void {
     const meta = listInstalled(version).find((e) => e.module === module);
     const bundled = listBundled(version).find((e) => e.module === module);
     if (meta) writeFileSync(to, iniText(moduleFile(version, module), { pkg: meta.pkg, version: meta.version, zend: meta.zend }, module));
+    else if (bundled && !isWin) writeFileSync(to, `; Part of PHP ${version} (${module}.so)\n${bundled.zend ? 'zend_extension' : 'extension'}=${module}\n`);
     else if (bundled) writeFileSync(to, `; Part of PHP ${version} (ext\\php_${module}.dll)\r\n${bundled.zend ? 'zend_extension' : 'extension'}=${module}\r\n`);
     else throw new Error(`${module} is not installed for PHP ${version}`);
   }

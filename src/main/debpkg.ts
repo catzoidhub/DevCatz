@@ -52,6 +52,8 @@ export interface DebEntry {
   version: string;
   file: string;
   hash: string;
+  /** The Depends field as written. */
+  depends?: string;
 }
 
 /** Every package of a Packages index. */
@@ -63,6 +65,7 @@ export function parsePackages(index: string): DebEntry[] {
       version: debUpstream(st.match(/^Version: (.+)$/m)?.[1] ?? ''),
       file: (st.match(/^Filename: (.+)$/m)?.[1] ?? '').replace(/\/\.\//g, '/'),
       hash: st.match(/^SHA256: (.+)$/m)?.[1] ?? '',
+      depends: [...st.matchAll(/^(?:Pre-)?Depends: (.+)$/gm)].map((m) => m[1]).join(', '),
     }))
     .filter((p) => p.name && p.file && /^[a-f0-9]{64}$/.test(p.hash) && /^\d+(\.\d+)*$/.test(p.version));
 }

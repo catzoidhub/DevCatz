@@ -10,6 +10,7 @@ import { getShellEnv, run } from './env';
 import { compare, shimDir } from './node';
 import { isLinux, isWin, moveDir, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
+import { DEB_CORE_EXTENSIONS, debExtensions, debInfo, debLegacyVersions, installDebPhp, LINUX_LEGACY_MINORS } from './phpdeb';
 
 /**
  * PHP versions, managed like Node/Bun/Go. Builds come from static-php.dev
@@ -147,8 +148,10 @@ export async function listRemote(force = false): Promise<RemotePhp[]> {
     })
     .sort((a, b) => compare(b.version, a.version));
   // Windows: every minor php.net's Windows releases still list (7.4 included) is a download; there is no Homebrew.
-  // Linux: static-php.dev's PHP 8 only for now (older minors would come from the distro or a PPA; TODO §35).
-  if (isWin || isLinux) return builds;
+  if (isWin) return builds;
+  // Linux: static-php.dev's glibc builds start at 8.1; 8.0, 7.x and 5.6 come from the ondrej / sury packages (phpdeb.ts).
+  if (isLinux)
+    return [...builds, ...(await debLegacyVersions(force)).filter((l) => !byMinor.has(l.minor)).map((l) => ({ minor: l.minor, version: l.minor, via: 'deb' as const, exact: l.version }))];
   return [...builds, ...LEGACY_MINORS.filter((m) => !byMinor.has(m)).map((minor) => ({ minor, version: minor, via: 'homebrew' as const }))];
 }
 
@@ -222,6 +225,7 @@ export async function listInstalled(): Promise<InstalledPhp[]> {
  */
 export async function install(version: string, progress: (p: RuntimeInstallProgress) => void): Promise<string> {
   if (isWin) return installWin(version, progress);
+  if (isLinux && LINUX_LEGACY_MINORS.includes(version)) return installDebPhp(phpDir(), version, progress);
   if (LEGACY_MINORS.includes(version)) return installWithBrew(version, progress);
   if (!VERSION.test(version)) throw new Error(`Invalid version ${version}`);
   const target = join(phpDir(), version);
@@ -466,6 +470,33 @@ function winDefaultExtensions(phpBin: string, version: string): void {
   }
 }
 
+/**
+ * Linux, a PHP from the ondrej / sury packages (phpdeb.ts): its extensions are shared .so files. The base php.ini names
+ * their folder and loads the ones others need first (pdo, mysqlnd, xml, json, opcache); every other one starts on in
+ * its own conf.d/20-<name>.ini (".disabled" when switched off on the PHP page), like Windows'.
+ */
+function debBaseIni(versionDir: string, version: string): void {
+  const info = debInfo(versionDir)!;
+  const all = debExtensions(versionDir);
+  const core = DEB_CORE_EXTENSIONS.filter((e) => all.includes(e));
+  mkdirSync(join(etcDir(version), 'conf.d'), { recursive: true });
+  writeFileSync(
+    join(etcDir(version), 'php.ini'),
+    [
+      '; Base php.ini for DevCatz (PHP from the ondrej / sury packages). Extensions: conf.d/20-<name>.ini; settings: conf.d/99-mrcatz.ini.',
+      `extension_dir = "${info.extensionDir}"`,
+      ...core.map((e) => `${e === 'opcache' ? 'zend_extension' : 'extension'}=${e}`),
+      '',
+    ].join('\n'),
+  );
+  for (const e of all.filter((x) => !core.includes(x) && x !== 'xdebug')) {
+    const file = join(etcDir(version), 'conf.d', `20-${e}.ini`);
+    if (existsSync(file) || existsSync(`${file}.disabled`)) continue;
+    // ffi stays off, as in the packages' own default.
+    writeFileSync(e === 'ffi' ? `${file}.disabled` : file, `; Part of PHP ${version} (${e}.so), on by default in DevCatz\nextension=${e}\n`);
+  }
+}
+
 /** Validates with `php -n -c <candidate>` first, then writes php.ini + conf.d/99-mrcatz.ini. */
 export async function writeIni(phpBin: string, version: string, settings: PhpIniSettings): Promise<void> {
   const dir = etcDir(version);
@@ -480,6 +511,8 @@ export async function writeIni(phpBin: string, version: string, settings: PhpIni
   if (isWin) {
     writeFileSync(join(dir, 'php.ini'), winBaseIni(phpBin));
     winDefaultExtensions(phpBin, version);
+  } else if (debInfo(join(dirname(phpBin), '..'))) {
+    debBaseIni(join(dirname(phpBin), '..'), version);
   }
   else if (!existsSync(join(dir, 'php.ini'))) writeFileSync(join(dir, 'php.ini'), '; Base php.ini for DevCatz. Settings live in conf.d/99-mrcatz.ini.\n');
   renameSync(candidate, join(dir, 'conf.d/99-mrcatz.ini'));

@@ -304,6 +304,7 @@ const tab = ref<Tab>('installed');
                 <span v-if="i === 0" class="badge badge-success badge-xs ml-1">latest</span>
               </div>
               <div v-if="r.via === 'homebrew'" class="text-xs opacity-60" title="static-php.dev builds PHP 8 only; this one comes from the shivammathur/php Homebrew tap">via Homebrew</div>
+              <div v-else-if="r.via === 'deb'" class="text-xs opacity-60" title="static-php.dev’s Linux builds start at 8.1; this one comes from the ondrej (Ubuntu) / sury (Debian) packages, unpacked into DevCatz’s folder">{{ r.exact }} · ondrej / sury</div>
               <div v-else class="font-mono text-xs opacity-60">{{ r.version }}</div>
               <div v-if="r.upstream" class="mt-1.5 text-[11px]" :title="upstreamTitle(r.upstream, r.version)">
                 <div class="flex flex-wrap items-center gap-1.5">
@@ -314,7 +315,7 @@ const tab = ref<Tab>('installed');
                 <div class="mt-0.5 opacity-55">not built by {{ SOURCE }} yet</div>
               </div>
             </div>
-            <span v-if="r.via === 'homebrew' ? hasMinor(r.minor) : isInstalled(r.version)" class="text-xs opacity-60">installed</span>
+            <span v-if="r.via ? hasMinor(r.minor) : isInstalled(r.version)" class="text-xs opacity-60">installed</span>
             <button v-else class="btn btn-xs" :disabled="!!busy" @click="install(r.version)">Install</button>
           </div>
         </div>

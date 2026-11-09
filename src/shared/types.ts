@@ -487,8 +487,10 @@ export interface RemotePhp {
   minor: string;
   /** Exact version (static-php.dev), or just the minor for Homebrew installs. */
   version: string;
-  /** Legacy versions static-php.dev does not build (7.x, 5.6) come from the shivammathur/php Homebrew tap. */
-  via?: 'homebrew';
+  /** Legacy versions static-php.dev does not build (7.x, 5.6) come from the shivammathur/php Homebrew tap (macOS),
+   *  or (Linux, 8.0 too) from the ondrej / sury packages (`deb`, with the exact version in `exact`). */
+  via?: 'homebrew' | 'deb';
+  exact?: string;
   /** php.net's newest release of this minor when static-php.dev has not built it yet (informational: downloads stay on static-php.dev). */
   upstream?: { version: string; date: string; security: boolean };
 }

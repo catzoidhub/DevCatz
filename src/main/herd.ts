@@ -3844,7 +3844,8 @@ export class Herd extends EventEmitter {
     const inst = this.installedPhps.find((i) => i.version === version);
     if (!inst) throw new Error(`PHP ${version} is not installed`);
     // macOS builds PECL with phpize against static-php.dev's 8.x; Windows takes php.net's ready-made DLLs (7.4 too).
-    const supported = inst.source === 'mrcatz' && (isWin || (!version.startsWith('7.') && !version.startsWith('5.')));
+    // Linux: 7.x / 5.6 from the ondrej / sury packages too (their own .so files, PECL against php.net's source).
+    const supported = inst.source === 'mrcatz' && (isWin || isLinux || (!version.startsWith('7.') && !version.startsWith('5.')));
     if (!this.builtinCache.has(version)) this.builtinCache.set(version, await phpext.builtin(inst.php));
     return {
       version,
