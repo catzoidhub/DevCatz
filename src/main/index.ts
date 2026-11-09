@@ -2,6 +2,7 @@ import { aiSettings, migrateAiToShared, setAiKey, setAiSettings } from './ai/set
 import { readShared, siteBase, watchShared, writeShared } from './shared';
 // First: moves the MrCatz Herd data folder before store/herd read it.
 import './migrate';
+import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -35,6 +36,9 @@ import { isSvcKind } from './svcdocker';
 import { words } from '@shared/platform';
 
 app.setName('DevCatz');
+// Node's happy eyeballs gives each address of a host 250 ms: behind a slow NAT (a Linux VM, some networks) every IPv4
+// attempt timed out while IPv6 was unreachable, and fetch failed with a bare AggregateError (found by DialCatz).
+setDefaultAutoSelectFamilyAttemptTimeout(2500);
 
 // A second process (a devcatz:// link on Linux / Windows, a second launch) hands its arguments to the running one through
 // 'second-instance' and leaves at once: app.quit() let it reach whenReady and flash a window of its own (found by DBCatz).
