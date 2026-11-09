@@ -39,6 +39,9 @@ export interface PhpRuntime {
   /** Shell command prefix for Composer, e.g. `'php' 'composer.phar'` or `composer` on PATH. */
   composer: string;
   env: Record<string, string>;
+  /** Makes sure `composer` runs in `env`: DevCatz's own Composer is installed when there is none (a fresh Linux or
+   *  Windows has no Herd / Homebrew one). */
+  ensureComposer?: (progress: (detail: string) => void) => Promise<void>;
 }
 let phpRuntime: () => PhpRuntime | null = () => null;
 export const setPhpRuntime = (fn: () => PhpRuntime | null) => (phpRuntime = fn);
@@ -145,6 +148,8 @@ const ENGINES: Record<WsKind, Engine> = {
     async install(dir, progress, signal) {
       // A tiny Laravel app that only runs Reverb (sites keep their own code; they connect with the app key).
       // -W: the newest skeleton can pin packages (guzzlehttp/psr7) newer than Reverb accepts.
+      await needPhp().ensureComposer?.((detail) => progress({ step: 0, detail }));
+      // Read again: the env's PATH now has the composer wrapper.
       const r = needPhp();
       const app = join(dir, 'app');
       // Composer runs in its own process group so Cancel can kill it (and whatever it spawned); its last line is the progress detail.

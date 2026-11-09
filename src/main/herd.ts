@@ -3574,6 +3574,18 @@ export class Herd extends EventEmitter {
             // siteBinDir has a composer wrapper when DevCatz's Composer is installed; else Herd's / Homebrew's composer on PATH.
             composer: 'composer',
             env: { ...phps.iniEnv(fit.version), [pathKey(getShellEnv())]: joinPath([phps.siteBinDir(fit), ...splitPath(getShellEnv()[pathKey(getShellEnv())])]) },
+            ensureComposer: async (progress) => {
+              if (phps.composerInstalled()) return;
+              const path = joinPath([phps.siteBinDir(fit), ...splitPath(getShellEnv()[pathKey(getShellEnv())])]);
+              const found = isWin
+                ? (await run('where.exe', ['composer'], { env: { [pathKey(getShellEnv())]: path }, timeout: 10_000 })).code === 0
+                : (await run('/bin/sh', ['-c', 'command -v composer'], { env: { PATH: path }, timeout: 10_000 })).code === 0;
+              if (found) return;
+              progress('Installing Composer (getcomposer.org, SHA-256 checked)');
+              await phps.installComposer(() => undefined);
+              phps.writeShims(defInst);
+              this.emit('change');
+            },
           }
         : null,
     );
