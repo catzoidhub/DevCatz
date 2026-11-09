@@ -184,6 +184,17 @@ function detectRubyStack(root: string, domain: string): StackInfo {
   if (framework !== 'rails' && framework !== 'hanami' && /\bdb:migrate\b|namespace\s+:db/.test(readText(join(root, 'Rakefile')) ?? '')) {
     tasks.push({ id: 'rake-migrate', tool: 'Rake', label: 'db:migrate', command: `${bx}rake db:migrate`, cwd: '.' });
   }
+  // Test runners the project has (§37: run commands, not site types): RSpec, Rails' Minitest (and system tests with
+  // Capybara), Minitest through Rake elsewhere, Cutest.
+  const railsBin = has(root, 'bin/rails') ? binstub('rails') : `${bx}rails`;
+  if (gems.has('rspec-core') || gems.has('rspec') || has(root, 'spec')) tasks.push({ id: 'rspec', tool: 'RSpec', label: 'rspec', command: `${bx}rspec`, cwd: '.' });
+  if (framework === 'rails' && has(root, 'test')) {
+    tasks.push({ id: 'rails-test', tool: 'Minitest', label: 'rails test', command: `${railsBin} test`, cwd: '.' });
+    if (gems.has('capybara') && has(root, 'test/system')) tasks.push({ id: 'rails-test-system', tool: 'Minitest', label: 'rails test:system', command: `${railsBin} test:system`, cwd: '.' });
+  } else if (has(root, 'test') && (gems.has('minitest') || /Rake::TestTask|Minitest::TestTask/.test(readText(join(root, 'Rakefile')) ?? ''))) {
+    tasks.push({ id: 'rake-test', tool: 'Minitest', label: 'rake test', command: `${bx}rake test`, cwd: '.' });
+  }
+  if (gems.has('cutest')) tasks.push({ id: 'cutest', tool: 'Cutest', label: 'cutest', command: `${bx}cutest test/*.rb`, cwd: '.' });
   const jobs: RubyStack['jobs'] = gems.has('sidekiq') ? 'sidekiq' : gems.has('solid_queue') ? 'solid_queue' : gems.has('good_job') ? 'good_job' : null;
   const library = web && LIBRARY[web] && framework === 'ruby' ? LIBRARY[web] : null;
   const app: AppInfo = {
