@@ -142,3 +142,4 @@ https://github.com/middleman.png; rage.png — https://github.com/rage-rb.png. R
 Container engines (engines/, the "Run in" choice and Site → Docker): orbstack.png — the app's own icon,
 /Applications/OrbStack.app (AppIcon.icns, 192 px); docker.svg (Docker Desktop, Docker Engine), podman.svg, rancher.svg —
 Simple Icons 13.21.0, in each brand's colour.
+Simple Icons 16.36.0 (zedindustries) — Zed, Settings → MCatzP.

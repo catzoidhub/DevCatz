@@ -6,8 +6,8 @@
       "name": "js-herd",
       "dependencies": {
         "@anthropic-ai/sdk": "^1.1.0",
-        "@catzoid/mcatzp-host": "^1.0.0",
-        "@catzoid/mcatzp-protocol": "^1.0.0",
+        "@catzoid/mcatzp-host": "^1.0.2",
+        "@catzoid/mcatzp-protocol": "^1.0.2",
         "ajv": "^8.17.1",
         "electron-updater": "^6.8.11",
         "http-proxy-3": "^2.0.1",
@@ -77,9 +77,9 @@
 
     "@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.7", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 
-    "@catzoid/mcatzp-host": ["@catzoid/mcatzp-host@1.0.0", "", { "dependencies": { "@catzoid/mcatzp-protocol": "1.0.0", "ajv": "^8.17.1" } }, "sha512-pQc2xpTS4EoVN4+J/EsCTcvs8U8Pj/XrCo3TSxk7Ap9e1LDyIgzwXhpbf182JmgzxmOzn9Oo1wNyVUGnN5a7eg=="],
+    "@catzoid/mcatzp-host": ["@catzoid/mcatzp-host@1.0.2", "", { "dependencies": { "@catzoid/mcatzp-protocol": "1.0.2", "ajv": "^8.17.1" } }, "sha512-FxDo4tvn9AFRa/rhjAiAt2Gvo3LUqmb3wc3fsc7sUXULIdfmop1/LvmLDSkDFkNv+q6UQGPn10uE5bgJ3LO8TA=="],
 
-    "@catzoid/mcatzp-protocol": ["@catzoid/mcatzp-protocol@1.0.0", "", {}, "sha512-sp6Py0xNkNqhgJln5paehXtX6uHS8htK8oTpFTtZul6QcUjSi5UWfrFia2P3QypwSDf2VaT8BpMggCG65cNTZw=="],
+    "@catzoid/mcatzp-protocol": ["@catzoid/mcatzp-protocol@1.0.2", "", {}, "sha512-4EIdAgSY6UwXlScbsEaDYw8RWaWrg6e1swADSqKKwblPb7jozGnhsSj0sckykfLgVZEW2Rc+fynFGIgMfZ9IPQ=="],
 
     "@electron-internal/extract-zip": ["@electron-internal/extract-zip@1.0.5", "", {}, "sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA=="],
 
