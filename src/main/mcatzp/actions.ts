@@ -422,7 +422,7 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
           title: 'Install a runtime tool',
           description: "Installs or updates a tool from a runtime's Tools tab (see list_runtime_tools). May take a while: list_runtime_tools shows when it is there. DevCatz asks the user first.",
           tier: 'change',
-          input: OBJECT({ runtime: { type: 'string', enum: ['node', 'go', 'python'] }, tool: { type: 'string', minLength: 1, maxLength: 60, description: 'An id from list_runtime_tools.' } }, ['runtime', 'tool']),
+          input: OBJECT({ runtime: { type: 'string', enum: ['node', 'go', 'python', 'ruby'] }, tool: { type: 'string', minLength: 1, maxLength: 60, description: 'An id from list_runtime_tools.' } }, ['runtime', 'tool']),
           preview: async ({ runtime, tool }) => {
             const t = (await api.toolsState(runtime as RuntimeToolRuntime)).find((x) => x.id === tool);
             if (!t) throw new Error(`No tool ${String(tool)} for ${String(runtime)} (list_runtime_tools shows them)`);

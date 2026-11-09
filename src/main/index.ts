@@ -986,7 +986,7 @@ function api(): HerdApi {
     rustToolInstall: (id) => herd.rustToolInstall(id),
     rustToolsCheck: () => herd.rustToolsCheck(),
     rustToolUninstall: (id) => herd.rustToolUninstall(id),
-    toolsState: (runtime, refresh) => herd.toolsState(runtime === 'go' || runtime === 'python' ? runtime : 'node', Boolean(refresh)),
+    toolsState: (runtime, refresh) => herd.toolsState(runtime === 'go' || runtime === 'python' || runtime === 'ruby' ? runtime : 'node', Boolean(refresh)),
     toolInstall: (id) => herd.toolInstall(id),
     toolUninstall: (id) => herd.toolUninstall(id),
     repairElectron: (siteId) => herd.repairElectron(String(siteId)),

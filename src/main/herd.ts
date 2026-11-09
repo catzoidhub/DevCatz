@@ -3228,7 +3228,8 @@ export class Herd extends EventEmitter {
   private toolRuntimes(): tools.ToolRuntimes {
     const node = this.installedNodes.find((n) => n.version === store.settings.nodeDefault) ?? this.installedNodes[0];
     const go = this.installedGos.find((g) => g.version === store.settings.goDefault) ?? this.installedGos[0];
-    return { node: node?.binDir ?? null, go: go?.binDir ?? null };
+    const bun = this.installedBuns.find((b) => b.version === store.settings.bunDefault) ?? this.installedBuns[0];
+    return { node: node?.binDir ?? null, go: go?.binDir ?? null, bun: bun?.binDir ?? null };
   }
 
   /** Which sites need a tool they cannot find: their package manager (pnpm / Yarn), Air for apps started with `air`. */

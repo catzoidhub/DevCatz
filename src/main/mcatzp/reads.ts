@@ -148,7 +148,7 @@ export function moreReads(api: HerdApi, scopes: Scopes): ActionDef[] {
   const serviceReads: ActionDef[] = !scopes.services
     ? []
     : [
-        read('list_runtime_tools', 'List runtime tools', "The tools of a runtime's Tools tab (node, go, python): installed or not, version, whether an update exists, which sites need them.", OBJECT({ runtime: { type: 'string', enum: ['node', 'go', 'python'] } }, ['runtime']), async (a) => {
+        read('list_runtime_tools', 'List runtime tools', "The tools of a runtime's Tools tab (node — Bun shares it —, go, python, ruby): installed or not, version, whether an update exists, which sites need them.", OBJECT({ runtime: { type: 'string', enum: ['node', 'go', 'python', 'ruby'] } }, ['runtime']), async (a) => {
           const list = await api.toolsState(a.runtime as RuntimeToolRuntime);
           return plain(list.map((t) => ({ id: t.id, label: t.label, why: t.why, package: t.pkg, installed: t.installed, version: t.version, latest: t.latest, update: t.update, neededBy: t.neededBy })));
         }),

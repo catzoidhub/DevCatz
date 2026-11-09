@@ -593,11 +593,12 @@ export interface RemoteRust {
 }
 
 /** Runtimes → Tools of Node.js, Go and Python (main/tools.ts). */
-export type RuntimeToolRuntime = 'node' | 'go' | 'python';
+export type RuntimeToolRuntime = 'node' | 'go' | 'python' | 'ruby';
 export type RuntimeToolId =
   | 'pnpm' | 'yarn' | 'electron' | 'electron-forge' | 'angular-cli' | 'nest-cli' | 'typescript' | 'tsx' | 'nodemon'
   | 'air' | 'swag' | 'migrate' | 'goose' | 'sqlc' | 'templ' | 'wails' | 'delve'
-  | 'poetry' | 'pipenv' | 'pdm' | 'ruff' | 'pre-commit' | 'cookiecutter';
+  | 'poetry' | 'pipenv' | 'pdm' | 'ruff' | 'pre-commit' | 'cookiecutter'
+  | 'rails' | 'rubocop' | 'standard' | 'ruby-lsp' | 'foreman' | 'brakeman' | 'bundler-audit';
 
 export interface RuntimeToolState {
   id: RuntimeToolId;

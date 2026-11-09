@@ -27,6 +27,7 @@ const HOW: Record<RuntimeToolRuntime, string> = {
   node: 'npm install -g into DevCatz’s tools folder with the default Node.js, so they stay when you switch versions.',
   go: 'go install …@latest with the default Go; the binaries go to DevCatz’s tools folder.',
   python: 'uv tool install: each tool in its own environment, the commands in DevCatz’s tools folder.',
+  ruby: 'rv tool install: each gem in its own environment, run with DevCatz’s Ruby; the commands in DevCatz’s tools folder.',
 };
 
 async function install(t: RuntimeToolState, update = false) {

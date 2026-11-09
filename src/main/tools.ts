@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { RuntimeToolId, RuntimeToolRuntime, RuntimeToolState } from '@shared/types';
 import { findCommand, getShellEnv, run } from './env';
 import { shimDir, writeCmdShim } from './node';
 import { exe, isWin, joinPath, pathKey, splitPath } from './platform';
 import { uvEnv, uvPath } from './python';
+import { listInstalled as installedRubies, rvEnv, rvPath } from './ruby';
 import { dataDir } from './store';
 
 /**
@@ -12,7 +13,11 @@ import { dataDir } from './store';
  * the runtime's own way into DevCatz's folder so they survive switching versions:
  *   Node.js — `npm install -g --prefix <data>/tools/npm` with the default Node (bins in tools/npm/bin, Windows: tools/npm);
  *   Go — `go install <pkg>@latest` with GOBIN=<data>/tools/bin and the default Go;
- *   Python — `uv tool install` with UV_TOOL_DIR=<data>/tools/uv and UV_TOOL_BIN_DIR=<data>/tools/bin.
+ *   Python — `uv tool install` with UV_TOOL_DIR=<data>/tools/uv and UV_TOOL_BIN_DIR=<data>/tools/bin;
+ *   Ruby — `rv tool install` (each gem in its own environment under <data>/tools/rv/rv/tools/<gem>@<version>), with a
+ *     small launcher per command in tools/bin that runs it with the Ruby it was built for;
+ *   Bun shares Node.js's list and folder: a tool installed on either page is installed for both (npm when there is a
+ *     Node.js, else `bun add -g` with its bins in the same folder).
  * Sites get those folders on their PATH; terminals get them through the shim folder (links / .cmd shims, listed in
  * tools/links.json so the stale ones go). Rust has its own Tools tab (rust.ts, cargo's bin).
  */
@@ -59,6 +64,14 @@ export const TOOLS: ToolDef[] = [
   { id: 'ruff', runtime: 'python', label: 'Ruff', bins: ['ruff'], pkg: 'ruff', why: 'Fast linter and formatter for Django / FastAPI / Flask code' },
   { id: 'pre-commit', runtime: 'python', label: 'pre-commit', bins: ['pre-commit'], pkg: 'pre-commit', why: 'Runs a repository’s .pre-commit-config.yaml hooks before each commit' },
   { id: 'cookiecutter', runtime: 'python', label: 'Cookiecutter', bins: ['cookiecutter'], pkg: 'cookiecutter', why: 'Starts a project from a template (cookiecutter-django …)' },
+  // Ruby (rv tool)
+  { id: 'rails', runtime: 'ruby', label: 'Rails', bins: ['rails'], pkg: 'rails', why: 'rails new outside a project; Rails sites run their own bin/rails' },
+  { id: 'rubocop', runtime: 'ruby', label: 'RuboCop', bins: ['rubocop'], pkg: 'rubocop', why: 'Linter and formatter for Ruby code (Rails, Sinatra, Hanami …)' },
+  { id: 'standard', runtime: 'ruby', label: 'Standard', bins: ['standardrb'], pkg: 'standard', why: 'RuboCop with fixed rules: lint and format without a config' },
+  { id: 'ruby-lsp', runtime: 'ruby', label: 'Ruby LSP', bins: ['ruby-lsp'], pkg: 'ruby-lsp', why: 'The language server editors use (VS Code, Zed …)' },
+  { id: 'foreman', runtime: 'ruby', label: 'Foreman', bins: ['foreman'], pkg: 'foreman', why: 'Runs a Procfile (bin/dev in Rails apps with Tailwind / jsbundling)' },
+  { id: 'brakeman', runtime: 'ruby', label: 'Brakeman', bins: ['brakeman'], pkg: 'brakeman', why: 'Security scanner for Rails apps' },
+  { id: 'bundler-audit', runtime: 'ruby', label: 'bundler-audit', bins: ['bundle-audit', 'bundler-audit'], pkg: 'bundler-audit', why: 'Checks Gemfile.lock for gems with known vulnerabilities' },
 ];
 
 const npmPrefix = () => dataDir('tools', 'npm');
@@ -66,6 +79,52 @@ const npmBin = () => (isWin ? npmPrefix() : join(npmPrefix(), 'bin'));
 const toolsBin = () => dataDir('tools', 'bin');
 const uvToolDir = () => dataDir('tools', 'uv');
 const linksFile = () => dataDir('tools', 'links.json');
+/** rv keeps its tools under $XDG_DATA_HOME/rv/tools: pointed into DevCatz's folder. */
+const rvData = () => dataDir('tools', 'rv');
+const rvToolsDir = () => join(rvData(), 'rv', 'tools');
+const rvToolEnv = () => ({ ...rvEnv(), XDG_DATA_HOME: rvData() });
+/** Bun's global installs when there is no Node.js: packages here, bins in the npm bin folder (one list for both). */
+const bunGlobal = () => join(npmPrefix(), 'bun-global');
+
+/** The newest `<gem>@<version>` folder rv made for a tool. */
+function rvToolFolder(pkg: string): string | null {
+  try {
+    const dirs = readdirSync(rvToolsDir()).filter((d) => d.startsWith(`${pkg}@`));
+    dirs.sort((a, b) => (newer(a.split('@')[1], b.split('@')[1]) ? -1 : 1));
+    return dirs[0] ? join(rvToolsDir(), dirs[0]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A launcher in tools/bin for one command of a Ruby tool: its own gems (GEM_HOME), the Ruby its native code was built
+ * for (extensions/<platform>/<x.y.0>), else the default Ruby.
+ */
+async function writeRubyLaunchers(t: ToolDef): Promise<void> {
+  const folder = rvToolFolder(t.pkg);
+  if (!folder) throw new Error(`${t.label}: rv did not install it`);
+  let abi: string | null = null;
+  try {
+    for (const plat of readdirSync(join(folder, 'extensions'))) for (const v of readdirSync(join(folder, 'extensions', plat))) abi = v.match(/^(\d+\.\d+)/)?.[1] ?? abi;
+  } catch {
+    /* no native code */
+  }
+  const rubies = (await installedRubies()).filter((r) => r.source === 'mrcatz');
+  const ruby = (abi ? rubies.find((r) => r.version.startsWith(`${abi}.`)) : null) ?? rubies[0];
+  if (!ruby) throw new Error('Ruby is not installed: install one on the Ruby page first');
+  mkdirSync(toolsBin(), { recursive: true });
+  for (const bin of t.bins) {
+    const script = join(folder, 'bin', bin);
+    if (!existsSync(script)) continue;
+    if (isWin) writeFileSync(join(toolsBin(), `${bin}.cmd`), `@set "GEM_HOME=${folder}"&& set "GEM_PATH=${folder}"&& "${ruby.path}" "${script}" %*\r\n`);
+    else {
+      const file = join(toolsBin(), bin);
+      writeFileSync(file, `#!/bin/sh\n# ${t.label} (rv tool), launched by DevCatz with Ruby ${ruby.version}\nGEM_HOME='${folder}' GEM_PATH='${folder}' exec '${ruby.path}' '${script}' "$@"\n`);
+      chmodSync(file, 0o755);
+    }
+  }
+}
 
 /** Folders with installed tools, for a site's PATH (after its own runtimes). */
 export const toolPathDirs = (): string[] => [npmBin(), toolsBin()];
@@ -73,7 +132,7 @@ export const toolPathDirs = (): string[] => [npmBin(), toolsBin()];
 /** Where an installed tool's command is (null when DevCatz has not installed it). */
 function binPath(t: ToolDef, bin = t.bins[0]): string | null {
   const dir = t.runtime === 'node' ? npmBin() : toolsBin();
-  const file = join(dir, isWin ? (t.runtime === 'node' ? `${bin}.cmd` : exe(bin)) : bin);
+  const file = join(dir, isWin ? (t.runtime === 'node' || t.runtime === 'ruby' ? `${bin}.cmd` : exe(bin)) : bin);
   return existsSync(file) ? file : null;
 }
 
@@ -81,6 +140,8 @@ export interface ToolRuntimes {
   /** bin folder of the default Node / Go (null when none is installed). */
   node: string | null;
   go: string | null;
+  /** The default Bun's bin folder: installs the JS tools when there is no Node.js. */
+  bun: string | null;
 }
 
 /** Each tool of `runtime`: installed by DevCatz (with its version), else found on the PATH, plus the sites that need it. */
@@ -115,13 +176,17 @@ export async function toolStates(runtime: RuntimeToolRuntime, needs: Map<Runtime
 /** The installed version from the runtime's own records (faster and steadier than each tool's --version). */
 async function installedVersion(t: ToolDef, path: string): Promise<string | null> {
   if (t.runtime === 'node') {
-    const dir = isWin ? join(npmPrefix(), 'node_modules', t.pkg) : join(npmPrefix(), 'lib', 'node_modules', t.pkg);
-    try {
-      return (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version?: string }).version ?? null;
-    } catch {
-      return null;
+    // npm's layout, or Bun's global folder when Bun installed it.
+    for (const dir of [isWin ? join(npmPrefix(), 'node_modules', t.pkg) : join(npmPrefix(), 'lib', 'node_modules', t.pkg), join(bunGlobal(), 'node_modules', t.pkg)]) {
+      try {
+        return (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version?: string }).version ?? null;
+      } catch {
+        /* the other one */
+      }
     }
+    return null;
   }
+  if (t.runtime === 'ruby') return rvToolFolder(t.pkg)?.split('@').pop() ?? null;
   if (t.runtime === 'go') {
     // `go version -m` prints the module a binary was built from: "mod  github.com/air-verse/air  v1.61.7  h1:…".
     const go = goBin;
@@ -175,6 +240,10 @@ export async function latestVersion(t: ToolDef, refresh = false): Promise<string
   } else if (t.runtime === 'go') {
     const res = await fetch(`https://proxy.golang.org/${t.mod ?? t.pkg}/@latest`);
     if (res.ok) version = (((await res.json()) as { Version?: string }).Version ?? '').replace(/^v/, '') || null;
+  } else if (t.runtime === 'ruby') {
+    const res = await fetch(`https://rubygems.org/api/v1/versions/${t.pkg}/latest.json`);
+    if (res.ok) version = ((await res.json()) as { version?: string }).version ?? null;
+    if (version === 'unknown') version = null;
   } else {
     const res = await fetch(`https://pypi.org/pypi/${t.pkg}/json`);
     if (res.ok) version = ((await res.json()) as { info?: { version?: string } }).info?.version ?? null;
@@ -224,8 +293,30 @@ export async function installTool(id: RuntimeToolId, rt: ToolRuntimes, log: (lin
   if (!t) throw new Error(`Unknown tool ${id}`);
   mkdirSync(toolsBin(), { recursive: true });
   let r: { code: number; stdout: string; stderr: string };
-  if (t.runtime === 'node') {
-    if (!rt.node) throw new Error('Node.js is not installed: install it on the Node.js page first');
+  if (t.runtime === 'node' && !rt.node && rt.bun) {
+    // Bun only: `bun add -g` with its bins in npm's bin folder, so both pages see the tool.
+    mkdirSync(npmBin(), { recursive: true });
+    log(`bun add -g ${t.pkg}`);
+    r = await run(join(rt.bun, exe('bun')), ['add', '-g', `${t.pkg}@latest`], {
+      timeout: 15 * 60_000,
+      env: { ...toolEnv([rt.bun]), BUN_INSTALL_GLOBAL_DIR: bunGlobal(), BUN_INSTALL_BIN: npmBin() },
+    });
+  } else if (t.runtime === 'ruby') {
+    if (!rvPath()) throw new Error('rv is not installed: install it on the Ruby page first');
+    log(`rv tool install ${t.pkg}`);
+    r = await run(rvPath()!, ['tool', 'install', '--force', t.pkg], { timeout: 15 * 60_000, env: rvToolEnv() });
+    if (r.code === 0) {
+      // Older versions rv kept beside the new one go: one folder per tool.
+      const keep = rvToolFolder(t.pkg);
+      try {
+        for (const d of readdirSync(rvToolsDir())) if (d.startsWith(`${t.pkg}@`) && join(rvToolsDir(), d) !== keep) rmSync(join(rvToolsDir(), d), { recursive: true, force: true });
+      } catch {
+        /* none */
+      }
+      await writeRubyLaunchers(t);
+    }
+  } else if (t.runtime === 'node') {
+    if (!rt.node) throw new Error('Node.js or Bun is not installed: install one on its page first');
     mkdirSync(npmPrefix(), { recursive: true });
     const npm = join(rt.node, isWin ? 'npm.cmd' : 'npm');
     log(`npm install -g ${t.pkg}`);
@@ -268,7 +359,19 @@ export async function installTool(id: RuntimeToolId, rt: ToolRuntimes, log: (lin
 export async function uninstallTool(id: RuntimeToolId, rt: ToolRuntimes): Promise<void> {
   const t = TOOLS.find((x) => x.id === id);
   if (!t) throw new Error(`Unknown tool ${id}`);
-  if (t.runtime === 'node' && rt.node) {
+  if (t.runtime === 'node' && existsSync(join(bunGlobal(), 'node_modules', t.pkg)) && rt.bun) {
+    await run(join(rt.bun, exe('bun')), ['remove', '-g', t.pkg], { timeout: 5 * 60_000, env: { ...toolEnv([rt.bun]), BUN_INSTALL_GLOBAL_DIR: bunGlobal(), BUN_INSTALL_BIN: npmBin() } });
+  } else if (t.runtime === 'ruby') {
+    if (rvPath()) await run(rvPath()!, ['tool', 'uninstall', t.pkg], { timeout: 5 * 60_000, env: rvToolEnv() });
+    for (const d of (() => {
+      try {
+        return readdirSync(rvToolsDir());
+      } catch {
+        return [];
+      }
+    })())
+      if (d.startsWith(`${t.pkg}@`)) rmSync(join(rvToolsDir(), d), { recursive: true, force: true });
+  } else if (t.runtime === 'node' && rt.node) {
     const npm = join(rt.node, isWin ? 'npm.cmd' : 'npm');
     await run(isWin ? (process.env.ComSpec ?? 'cmd.exe') : npm, [...(isWin ? ['/d', '/c', npm] : []), 'uninstall', '-g', '--prefix', npmPrefix(), t.pkg], {
       timeout: 5 * 60_000,

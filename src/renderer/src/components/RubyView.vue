@@ -8,6 +8,7 @@ import { isWin } from '../platform';
 import { attempt, herd, notify, state, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
 import GitConnectButton from './GitConnectButton.vue';
+import RuntimeToolsCard from './RuntimeToolsCard.vue';
 
 /** Ruby versions (TODO §37): rv for 3.2 and newer (prebuilt, seconds), ruby-build for older ones (compiled, minutes). */
 
@@ -68,7 +69,8 @@ async function uninstall(version: string) {
     await attempt(() => herd.rubyUninstall(version));
 }
 
-type Tab = 'installed' | 'available';
+type Tab = 'installed' | 'available' | 'tools';
+const toolUpdates = computed(() => s.value.toolUpdates.filter((u) => u.page === 'ruby').length);
 const tab = ref<Tab>('installed');
 </script>
 
@@ -82,6 +84,7 @@ const tab = ref<Tab>('installed');
     <div role="tablist" class="seg no-drag mt-3">
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed</a>
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'tools' }" @click="tab = 'tools'">Tools<span v-if="toolUpdates" class="badge badge-primary badge-xs ml-1" title="Tool updates available">{{ toolUpdates }}</span></a>
     </div>
   </PageHeader>
 
@@ -180,6 +183,9 @@ const tab = ref<Tab>('installed');
         </div>
       </div>
       <div v-else class="alert text-sm">Install rv first (above): it lists and installs the Rubies.</div>
+    </template>
+    <template v-if="tab === 'tools'">
+      <RuntimeToolsCard runtime="ruby" :ready="!!b.rv && b.installed.some((i) => i.source === 'mrcatz')" missing="Install rv and a Ruby first (above): rv installs the tools, each in its own environment." />
     </template>
   </section>
 </template>

@@ -283,7 +283,7 @@ export function destructiveActions(api: HerdApi, scopes: Scopes): ChangeAction[]
           await (a.runtime === 'node' ? api.nodeUninstall(v) : a.runtime === 'bun' ? api.bunUninstall(v) : a.runtime === 'go' ? api.goUninstall(v) : a.runtime === 'python' ? api.pythonUninstall(v) : a.runtime === 'ruby' ? api.rubyUninstall(v) : api.phpUninstall(v));
           return ok({ uninstalled: `${String(a.runtime)} ${v}` });
         }),
-        asked('uninstall_runtime_tool', 'Uninstall a runtime tool', 'Removes a tool from list_runtime_tools; install_runtime_tool brings it back.', { runtime: { type: 'string', enum: ['node', 'go', 'python'] }, tool: S('An id from list_runtime_tools.', 60) }, ['runtime', 'tool'], async (a) => {
+        asked('uninstall_runtime_tool', 'Uninstall a runtime tool', 'Removes a tool from list_runtime_tools; install_runtime_tool brings it back.', { runtime: { type: 'string', enum: ['node', 'go', 'python', 'ruby'] }, tool: S('An id from list_runtime_tools.', 60) }, ['runtime', 'tool'], async (a) => {
           const t = (await api.toolsState(a.runtime as RuntimeToolRuntime)).find((x) => x.id === a.tool);
           if (!t) throw new Error(`No tool ${String(a.tool)}`);
           return { title: `Uninstall ${t.label}?`, facts: fact('Needed by', t.neededBy.join(', ')), page: `${String(a.runtime)}:tools` };

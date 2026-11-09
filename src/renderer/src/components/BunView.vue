@@ -7,12 +7,12 @@ import UpdateButton from './UpdateButton.vue';
 import { attempt, herd, notify, state, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
 import GitConnectButton from './GitConnectButton.vue';
+import RuntimeToolsCard from './RuntimeToolsCard.vue';
 
 
 const s = computed(() => state.value!);
 /** Update badges on the tabs: newer versions of this runtime (Installed), newer tool releases (Tools). */
 const versionUpdates = computed(() => s.value.updates.list.filter((u) => u.runtime === 'bun').length);
-const toolUpdates = computed(() => s.value.toolUpdates.filter((u) => u.page === 'bun').length);
 const b = computed(() => s.value.bun);
 const remote = ref<RemoteBun[]>([]);
 const loadingRemote = ref(false);
@@ -50,7 +50,10 @@ async function uninstall(version: string) {
   if (await askConfirm({ title: `Uninstall Bun ${version}?`, text: `Sites using it fall back to the default Bun or your own installation.`, confirm: 'Uninstall' })) await attempt(() => herd.bunUninstall(version));
 }
 
-type Tab = 'installed' | 'available';
+type Tab = 'installed' | 'available' | 'tools';
+/** The JS tools are one list with Node.js's: installed on either page, installed for both. */
+const toolUpdates = computed(() => s.value.toolUpdates.filter((u) => u.page === 'node').length);
+const toolsReady = computed(() => b.value.installed.length > 0 || s.value.node.installed.length > 0);
 const tab = ref<Tab>('installed');
 </script>
 
@@ -63,6 +66,7 @@ const tab = ref<Tab>('installed');
     <div role="tablist" class="seg no-drag mt-3">
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'installed' }" @click="tab = 'installed'">Installed<span v-if="versionUpdates" class="badge badge-primary badge-xs ml-1" title="A newer version is out">{{ versionUpdates }}</span></a>
       <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'available' }" @click="tab = 'available'">Available</a>
+      <a role="tab" class="seg-item" :class="{ 'is-active': tab === 'tools' }" @click="tab = 'tools'">Tools<span v-if="toolUpdates" class="badge badge-primary badge-xs ml-1" title="Tool updates available">{{ toolUpdates }}</span></a>
     </div>
   </PageHeader>
 
@@ -164,6 +168,10 @@ const tab = ref<Tab>('installed');
         </p>
       </div>
     </div>
+    </template>
+    <template v-if="tab === 'tools'">
+      <p class="text-xs opacity-60">The same tools as Node.js → Tools: one folder for both, so a tool installed on either page is installed for both.</p>
+      <RuntimeToolsCard runtime="node" :ready="toolsReady" missing="Install Bun (or Node.js) first: it installs the tools." />
     </template>
   </section>
 </template>
