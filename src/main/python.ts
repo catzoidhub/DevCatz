@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { InstalledPython, PythonChoice, RemotePython, RuntimeInstallProgress } from '@shared/types';
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
@@ -48,7 +48,9 @@ export function uvEnv(base: Record<string, string | undefined> = {}): Record<str
 async function uv(args: string[], timeout = 120_000) {
   const bin = uvPath();
   if (!bin) throw new Error('uv is not installed: install it on the Python page (sidebar)');
-  return run(bin, args, { timeout, env: uvEnv() });
+  // A fixed working folder: uv prints paths under it relative to it (on Linux the app runs from the home folder,
+  // so `python list` said `.config/DevCatz/python/…`), and uvList resolves them against the same folder.
+  return run(bin, args, { timeout, env: uvEnv(), cwd: pythonDir() });
 }
 
 export async function uvVersion(): Promise<string | null> {
@@ -105,7 +107,9 @@ interface UvPython {
 async function uvList(args: string[]): Promise<UvPython[]> {
   const r = await uv(['python', 'list', '--output-format', 'json', ...args], 60_000);
   if (r.code !== 0) throw new Error(r.stderr.trim() || 'uv python list failed');
-  return (JSON.parse(r.stdout) as UvPython[]).filter((p) => p.implementation === 'cpython' && (!p.variant || p.variant === 'default'));
+  return (JSON.parse(r.stdout) as UvPython[])
+    .filter((p) => p.implementation === 'cpython' && (!p.variant || p.variant === 'default'))
+    .map((p) => ({ ...p, path: p.path && !isAbsolute(p.path) ? resolve(pythonDir(), p.path) : p.path }));
 }
 
 /** Installed Pythons: DevCatz's (uv-managed, in its folder) and the user's own (read-only). */
