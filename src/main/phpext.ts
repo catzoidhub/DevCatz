@@ -316,7 +316,7 @@ async function makeToolkit(version: string, task: (t: Partial<PhpExtTask>) => vo
   const prefix = toolkitDir(version);
   if (hasToolkit(version)) return prefix;
   task({ phase: 'toolkit', detail: `Downloading PHP ${version} source (headers for phpize)` });
-  const info = (await (await fetch(`https://www.php.net/releases/index.php?json&version=${version}`)).json()) as { source?: { filename: string; sha256: string }[] };
+  const info = (await (await fetchTry(`https://www.php.net/releases/index.php?json&version=${version}`)).json()) as { source?: { filename: string; sha256: string }[] };
   const src = info.source?.find((s) => s.filename === `php-${version}.tar.xz`) ?? info.source?.find((s) => s.filename === `php-${version}.tar.gz`);
   if (!src?.sha256) throw new Error(`php.net has no source tarball with a checksum for PHP ${version}`);
   const work = mkdtempSync(join(noSpaceDir('build'), `php-${version}-`));
@@ -360,9 +360,24 @@ async function brewPrefix(formula: string, task: (t: Partial<PhpExtTask>) => voi
 }
 
 /** Latest stable release of a PECL package (latest when it has no stable one). */
+/** fetch with three tries (php.net's CDN sometimes drops a connection) and the host named when it still fails. */
+async function fetchTry(url: string): Promise<Response> {
+  let last: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    } catch (e) {
+      last = e;
+      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    }
+  }
+  const cause = (last as { cause?: { code?: string } })?.cause?.code;
+  throw new Error(`Could not reach ${new URL(url).host}${cause ? ` (${cause})` : ''}: check the connection and try again`);
+}
+
 async function peclVersion(pkg: string): Promise<string> {
   for (const which of ['stable', 'latest']) {
-    const res = await fetch(`https://pecl.php.net/rest/r/${pkg.toLowerCase()}/${which}.txt`);
+    const res = await fetchTry(`https://pecl.php.net/rest/r/${pkg.toLowerCase()}/${which}.txt`);
     if (res.ok) {
       const v = (await res.text()).trim();
       if (/^[\w.-]+$/.test(v)) return v;
