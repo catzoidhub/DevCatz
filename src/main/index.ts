@@ -27,6 +27,7 @@ import { githubToken } from './githosts';
 import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3UploadProgress, type Settings, type TaskProgress, type GwKind, type SearchKind, type StorageKind, type WaEngine, type WsKind } from '@shared/types';
 import { uninstall, uninstallPlan, UNINSTALL_STEPS } from './uninstall';
 import { isLinux, isMac, isWin } from './platform';
+import { openAtLogin, openedAtLogin, setOpenAtLogin } from './loginitem';
 import { LINUX_EDITORS, launchDesktop, linuxEditorFile, openLinuxTerminal } from './linuxapps';
 import { openWeb, refreshBrowsers, refreshEditorIcons } from './browsers';
 import { isSvcKind } from './svcdocker';
@@ -181,7 +182,7 @@ function setupLogFile(): void {
 }
 
 function loginState() {
-  return { launchAtLogin: app.getLoginItemSettings().openAtLogin, packaged: app.isPackaged };
+  return { launchAtLogin: openAtLogin(), packaged: app.isPackaged };
 }
 
 /** Navigation for a window that is still loading; the renderer collects it after start-up. */
@@ -1130,7 +1131,7 @@ function api(): HerdApi {
     herdSites: async () => herd.herdSites(),
     refreshScreenshot: (id) => herd.screenshot(id),
     setLaunchAtLogin: async (on) => {
-      app.setLoginItemSettings({ openAtLogin: on });
+      setOpenAtLogin(on);
       herd.emit('change');
     },
   };
@@ -1477,6 +1478,6 @@ app.whenReady().then(async () => {
   await finishMigration();
   herd.autoStart();
   // Started by the login item: live quietly in the menu bar, like Laravel Herd.
-  if (app.getLoginItemSettings().wasOpenedAtLogin || process.argv.includes('--hidden')) app.dock?.hide();
+  if (openedAtLogin()) app.dock?.hide();
   else createWindow();
 });

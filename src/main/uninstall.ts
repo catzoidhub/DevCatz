@@ -5,7 +5,9 @@ import { dirname, join } from 'node:path';
 import type { AiProvider, TaskProgress, UninstallPlan } from '@shared/types';
 import { spawn } from 'node:child_process';
 import { removeSystemLeftovers, systemLeftovers } from './cleanurls';
-import { isWin } from './platform';
+import { isLinux, isWin } from './platform';
+import { runAsRootLinux } from './linuxadmin';
+import { setOpenAtLogin } from './loginitem';
 import { setUserPath, userPathHas } from './env';
 import { shimDir } from './node';
 import { run } from './env';
@@ -36,8 +38,17 @@ function appBundle(): string | null {
     const u = join(dirname(process.execPath), `Uninstall ${app.getName()}.exe`);
     return existsSync(u) ? u : null;
   }
+  // Linux: the AppImage file itself (APPIMAGE), or the folder a .deb installed (removed with dpkg, see linuxPackage).
+  if (isLinux) return process.env.APPIMAGE || (process.execPath.startsWith('/opt/') ? dirname(process.execPath) : null);
   const m = process.execPath.match(/^(.*?\.app)\//);
   return m ? m[1] : null;
+}
+
+/** Linux: the .deb package this DevCatz came from (null for an AppImage or a copied folder). */
+async function linuxPackage(): Promise<string | null> {
+  if (!isLinux || process.env.APPIMAGE) return null;
+  const r = await run('dpkg', ['-S', process.execPath], { timeout: 10_000 }).catch(() => null);
+  return r?.code === 0 ? (r.stdout.split(':')[0]?.trim() || null) : null;
 }
 
 function caskroom(): string | null {
@@ -46,6 +57,11 @@ function caskroom(): string | null {
 
 /** Caches and preferences macOS / Electron keep for DevCatz outside its data folder. */
 function smallLeftovers(): string[] {
+  if (isLinux) {
+    const cache = process.env.XDG_CACHE_HOME || join(homedir(), '.cache');
+    const apps = join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'applications');
+    return [join(cache, 'DevCatz'), join(cache, 'devcatz-updater'), join(apps, 'devcatz.desktop')].filter((p) => existsSync(p));
+  }
   const lib = join(homedir(), 'Library');
   return [
     join(lib, 'Caches', 'DevCatz'),
@@ -130,7 +146,11 @@ export function uninstallPlan(): UninstallPlan {
   // Windows: each Catzoid app installs per user into %LOCALAPPDATA%\Programs\<App>\<App>.exe.
   const local = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local');
   const others = OTHER_APPS.filter((n) =>
-    isWin ? existsSync(join(local, 'Programs', n, `${n}.exe`)) : ['/Applications', join(homedir(), 'Applications')].some((d) => existsSync(join(d, `${n}.app`))),
+    isWin
+      ? existsSync(join(local, 'Programs', n, `${n}.exe`))
+      : isLinux
+        ? [join(homedir(), 'Applications', `${n}.AppImage`), `/opt/${n}`].some((p) => existsSync(p))
+        : ['/Applications', join(homedir(), 'Applications')].some((d) => existsSync(join(d, `${n}.app`))),
   );
   // DoCatz (or another app) still relies on the resolver, the port forwarding and the CA: those stay (DoCatz #61).
   const keptFor = otherDomainUsers().filter((a) => others.some((o) => o.toLowerCase() === a));
@@ -185,9 +205,9 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
   const ca = sharedDomains().ca;
   const caMoved = kept.length && ca?.by === 'devcatz' && existsSync(ca.cert) && existsSync(ca.key) ? keepCa(ca) : null;
   writeShared({ domains: { usedBy: (sharedDomains().usedBy ?? []).filter((a) => a !== 'devcatz'), ...(caMoved ? { ca: caMoved } : {}) } });
-  set({ step: 2, detail: kept.length ? `Kept: still used by ${kept.join(', ')}` : isWin ? 'DevCatz Local CA, from your Trusted Root certificates' : 'DevCatz Local CA, from the login keychain' });
+  set({ step: 2, detail: kept.length ? `Kept: still used by ${kept.join(', ')}` : isWin ? 'DevCatz Local CA, from your Trusted Root certificates' : isLinux ? 'DevCatz Local CA, from the system and browser certificate stores' : 'DevCatz Local CA, from the login keychain' });
   if (!kept.length) await hooks.untrustCa().catch((e: Error) => console.warn('uninstall: CA', e.message));
-  app.setLoginItemSettings({ openAtLogin: false });
+  setOpenAtLogin(false);
 
   set({ step: 3, detail: opts.removeData ? plan.dataDir : 'Kept: the data folder' });
   if (isWin) {
@@ -201,7 +221,7 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
     return;
   }
   if (opts.removeData) {
-    if (!isWin) await run('/usr/bin/security', ['delete-generic-password', '-s', 'DevCatz Safe Storage'], { timeout: 15_000 }).catch(() => undefined);
+    if (!isLinux) await run('/usr/bin/security', ['delete-generic-password', '-s', 'DevCatz Safe Storage'], { timeout: 15_000 }).catch(() => undefined);
     for (const p of [...smallLeftovers(), plan.dataDir]) await shell.trashItem(p).catch(() => rmSync(p, { recursive: true, force: true }));
   }
   if (removeShared) {
@@ -209,11 +229,18 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
     if (existsSync(plan.sharedDir)) await shell.trashItem(plan.sharedDir).catch(() => undefined);
   }
 
-  set({ step: 4, detail: plan.homebrew ? 'brew uninstall --cask devcatz' : (plan.app ?? 'A development build: the app stays') });
-  if (plan.homebrew) {
+  const pkg = await linuxPackage();
+  set({ step: 4, detail: plan.homebrew ? 'brew uninstall --cask devcatz' : pkg ? `dpkg -r ${pkg}` : (plan.app ?? 'A development build: the app stays') });
+  if (pkg) {
+    // The package's files are root's: dpkg removes them (and the menu entry) behind the password prompt. A running
+    // program keeps its open files, so DevCatz can still finish and quit.
+    const r = await runAsRootLinux(`dpkg -r ${pkg}\n`);
+    if (!r.ok) throw new Error(r.cancelled ? `Cancelled at the password prompt: DevCatz stays installed (remove it with: sudo apt remove ${pkg}).` : r.message);
+  } else if (plan.homebrew) {
     const brew = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'].find((b) => existsSync(b));
     if (brew) await run(brew, ['uninstall', '--cask', 'devcatz'], { timeout: 300_000 });
-  } else if (plan.app) {
+  } else if (plan.app && (!isLinux || process.env.APPIMAGE)) {
+    // (Linux: a folder that is no package's, e.g. an unpacked build, is root's and stays; the user removes it.)
     await shell.trashItem(plan.app);
   }
   set({ step: 5, done: true, detail: '' });
@@ -221,4 +248,6 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
 
 export const UNINSTALL_STEPS = isWin
   ? ['Stop everything', 'Remove port forwarding and the Path entry', 'Remove the local certificate authority', 'Remove data and settings (once DevCatz has quit)', 'Remove DevCatz with its uninstaller']
-  : ['Stop everything', 'Remove port forwarding and DNS files', 'Remove the local certificate authority', 'Remove data and settings', 'Move DevCatz to the Trash'];
+  : isLinux
+    ? ['Stop everything', 'Remove port forwarding and DNS files', 'Remove the local certificate authority', 'Remove data and settings', 'Remove DevCatz']
+    : ['Stop everything', 'Remove port forwarding and DNS files', 'Remove the local certificate authority', 'Remove data and settings', 'Move DevCatz to the Trash'];

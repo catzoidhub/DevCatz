@@ -3,7 +3,7 @@ import { keyLabel, words } from '@shared/platform';
 import { computed, ref, watch } from 'vue';
 import type { UninstallPlan } from '@shared/types';
 import CatMood from './CatMood.vue';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import TaskStepper from './TaskStepper.vue';
 import { attempt, herd, notify, state, uninstallDialog } from '../store';
 
@@ -44,7 +44,9 @@ const items = computed(() => {
       ? { label: isWin ? 'The sign-in item and the Path entry' : 'The login item', detail: 'The local CA stays trusted (shared)' }
       : isWin
         ? { label: 'The DevCatz Local CA, the sign-in item and the Path entry', detail: 'From your Trusted Root certificates (Windows asks to confirm)' }
-        : { label: 'The DevCatz Local CA and the login item', detail: 'From your login keychain (macOS asks to confirm)' },
+        : isLinux
+          ? { label: 'The DevCatz Local CA and the autostart entry', detail: 'From the system and browser certificate stores (Linux asks for your password)' }
+          : { label: 'The DevCatz Local CA and the login item', detail: 'From your login keychain (macOS asks to confirm)' },
     p.homebrew
       ? { label: 'The app, through Homebrew', detail: 'brew uninstall --cask devcatz' }
       : isWin
