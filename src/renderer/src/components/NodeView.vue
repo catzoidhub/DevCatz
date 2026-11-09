@@ -7,7 +7,7 @@ import type { RemoteNode } from '@shared/types';
 import { attempt, herd, notify, runtimeTabRequest, state, askConfirm } from '../store';
 import RuntimeToolsCard from './RuntimeToolsCard.vue';
 import CatMood from './CatMood.vue';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import GitConnectButton from './GitConnectButton.vue';
 
 const s = computed(() => state.value!);
@@ -51,6 +51,8 @@ async function uninstall(version: string) {
 }
 
 const pathLine = computed(() => `export PATH="${n.value.shimDir}:$PATH"`);
+/** The shell's startup file: zsh is macOS's default shell, bash most Linux distributions'. */
+const rcFile = isLinux ? '~/.bashrc' : '~/.zshrc';
 const pathBusy = ref(false);
 async function setShimPath(on: boolean) {
   pathBusy.value = true;
@@ -59,7 +61,7 @@ async function setShimPath(on: boolean) {
 }
 async function copyPath() {
   await navigator.clipboard.writeText(pathLine.value);
-  notify('info', 'Copied. Add it to the end of ~/.zshrc, then open a new terminal.');
+  notify('info', `Copied. Add it to the end of ${rcFile}, then open a new terminal.`);
 }
 
 type Tab = 'installed' | 'available' | 'terminal' | 'tools';
@@ -213,7 +215,7 @@ watch(runtimeTabRequest, (t) => {
         <p v-if="!isWin" class="text-xs opacity-70">
           DevCatz keeps <code>node</code>, <code>npm</code>, <code>npx</code> and <code>corepack</code> shims for the default version (and <code>bun</code>,
           <code>go</code>, <code>php</code>, <code>composer</code>, <code>python</code>, <code>pip</code>, <code>uv</code> for theirs). To use them in
-          your terminal, add this line to the <b>end</b> of <code>~/.zshrc</code>. It then takes precedence over a node from another tool (nvm, Homebrew …).
+          your terminal, add this line to the <b>end</b> of <code>{{ rcFile }}</code>. It then takes precedence over a node from another tool (nvm, Homebrew …).
         </p>
         <div v-if="!isWin" class="join">
           <code class="selectable join-item flex-1 truncate rounded-l-box bg-base-200 px-3 py-1.5 text-xs">{{ pathLine }}</code>

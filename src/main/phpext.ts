@@ -131,6 +131,9 @@ function stream(cmd: string, args: string[], cwd: string, log: (line: string) =>
 /** What a build needs: Xcode Command Line Tools, autoconf (from Homebrew when missing). */
 export async function buildProblem(): Promise<string | null> {
   if (isWin) return null; // ready-made DLLs: nothing to build with
+  // static-php.dev's Linux PHP is fully static (musl): it cannot load a .so ("Dynamic loading not supported").
+  if (isLinux)
+    return 'This PHP is a fully static build (static-php.dev), which cannot load extra extensions on Linux. The extensions listed as built in are all it has; for another one, use your distribution’s PHP (e.g. sudo apt install php8.3-<extension>).';
   const clt = await run('xcode-select', ['-p'], { timeout: 10_000 });
   if (clt.code !== 0) return 'Xcode Command Line Tools are needed to build extensions: run “xcode-select --install” in Terminal.';
   const ac = await run('/bin/sh', ['-c', 'command -v autoconf'], { env: buildEnv(), timeout: 10_000 });

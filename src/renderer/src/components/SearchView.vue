@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import { words } from '@shared/platform';
 import { SEARCH_LOGO } from '../logos';
 import { computed, ref, watch } from 'vue';
@@ -273,9 +273,9 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.searchUninstal
             <p v-if="!needDocatz" class="text-xs opacity-60">
               <template v-if="selected.inDocatz">{{ selected.name }} publishes no {{ words.os }} build: here it runs from its official image in DoCatz's container engine (WSL 2). DevCatz pulls it there, starts and stops it and keeps its port, domain, key and .env lines as usual; DoCatz shows the container under DevCatz Services.</template>
               <template v-else-if="selected.kind === 'opensearch' && isWin">About 1 GB to download: OpenSearch's Windows build only comes as the full bundle (its own Java included); DevCatz drops its plugins after unpacking.</template>
-              <template v-else-if="selected.kind === 'opensearch'">About 300 MB: the core build runs on Eclipse Temurin 21 (no official macOS build).</template>
+              <template v-else-if="selected.kind === 'opensearch'">About 300 MB: the core build runs on Eclipse Temurin 21{{ isLinux ? '' : ' (no official macOS build)' }}.</template>
               <template v-else-if="selected.unavailable" />
-              <template v-else-if="selected.kind === 'sonic'">Sonic has no macOS download of its own: DevCatz fetches Homebrew's build (checksum from formulae.brew.sh), no Homebrew needed.</template>
+              <template v-else-if="selected.kind === 'sonic'">Sonic has no {{ words.os }} download of its own: DevCatz fetches Homebrew's build (checksum from formulae.brew.sh), no Homebrew needed.</template>
               <template v-else>Ports, domain, key and data folder are chosen before the download; the build is checksum-verified.</template>
             </p>
           </div>

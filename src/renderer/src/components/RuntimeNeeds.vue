@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import type { NodeInstallProgress, ProjectState, RuntimeNeed } from '@shared/types';
 import CatMood from './CatMood.vue';
+import { words } from '@shared/platform';
 import { attempt, herd, notify, state } from '../store';
 
 /**
@@ -28,7 +29,7 @@ const short = (v: string | null) => (v ?? '').replace(/^v/, '');
 function why(n: RuntimeNeed): string {
   const name = NAMES[n.kind];
   if (!n.current) return `${name} is not installed, so this site cannot ${n.kind === 'php' ? 'be served' : 'start'} yet.`;
-  return `${n.from ?? 'The project'} asks for ${name} ${n.spec}; this Mac has ${short(n.current)}, which DevCatz uses for now.`;
+  return `${n.from ?? 'The project'} asks for ${name} ${n.spec}; this ${words.computer} has ${short(n.current)}, which DevCatz uses for now.`;
 }
 async function install(n: RuntimeNeed) {
   if (!n.version) return;

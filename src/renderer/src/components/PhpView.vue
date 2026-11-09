@@ -8,7 +8,7 @@ import { ICONS } from '../icons';
 import UpdateButton from './UpdateButton.vue';
 import { attempt, herd, notify, state, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import GitConnectButton from './GitConnectButton.vue';
 
 /** What serves PHP sites: PHP-FPM on macOS, php-cgi workers (FastCGI) on Windows. */
@@ -318,7 +318,7 @@ const tab = ref<Tab>('installed');
             <button v-else class="btn btn-xs" :disabled="!!busy" @click="install(r.version)">Install</button>
           </div>
         </div>
-        <p v-if="!isWin" class="text-xs opacity-60">
+        <p v-if="!isWin && !isLinux" class="text-xs opacity-60">
           PHP 7.x and 5.6 are not built by static-php.dev; <b>Install</b> runs <code>brew install shivammathur/php/php@7.x</code> (needs Homebrew) and
           DevCatz then uses Homebrew's PHP and PHP-FPM like its own.
         </p>
