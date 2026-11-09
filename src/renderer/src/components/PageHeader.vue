@@ -21,8 +21,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 <template>
   <header class="drag win-top flex items-start gap-3 border-b border-base-300/60 px-6 pt-5 pb-4">
     <div class="min-w-0 flex-1">
-      <!-- Icon and title on one line, centred on each other; the slot (tabs, text) goes below. -->
-      <div class="flex items-center gap-3">
+      <!-- Icon and title on one line, centred on each other; the slot (tabs, text) goes below, with room under the icon. -->
+      <div class="flex items-center gap-3" :class="{ 'mb-2': $slots.default }">
         <span v-if="icon" class="grid size-9 shrink-0 place-items-center rounded-xl" :style="{ color: `var(--c-${tint})`, background: `color-mix(in oklch, var(--c-${tint}) 16%, transparent)` }">
           <svg class="size-5" :viewBox="iconViewBox" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="icon" /></svg>
         </span>
