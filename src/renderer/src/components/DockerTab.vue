@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { confirmOverwrite } from '../confirms';
 import { words } from '@shared/platform';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import { diff } from '../linediff';
 import AiDocker from './AiDocker.vue';
 import DockerFileDialog from './DockerFileDialog.vue';
@@ -33,16 +33,17 @@ const busyKey = computed(() => busy.value ?? (props.project.dockerRun ? `${props
 
 /** Same order as the main process: most recommended first. */
 // Windows: OrbStack, Colima and Finch are macOS-only.
-type EngineCard = { id: DockerEngineId; name: string; start: string; download: string; macOnly?: boolean };
+type EngineCard = { id: DockerEngineId; name: string; start: string; download: string; macOnly?: boolean; linuxOnly?: boolean };
 const ENGINES: EngineCard[] = ([
   { id: 'docatz', name: 'DoCatz', start: 'Open DoCatz', download: 'https://catzoid.com/docatz/download' },
   { id: 'orbstack', name: 'OrbStack', start: 'Open OrbStack', download: 'https://orbstack.dev/download', macOnly: true },
   { id: 'docker-desktop', name: 'Docker Desktop', start: 'Open Docker Desktop', download: 'https://www.docker.com/products/docker-desktop/' },
+  { id: 'docker-engine', name: 'Docker Engine', start: 'Start Docker Engine', download: 'https://docs.docker.com/engine/install/', linuxOnly: true },
   { id: 'colima', name: 'Colima', start: 'colima start', download: 'https://github.com/abiosoft/colima#installation', macOnly: true },
   { id: 'rancher', name: 'Rancher Desktop', start: 'Open Rancher Desktop', download: 'https://rancherdesktop.io/' },
   { id: 'podman', name: 'Podman', start: 'Start Podman', download: 'https://podman-desktop.io/downloads' },
   { id: 'finch', name: 'Finch', start: 'finch vm start', download: 'https://github.com/runfinch/finch/releases', macOnly: true },
-] as EngineCard[]).filter((e) => !(isWin && e.macOnly));
+] as EngineCard[]).filter((e) => !((isWin || isLinux) && e.macOnly) && !(!isLinux && e.linuxOnly));
 const engineName = (id: DockerEngineId | null) => ENGINES.find((e) => e.id === id)?.name ?? 'Container engine';
 // DoCatz has its own button (Open in DoCatz / Download & Install) in the alert: not a second one here.
 const installedEngines = computed(() => ENGINES.filter((e) => e.id !== 'docatz' && status.value?.installed.includes(e.id)));
@@ -348,7 +349,11 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
           </template>
         </div>
         <div class="flex flex-wrap items-center gap-1.5 pt-1">
-          <DoCatzButton :site-id="project.id" :file="file || null" primary />
+          <!-- Linux (no DoCatz build yet): the system's Docker Engine, installed and started behind one password dialog. -->
+          <button v-if="isLinux && !installedEngines.length" class="btn btn-sm btn-primary" :disabled="!!starting" @click="start('docker-engine')">
+            <span v-if="starting === 'docker-engine'" class="loading loading-spinner loading-xs" />Install Docker Engine
+          </button>
+          <DoCatzButton v-else :site-id="project.id" :file="file || null" primary />
           <button v-for="e in installedEngines" :key="e.id" class="btn btn-sm" :disabled="!!starting" @click="start(e.id)">
             <span v-if="starting === e.id" class="loading loading-spinner loading-xs" />{{ e.start }}
           </button>

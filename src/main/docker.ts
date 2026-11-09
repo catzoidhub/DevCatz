@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process';
 import { app } from 'electron';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { basename, dirname, isAbsolute, join, posix, relative } from 'node:path';
 import { isPhpFramework, isPythonFramework, type AppInfo, type DockerEngineId, type DockerFile, type DockerGenOptions, type DockerTarget, type DockerService, type DockerStatus, type ProjectConfig, type StackInfo } from '@shared/types';
 import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './detect';
 import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
-import { exePath, isLinux, isWin, killTree } from './platform';
+import { exePath, isLinux, isMac, isWin, killTree } from './platform';
+import { runAsRootLinux, shq } from './linuxadmin';
 import { docatzEngine, docatzEnvFile, docatzEnvPath } from './docatz';
 import { store } from './store';
 
@@ -32,6 +33,8 @@ interface EngineDef {
   /** Linux: the folder its package installs (engines without one are found by their CLI, or not offered). */
   linux?: string;
   macOnly?: boolean;
+  /** Only offered on Linux (the system's own Docker Engine). */
+  linuxOnly?: boolean;
   /** CLI that, when found on PATH, means it is installed (Colima, Podman, Finch). */
   bin?: string;
   download: string;
@@ -43,11 +46,13 @@ export const ENGINES: EngineDef[] = ([
   { id: 'docatz', name: 'DoCatz', app: 'DoCatz.app', win: '%LOCALAPPDATA%\\Programs\\DoCatz\\DoCatz.exe', download: 'https://catzoid.com/docatz/download' },
   { id: 'orbstack', name: 'OrbStack', app: 'OrbStack.app', macOnly: true, download: 'https://orbstack.dev/download' },
   { id: 'docker-desktop', name: 'Docker Desktop', app: 'Docker.app', win: '%ProgramFiles%\\Docker\\Docker\\Docker Desktop.exe', linux: '/opt/docker-desktop', download: 'https://www.docker.com/products/docker-desktop/' },
+  // Linux: the distribution's Docker Engine, installed and started by DevCatz behind the password dialog.
+  { id: 'docker-engine', name: 'Docker Engine', linux: '/usr/bin/dockerd', linuxOnly: true, download: 'https://docs.docker.com/engine/install/' },
   { id: 'colima', name: 'Colima', bin: 'colima', macOnly: true, download: 'https://github.com/abiosoft/colima#installation' },
   { id: 'rancher', name: 'Rancher Desktop', app: 'Rancher Desktop.app', win: '%LOCALAPPDATA%\\Programs\\Rancher Desktop\\Rancher Desktop.exe', linux: '/opt/rancher-desktop', download: 'https://rancherdesktop.io/' },
   { id: 'podman', name: 'Podman', app: 'Podman Desktop.app', win: '%LOCALAPPDATA%\\Programs\\Podman Desktop\\Podman Desktop.exe', bin: 'podman', download: 'https://podman-desktop.io/downloads' },
   { id: 'finch', name: 'Finch', bin: 'finch', macOnly: true, download: 'https://github.com/runfinch/finch/releases' },
-] as EngineDef[]).filter((e) => !((isWin || isLinux) && e.macOnly));
+] as EngineDef[]).filter((e) => !((isWin || isLinux) && e.macOnly) && !(!isLinux && e.linuxOnly));
 
 /** Windows: an engine's .exe with %ProgramFiles% / %LOCALAPPDATA% filled in. */
 const winExe = (e: EngineDef) => e.win?.replace(/%(\w+)%/g, (_m, k: string) => process.env[k] ?? '');
@@ -65,32 +70,61 @@ export const dockerBin = () => cli.bin;
 /** The compose command of that CLI: e.g. ['docker', 'compose']. */
 export const dockerCompose = (): string[] => [cli.bin, ...cli.compose];
 /**
- * The docker command of DevCatz's Docker gateways (Postal, ntfy, Gotify, Jasmin, Telegram Bot API, WAHA). On Windows
- * they always run in DoCatz (`docker --context docatz`, its engine in WSL 2; DoCatz lists them under DevCatz Services),
- * whatever engine the Docker tab uses; elsewhere on the engine compose runs on.
+ * Where a Docker gateway (Postal, ntfy, Gotify, Jasmin, Telegram Bot API, WAHA) runs (user, 2026-11-09): **DoCatz**
+ * by default wherever DoCatz exists (macOS, Windows), or the system's engine when the user picks it at install
+ * (OrbStack, Docker Desktop …; on Linux, until DoCatz has a Linux build, the system's Docker Engine, installed when
+ * missing). Kept in the gateway's config; one installed before this setting existed stays where it was (DoCatz on
+ * Windows, the system's engine elsewhere).
  */
-export const gatewayDocker = (): string[] => (isWin ? ['docker', '--context', 'docatz'] : [cli.bin, ...cli.compose.slice(0, -1)]);
-export const gatewayCompose = (): string[] => [...gatewayDocker(), 'compose'];
+export type GwContainer = 'docatz' | 'system';
+export const docatzPlatform = isWin || isMac;
+export const containerOf = (c?: { container?: GwContainer } | null): GwContainer => c?.container ?? (isWin ? 'docatz' : 'system');
+export const defaultContainer = (): GwContainer => (docatzPlatform ? 'docatz' : 'system');
+
+/** The other container engine a gateway could run on (the first one installed), for the "Run in" choice. */
+export function otherEngineName(): string | null {
+  if (isLinux) return 'Docker Engine';
+  const e = ENGINES.find(
+    (x) => x.id !== 'docatz' && (engineAppInstalled(x) || (!!x.bin && !isWin && ['/opt/homebrew/bin', '/usr/local/bin'].some((d) => existsSync(join(d, x.bin!))))),
+  );
+  return e?.name ?? null;
+}
+
+/** The docker command of a gateway: `docker --context docatz` in DoCatz, else the engine compose runs on. */
+export const gatewayDocker = (where: GwContainer): string[] => (where === 'docatz' ? ['docker', '--context', 'docatz'] : [cli.bin, ...cli.compose.slice(0, -1)]);
+export const gatewayCompose = (where: GwContainer): string[] => [...gatewayDocker(where), 'compose'];
 
 /**
  * The gateways' engine answers, or why not in plain words. Windows: DoCatz's engine; a DoCatz that is installed but
  * not running is opened (it starts its engine) and waited for. `report` gets what is happening meanwhile.
  */
-export async function gatewayEngineReady(report: (detail: string) => void = () => undefined, signal?: AbortSignal): Promise<void> {
-  if (!isWin) {
+export async function gatewayEngineReady(where: GwContainer, report: (detail: string) => void = () => undefined, signal?: AbortSignal): Promise<void> {
+  if (where === 'system') {
     const ds = await dockerStatus();
-    if (!ds.daemon) throw new Error(ds.error ?? 'No container engine is running');
-    return;
+    if (ds.daemon) return;
+    // Linux: no engine running (or none at all) → the system's Docker Engine, installed / started behind the password
+    // dialog, the way Windows uses DoCatz's; another engine the user installed (Docker Desktop, Podman) is theirs to start.
+    if (isLinux && !ds.installed.some((id) => id !== 'docker-engine')) {
+      report(existsSync('/usr/bin/dockerd') ? 'Starting Docker Engine (password)' : 'Installing Docker Engine (password)');
+      await linuxDockerEngine();
+      for (const end = Date.now() + 60_000; Date.now() < end; ) {
+        if (signal?.aborted) throw new Error('Cancelled');
+        if ((await dockerStatus()).daemon) return;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      throw new Error('Docker Engine did not answer within a minute');
+    }
+    throw new Error(ds.error ?? 'No container engine is running');
   }
   const up = async () => (await run('docker', ['--context', 'docatz', 'info', '--format', '{{.ServerVersion}}'], { timeout: 10_000 })).code === 0;
   if (await up()) return;
   const def = ENGINES.find((e) => e.id === 'docatz')!;
   const context = (await onPath('docker')) && (await run('docker', ['context', 'inspect', 'docatz'], { timeout: 5000 })).code === 0;
-  if (!engineAppInstalled(def) && !context) throw new Error(`On Windows the Docker gateways run in DoCatz, which is not installed. Install DoCatz (${def.download}), then Install in DoCatz again`);
+  if (!engineAppInstalled(def) && !context) throw new Error(`This gateway runs in DoCatz, which is not installed. Install DoCatz (${def.download}), then Install in DoCatz again`);
   if (!engineAppInstalled(def)) throw new Error("DoCatz's engine is not running: start it in DoCatz (Engine), then try again");
   // DoCatz's engine lives in its own WSL distro: none yet means its engine was never set up (or WSL 2 cannot run on
   // this PC — a VM without nested virtualisation): no use waiting, DoCatz opens to show why.
-  const distros = (await run('wsl.exe', ['-l', '-q'], { timeout: 15_000 })).stdout.replace(/\0/g, '');
+  const distros = isWin ? (await run('wsl.exe', ['-l', '-q'], { timeout: 15_000 })).stdout.replace(/\0/g, '') : 'docatz';
   if (!/^docatz\s*$/im.test(distros)) {
     await startEngine('docatz').catch(() => undefined);
     throw new Error("DoCatz's engine is not set up on this PC yet (it runs in WSL 2): start it in DoCatz (Engine), then try again");
@@ -123,6 +157,7 @@ function engineFromDocker(context: string, endpoint: string, os: string): Docker
   if (s.includes('rancher') || s.includes('.rd/')) return 'rancher';
   if (s.includes('podman')) return 'podman';
   if (s.includes('docker desktop') || context === 'desktop-linux') return 'docker-desktop';
+  if (isLinux && endpoint.includes('/var/run/docker.sock')) return 'docker-engine';
   return 'other';
 }
 
@@ -168,9 +203,9 @@ export async function dockerStatus(): Promise<DockerStatus> {
     dockerError = info.stderr.trim().split('\n').pop() || 'The Docker engine is not running';
     // Linux's own Docker Engine (docker.io / docker-ce): the socket is root's and the docker group's.
     if (isLinux && /permission denied.*docker\.sock/i.test(dockerError))
-      dockerError = 'Docker runs, but this user may not use it: add yourself to the docker group (sudo usermod -aG docker $USER), then log out and in again';
-    else if (isLinux && /Cannot connect to the Docker daemon/i.test(dockerError) && existsSync('/lib/systemd/system/docker.service'))
-      dockerError = 'The Docker engine is not running: start it with sudo systemctl start docker (enable it to start with the computer)';
+      dockerError = 'Docker runs, but this user may not use it yet: Start Docker Engine here gives you access (DevCatz asks for your password)';
+    else if (isLinux && /Cannot connect to the Docker daemon/i.test(dockerError) && existsSync('/usr/bin/dockerd'))
+      dockerError = 'Docker Engine is not running: Start it here (DevCatz asks for your password)';
     Object.assign(base, { cliFound: true, context: ctx || null });
   }
   for (const [bin, id] of [['podman', 'podman'], ['finch', 'finch']] as const) {
@@ -185,8 +220,36 @@ export async function dockerStatus(): Promise<DockerStatus> {
   return { ...base, daemon: false, error: dockerError ?? (installed.length ? 'No container engine is running' : 'No container engine installed') };
 }
 
+/**
+ * Linux: Docker Engine from the distribution (apt docker.io + Compose v2, or dnf moby-engine), started with systemd and
+ * enabled at boot, the user added to the docker group — and, since that group only applies from the next login, the
+ * socket opened to this user right away (an ACL; the group takes over after a restart). One password dialog; also
+ * what Start does when it is installed but stopped.
+ */
+async function linuxDockerEngine(): Promise<void> {
+  const user = shq(userInfo().username);
+  const install = existsSync('/usr/bin/dockerd')
+    ? ''
+    : `if command -v apt-get >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io >/dev/null
+  for p in docker-compose-v2 docker-compose-plugin docker-compose; do DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$p" >/dev/null 2>&1 && break; done
+elif command -v dnf >/dev/null 2>&1; then
+  dnf install -y -q moby-engine docker-compose >/dev/null
+else
+  echo "No apt-get or dnf here: install Docker Engine from docs.docker.com/engine/install" >&2; exit 1
+fi
+`;
+  const r = await runAsRootLinux(`${install}groupadd -f docker
+usermod -aG docker ${user}
+systemctl enable --now docker
+for i in $(seq 1 30); do [ -S /var/run/docker.sock ] && break; sleep 1; done
+command -v setfacl >/dev/null 2>&1 && setfacl -m u:${user}:rw /var/run/docker.sock || true`);
+  if (!r.ok) throw new Error(r.cancelled ? 'Cancelled at the password prompt' : `Docker Engine: ${r.message.split('\n').pop()}`);
+}
+
 /** Starts an installed engine: opens its app, or `colima start` / `podman machine start` / `finch vm start`. */
 export async function startEngine(id: DockerEngineId): Promise<void> {
+  if (isLinux && id === 'docker-engine') return linuxDockerEngine();
   const e = ENGINES.find((x) => x.id === id);
   if (!e) throw new Error(`Unknown engine ${id}`);
   if (engineAppInstalled(e)) {

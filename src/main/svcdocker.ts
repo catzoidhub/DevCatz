@@ -26,7 +26,7 @@ const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 export const vol = (host: string, inside: string, ro = false) => JSON.stringify(`${host}:${inside}${ro ? ':ro' : ''}`);
 
 /** DoCatz's engine answers (opened and waited for when installed but stopped), else why not. */
-export const svcEngineReady = gatewayEngineReady;
+export const svcEngineReady = (report?: (detail: string) => void, signal?: AbortSignal) => gatewayEngineReady('docatz', report, signal);
 
 export function writeSvcCompose(file: string, yaml: string): void {
   mkdirSync(dirname(file), { recursive: true });
@@ -34,16 +34,16 @@ export function writeSvcCompose(file: string, yaml: string): void {
 }
 
 export function svcCompose(file: string, kind: SvcKind, args: string[], timeout = 120_000) {
-  const [bin, ...pre] = gatewayCompose();
+  const [bin, ...pre] = gatewayCompose('docatz');
   return run(bin, [...pre, '-f', file, '-p', svcProject(kind), ...args], { timeout, cwd: dirname(file) });
 }
 
 /** The server's process: `compose up`, attached, so its output is the server's log and stopping it stops the container. */
-export const svcUpCommand = (file: string, kind: SvcKind) => [...gatewayCompose(), '-f', file, '-p', svcProject(kind), 'up', '--remove-orphans'].map(q).join(' ');
+export const svcUpCommand = (file: string, kind: SvcKind) => [...gatewayCompose('docatz'), '-f', file, '-p', svcProject(kind), 'up', '--remove-orphans'].map(q).join(' ');
 
 /** `compose pull` with its progress lines as the task's detail; cancellable. */
 export function svcPull(file: string, kind: SvcKind, report: (p: Partial<TaskProgress>) => void, signal: AbortSignal): Promise<void> {
-  const [bin, ...pre] = gatewayCompose();
+  const [bin, ...pre] = gatewayCompose('docatz');
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, [...pre, '-f', file, '-p', svcProject(kind), 'pull'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: dirname(file), env: getShellEnv() as NodeJS.ProcessEnv, windowsHide: true });
     let last = '';
@@ -65,7 +65,7 @@ export function svcPull(file: string, kind: SvcKind, report: (p: Partial<TaskPro
 }
 
 export async function svcRemoveImage(image: string): Promise<void> {
-  const [bin, ...pre] = gatewayDocker();
+  const [bin, ...pre] = gatewayDocker('docatz');
   await run(bin, [...pre, 'rmi', image], { timeout: 120_000 }).catch(() => undefined);
 }
 

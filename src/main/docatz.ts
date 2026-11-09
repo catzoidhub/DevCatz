@@ -1,3 +1,4 @@
+import { docatzPlatform, otherEngineName } from './docker';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -95,7 +96,7 @@ export class DoCatz {
   }
 
   state(): DbCatzState {
-    return { installed: this.found !== null, task: this.task, engine: docatzEngine() };
+    return { installed: this.found !== null, task: this.task, engine: docatzEngine(), forGateways: docatzPlatform, otherEngine: otherEngineName() };
   }
 
   /** A compose file (absolute path) → its compose project; else the site's containers. */

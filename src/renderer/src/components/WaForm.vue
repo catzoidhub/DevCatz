@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import type { WaConfig, WaState } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
 import TaskStepper from './TaskStepper.vue';
+import RunInPicker from './RunInPicker.vue';
 
 /** Install (defaults, a fresh key) or edit one WhatsApp engine: port, domain label, API key, autostart. */
 const props = defineProps<{ service: WaState; mode: 'install' | 'edit' }>();
@@ -60,6 +61,7 @@ async function submit() {
       </div>
 
       <template v-if="!showProgress">
+        <RunInPicker v-if="mode === 'install' && service.docker" v-model="form.container" />
         <fieldset class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="label-caps mb-1 block">API port</span>

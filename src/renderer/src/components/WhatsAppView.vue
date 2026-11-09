@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { moveItems } from '../moveengine';
 import { words } from '@shared/platform';
 import { WA_LOGO } from '../logos';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
@@ -74,10 +75,11 @@ watch(
   },
   { immediate: true },
 );
-/** Windows: WAHA (Docker) installs and runs in DoCatz, listed under DoCatz's DevCatz Services. */
-const inDocatz = (s: { docker: boolean }) => isWin && s.docker;
+/** WAHA (Docker) installs and runs in DoCatz by default (macOS, Windows), listed under DoCatz's DevCatz Services; or on another engine chosen at install. */
+const inDocatz = (s: { docker: boolean; config: { container?: 'docatz' | 'system' } | null }) =>
+  s.docker && (s.config ? (s.config.container ?? (isWin ? 'docatz' : 'system')) === 'docatz' : !!state.value?.docatz.forGateways);
 /** DoCatz is not on this PC at all (no app, no DoCatz data), or its Download & Install is under way: that comes first. */
-const needDocatz = (s: { docker: boolean }) => inDocatz(s) && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task);
+const needDocatz = (s: { docker: boolean; config: { container?: 'docatz' | 'system' } | null }) => inDocatz(s) && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task);
 async function openInDocatz(kind: string) {
   if (!(await attempt(() => herd.docatzOpenGateway(kind)))) notify('error', 'DoCatz is not installed: install it to see this gateway there');
 }
@@ -114,6 +116,7 @@ const moreItems = computed<MenuItem[]>(() => {
   return [
     { label: s.engine === 'gowa' ? 'Open web UI' : 'Open dashboard', action: () => herd.openUrl(s.url! + s.dashboardPath) },
     ...(inDocatz(s) ? [{ label: 'Open in DoCatz', action: () => openInDocatz(s.engine) }] : []),
+    ...moveItems(s.docker, inDocatz(s), s.name, (to) => herd.gwMove('waha', to)),
     { label: 'Open data folder', action: () => herd.waOpenData(s.engine) },
     { label: 'Check for updates', action: checkUpdates },
     { label: 'Settings…', action: () => (form.value = { service: s, mode: 'edit' }) },
@@ -430,6 +433,9 @@ const STATUS = (s: number | null) => (s === null ? 'text-error' : s < 300 ? 'tex
             <p class="text-sm opacity-70">{{ selected.description }}</p>
             <TaskStepper v-if="selected.task && !form" :task="selected.task" :cancellable="selected.task.kind === 'install'" dismissable @dismiss="herd.taskDismiss('whatsapp', selected.engine)" @cancel="H.waCancelInstall(selected.engine)" />
             <DoCatzInstallCard v-if="needDocatz(selected)" :kind="selected.engine" :name="selected.name" />
+            <button v-if="needDocatz(selected) && state?.docatz.otherEngine" class="btn btn-sm" @click="form = { service: { ...selected, defaults: { ...selected.defaults, container: 'system' } }, mode: 'install' }">
+              Install on {{ state.docatz.otherEngine }}…
+            </button>
             <button v-else class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
               <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="inDocatz(selected)" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ inDocatz(selected) ? 'Install in DoCatz…' : `Install ${selected.name}…` }}
             </button>

@@ -546,6 +546,7 @@ export const MCATZP_COVERAGE = {
   // tool: upgrade_service
   wsUpgrade: 'tool: upgrade_service',
   gwUpgrade: 'tool: upgrade_service',
+  gwMove: 'later: change',
   waUpgrade: 'tool: upgrade_service',
   searchUpgrade: 'tool: upgrade_service',
   storageUpgrade: 'tool: upgrade_service',

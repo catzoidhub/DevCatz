@@ -485,6 +485,7 @@ function api(): HerdApi {
     gwOpenData: async (kind) => void shell.openPath(herd.gateways.openData(kind)),
     gwCheckUpdates: () => herd.gateways.checkUpdates(),
     gwUpgrade: (kind) => herd.gateways.upgrade(kind),
+    gwMove: (kind, to) => (kind === 'waha' ? herd.whatsapp.move(to === 'docatz' ? 'docatz' : 'system') : herd.gateways.move(kind, to === 'docatz' ? 'docatz' : 'system')),
     gwSetAutoStart: async (kind, on) => herd.gateways.setAutoStart(kind, on),
     gwSend: (kind, input) => herd.gateways.send(kind, input),
     gwEnv: (kind, siteId) => herd.gateways.env(kind, siteId),

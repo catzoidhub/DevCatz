@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { moveItems } from '../moveengine';
 import { words } from '@shared/platform';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { CaughtSms, GwKind, GwSendResult, GwState } from '@shared/types';
@@ -12,7 +13,7 @@ import GwEnvWriter from './GwEnvWriter.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
 import PopMenu, { type MenuItem } from './PopMenu.vue';
 import { attempt, gwInstallRequest, herd, navRequest, notify, state, uninstallRequest } from '../store';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import docatzLogo from '../assets/logos/docatz.png';
 import DoCatzInstallCard from './DoCatzInstallCard.vue';
 import CatMood from './CatMood.vue';
@@ -27,8 +28,8 @@ const H = herd;
 const tld = computed(() => state.value?.settings.tld ?? 'localhost');
 const g = computed<GwState | null>(() => state.value?.gateways.find((x) => x.kind === props.kind) ?? null);
 const active = (s: GwState) => s.status === 'running' || s.status === 'starting';
-/** Windows: the Docker gateways install and run in DoCatz (its engine in WSL 2), listed under DoCatz's DevCatz Services. */
-const inDocatz = computed(() => isWin && !!g.value?.docker);
+/** The Docker gateways install and run in DoCatz by default (macOS, Windows), listed under DoCatz's DevCatz Services; the form offers another engine when there is one. */
+const inDocatz = computed(() => !!g.value?.docker && (g.value.config ? (g.value.config.container ?? (isWin ? 'docatz' : 'system')) === 'docatz' : !!state.value?.docatz.forGateways));
 /** DoCatz is not on this PC at all (no app, no DoCatz data), or its Download & Install is under way: that comes first. */
 const needDocatz = computed(() => inDocatz.value && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task));
 async function openInDocatz(s: GwState) {
@@ -92,7 +93,8 @@ const moreItems = computed<MenuItem[]>(() => {
   if (!s?.installed) return [];
   return [
     ...(s.webPath ? [{ label: 'Open web UI', action: () => herd.openUrl(s.url! + s.webPath) }] : []),
-    ...(isWin && s.docker ? [{ label: 'Open in DoCatz', action: () => openInDocatz(s) }] : []),
+    ...(inDocatz.value ? [{ label: 'Open in DoCatz', action: () => openInDocatz(s) }] : []),
+    ...moveItems(s.docker, inDocatz.value, s.name, (to) => herd.gwMove(s.kind, to)),
     { label: 'Open data folder', action: () => herd.gwOpenData(s.kind) },
     { label: 'Check for updates', action: checkUpdates },
     { label: 'Settings…', action: () => (form.value = { service: s, mode: 'edit' }) },
@@ -190,10 +192,15 @@ const openMail = () => (navRequest.value = { section: 'mail' });
         <p class="text-sm opacity-70">{{ g.description }}</p>
         <TaskStepper v-if="g.task && !form" :task="g.task" :cancellable="g.task.kind === 'install' && !g.task.done && !g.task.error" dismissable @cancel="H.gwCancelInstall(g.kind)" @dismiss="H.taskDismiss('gateway', g.kind)" />
         <DoCatzInstallCard v-if="needDocatz" :kind="g.kind" :name="g.name" />
+        <!-- DoCatz is missing but another engine is here: it may run there instead (chosen for good at install). -->
+        <button v-if="needDocatz && state?.docatz.otherEngine" class="btn btn-sm" @click="form = { service: { ...g, defaults: { ...g.defaults, container: 'system' } }, mode: 'install' }">
+          Install on {{ state.docatz.otherEngine }}…
+        </button>
         <button v-else class="btn btn-primary" :disabled="!!g.task && !g.task.done && !g.task.error" @click="form = { service: g, mode: 'install' }">
           <span v-if="g.task && !g.task.done && !g.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="inDocatz" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ inDocatz ? 'Install in DoCatz…' : `Install ${g.name}…` }}
         </button>
-        <p v-if="inDocatz && !needDocatz" class="text-xs opacity-60">On Windows {{ g.name }} runs in DoCatz's container engine (WSL 2): DevCatz pulls its images there and starts it, and DoCatz shows its containers under DevCatz Services.</p>
+        <p v-if="isLinux && g.docker" class="text-xs opacity-60">{{ g.name }} runs in containers: on Linux DevCatz uses Docker Engine, and installs and starts it with the first Docker service when there is none (it asks for your password once).</p>
+        <p v-if="inDocatz && !needDocatz" class="text-xs opacity-60">{{ g.name }} runs in DoCatz's container engine{{ isWin ? ' (WSL 2)' : '' }}: DevCatz pulls its images there and starts it, and DoCatz shows its containers under DevCatz Services.</p>
         <p class="text-xs opacity-60">
           <template v-if="g.category === 'email'">Everything it sends goes to the DevCatz mail catcher (Mail page), so real inboxes are never reached.</template>
           <template v-else-if="g.kind === 'jasmin'">Every SMS goes to the DevCatz SMS catcher, shown on this page; no operator account is needed.</template>

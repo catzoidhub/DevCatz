@@ -7,7 +7,7 @@ import { connect as netConnect } from 'node:net';
 import { join } from 'node:path';
 import type { CaughtSms, GwCategory, GwConfig, GwKind, GwSendInput, GwSendResult, GwState, ProjectConfig, StorageAction, TaskProgress } from '@shared/types';
 import { readEnvFiles } from '../detect';
-import { gatewayCompose, gatewayDocker, gatewayEngineReady } from '../docker';
+import { containerOf, defaultContainer, docatzPlatform, gatewayCompose, gatewayDocker, gatewayEngineReady, otherEngineName, type GwContainer } from '../docker';
 import { getShellEnv, run } from '../env';
 import { sendMail } from '../mail/smtp';
 import { ProcessManager } from '../processes';
@@ -293,6 +293,11 @@ export class GatewayManager {
   config(kind: GwKind): GwConfig | null {
     return this.stored().configs[kind] ?? null;
   }
+  /** The engine a Docker gateway runs on (its config; during an install, the one chosen in the form). */
+  private installingIn = new Map<GwKind, GwContainer>();
+  private where(kind: GwKind): GwContainer {
+    return this.installingIn.get(kind) ?? containerOf(this.config(kind));
+  }
   isActive(kind: GwKind) {
     return this.processes.isActive(gwId(kind));
   }
@@ -301,7 +306,7 @@ export class GatewayManager {
 
   defaults(kind: GwKind): GwConfig {
     const e = ENGINES[kind];
-    return { kind, port: e.port, ports: { ...e.ports }, domain: e.label, user: e.user, password: secret(16), version: '', autoStart: false, dataDir: join(this.dir, kind, 'data'), secrets: {}, setupDone: false };
+    return { kind, port: e.port, ports: { ...e.ports }, domain: e.label, user: e.user, password: secret(16), version: '', autoStart: false, dataDir: join(this.dir, kind, 'data'), secrets: {}, setupDone: false, ...(e.docker ? { container: defaultContainer() } : {}) };
   }
 
   private connection(kind: GwKind, c: GwConfig): { label: string; value: string; secret?: boolean }[] {
@@ -596,13 +601,13 @@ ${svc('postal worker', '')}`;
   }
 
   private compose(kind: GwKind, args: string[], timeout = 600_000) {
-    const [bin, ...pre] = gatewayCompose();
+    const [bin, ...pre] = gatewayCompose(this.where(kind));
     return run(bin, [...pre, '-f', this.composeFile(kind), '-p', project(kind), ...args], { timeout, cwd: join(this.dir, kind) });
   }
 
   /** `docker compose pull` with its progress lines in the task. */
   private pull(kind: GwKind, report: Report, signal: AbortSignal, step: number): Promise<void> {
-    const [bin, ...pre] = gatewayCompose();
+    const [bin, ...pre] = gatewayCompose(this.where(kind));
     return new Promise((resolve, reject) => {
       const proc = spawn(bin, [...pre, '-f', this.composeFile(kind), '-p', project(kind), 'pull'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: join(this.dir, kind), env: getShellEnv() as NodeJS.ProcessEnv });
       let last = '';
@@ -656,7 +661,10 @@ ${svc('postal worker', '')}`;
     this.aborts.set(kind, abort);
     try {
       if (e.docker) {
-        await gatewayEngineReady((detail) => t.report({ detail }), abort.signal);
+        // A choice the platform does not have (DoCatz on Linux) falls back to the system's engine.
+        c.container = c.container === 'docatz' && docatzPlatform ? 'docatz' : c.container === 'system' ? 'system' : defaultContainer();
+        this.installingIn.set(kind, c.container);
+        await gatewayEngineReady(c.container, (detail) => t.report({ detail }), abort.signal);
         t.report({ step: 1, detail: IMAGE[kind as Exclude<GwKind, 'stalwart'>] });
         c.version = c.version || (await LATEST[kind]());
         check(abort.signal);
@@ -675,6 +683,7 @@ ${svc('postal worker', '')}`;
       throw cancelled ? new Error('Install cancelled') : err;
     } finally {
       this.aborts.delete(kind);
+      this.installingIn.delete(kind);
       this.h.changed();
     }
   }
@@ -722,7 +731,7 @@ ${svc('postal worker', '')}`;
       t.report({ step: 1 });
       if (e.docker) {
         if (existsSync(this.composeFile(kind))) await this.compose(kind, ['down', '--remove-orphans'], 120_000);
-        await run(gatewayDocker()[0], [...gatewayDocker().slice(1), 'rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
+        await run(gatewayDocker(this.where(kind))[0], [...gatewayDocker(this.where(kind)).slice(1), 'rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
         rmSync(this.composeFile(kind), { force: true });
       } else rmSync(this.binDir(kind), { recursive: true, force: true });
       if (deleteData) {
@@ -776,7 +785,7 @@ ${svc('postal worker', '')}`;
         this.writeCompose(kind, next);
         await this.pull(kind, t.report, abort.signal, 1);
         if (wasActive) await this.stop(kind);
-        if (c.version !== v) await run(gatewayDocker()[0], [...gatewayDocker().slice(1), 'rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
+        if (c.version !== v) await run(gatewayDocker(this.where(kind))[0], [...gatewayDocker(this.where(kind)).slice(1), 'rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
         this.saveConfig(kind, next);
       } else {
         const fresh = `${this.binDir(kind)}.update`;
@@ -815,13 +824,13 @@ ${svc('postal worker', '')}`;
     try {
       if (kind === 'stalwart') await this.startStalwart(c);
       else {
-        await gatewayEngineReady((detail) => this.processes.log(id, 'sys', detail));
+        await gatewayEngineReady(this.where(kind), (detail) => this.processes.log(id, 'sys', detail));
         if (kind === 'jasmin') await this.startSmsCatcher(c);
         await this.wslCallbacks(kind, c);
         this.writeCompose(kind, c);
         this.saveConfig(kind, c);
         if (kind === 'postal' && !c.setupDone) await this.setupPostal(c);
-        const [bin, ...pre] = gatewayCompose();
+        const [bin, ...pre] = gatewayCompose(this.where(kind));
         this.processes.startMany(id, [{ label: '', cwd: join(this.dir, kind), command: [bin, ...pre, '-f', this.composeFile(kind), '-p', project(kind), 'up', '--remove-orphans'].map(q).join(' '), env: {} }]);
       }
       this.h.changed();
@@ -847,7 +856,7 @@ ${svc('postal worker', '')}`;
    * opened on WSL's network too (wslhost.ts), and plain words in the gateway's error when Windows Firewall blocks them.
    */
   private async wslCallbacks(kind: GwKind, c: GwConfig): Promise<void> {
-    if (!isWin) return;
+    if (!isWin || this.where(kind) !== 'docatz') return;
     const back = kind === 'postal' ? { what: 'mail catcher', port: this.h.mailPort() } : kind === 'jasmin' ? { what: 'SMS catcher', port: c.ports.smpp } : null;
     if (!back) return;
     await forwardFromWsl(back.port);
@@ -855,6 +864,50 @@ ${svc('postal worker', '')}`;
       const msg = firewallWords(back.what, back.port);
       this.errors.set(kind, msg);
       this.processes.log(gwId(kind), 'sys', msg);
+    }
+  }
+
+  /**
+   * Moves an installed Docker gateway to another engine (user, 2026-11-09: "Move to DoCatz"): stopped, its containers
+   * removed there, its images pulled on the other engine, its old image removed, started again if it ran. Its data
+   * stays: every gateway keeps it in a host folder (dataDir) that the containers mount.
+   */
+  async move(kind: GwKind, to: GwContainer): Promise<void> {
+    const e = ENGINES[kind];
+    const c = this.config(kind);
+    if (!c || !e.docker) throw new Error(`${e.name} is not an installed Docker gateway`);
+    const from = containerOf(c);
+    if (from === to) return;
+    if (to === 'docatz' && !docatzPlatform) throw new Error('DoCatz has no build for this system yet');
+    const label = (w: GwContainer) => (w === 'docatz' ? 'DoCatz' : (otherEngineName() ?? 'the container engine'));
+    const wasActive = this.isActive(kind);
+    const steps = ['Stopping', `Checking ${label(to)}`, 'Pulling the images', `Removing it from ${label(from)}`, ...(wasActive ? ['Starting'] : [])];
+    const t = this.task(kind, { kind: 'install', title: `Moving ${e.name} to ${label(to)}`, steps, step: 0 });
+    try {
+      await this.stop(kind);
+      if (existsSync(this.composeFile(kind))) await this.compose(kind, ['down', '--remove-orphans'], 120_000).catch(() => undefined);
+      this.installingIn.set(kind, to);
+      t.report({ step: 1 });
+      const abort = new AbortController();
+      await gatewayEngineReady(to, (detail) => t.report({ detail }), abort.signal);
+      this.writeCompose(kind, c);
+      await this.pull(kind, t.report, abort.signal, 2);
+      t.report({ step: 3, detail: '' });
+      await run(gatewayDocker(from)[0], [...gatewayDocker(from).slice(1), 'rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 }).catch(() => undefined);
+      this.saveConfig(kind, { ...c, container: to });
+      this.installingIn.delete(kind);
+      if (wasActive) {
+        t.report({ step: 4 });
+        await this.start(kind);
+      }
+      t.report({ title: `${e.name} runs in ${label(to)}` });
+      t.finish();
+    } catch (err) {
+      this.installingIn.delete(kind);
+      t.report({ error: (err as Error).message });
+      throw err;
+    } finally {
+      this.h.changed();
     }
   }
 

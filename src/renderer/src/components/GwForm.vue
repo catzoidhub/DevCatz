@@ -5,6 +5,7 @@ import type { GwConfig, GwState } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
 import { GW_LOGO } from '../gateways';
 import TaskStepper from './TaskStepper.vue';
+import RunInPicker from './RunInPicker.vue';
 
 /** Install (defaults, a fresh password) or edit one email / push / SMS gateway: ports, domain label, login, autostart. */
 const props = defineProps<{ service: GwState; mode: 'install' | 'edit' }>();
@@ -63,6 +64,7 @@ const userLabel = computed(() => (props.service.kind === 'postal' ? 'Admin email
       </div>
 
       <template v-if="!showProgress">
+        <RunInPicker v-if="mode === 'install' && service.docker" v-model="form.container" />
         <fieldset class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="label-caps mb-1 block">{{ service.kind === 'jasmin' ? 'HTTP API port' : 'Web / API port' }}</span>

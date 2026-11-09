@@ -3,9 +3,10 @@ import { computed } from 'vue';
 import TaskStepper from './TaskStepper.vue';
 import { attempt, herd, state } from '../store';
 import docatzLogo from '../assets/logos/docatz.png';
+import { isWin } from '../platform';
 
 /**
- * Windows, a Docker gateway's page when DoCatz is not on this PC at all (no app, no DoCatz data): the gateways run in
+ * A Docker gateway's page (macOS, Windows) when DoCatz is not on this computer at all (no app, no DoCatz data): the gateways run in
  * DoCatz there, so DoCatz comes first — Download & Install (latest release, checksum verified, per-user installer),
  * then DoCatz opens at this gateway and Install in DoCatz goes on as usual.
  */
@@ -23,7 +24,7 @@ const install = () => attempt(() => herd.docatzInstallGateway(props.kind));
         <div class="min-w-0 space-y-1">
           <h3 class="font-semibold">DoCatz is not installed</h3>
           <p class="text-xs opacity-70">
-            On Windows {{ props.name }} runs in DoCatz, the container manager that goes with DevCatz (its engine runs in WSL 2). Install DoCatz first, then Install in DoCatz.
+            {{ props.name }} runs in DoCatz, the container manager that goes with DevCatz{{ isWin ? ' (its engine runs in WSL 2)' : '' }}. Install DoCatz first, then Install in DoCatz.
           </p>
         </div>
       </div>
