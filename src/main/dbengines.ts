@@ -983,7 +983,7 @@ const elasticsearch: EngineDef = {
     : 'Official builds from artifacts.elastic.co with the bundled JDK (SHA-512)',
   sourceUrl: 'https://www.elastic.co/downloads/elasticsearch',
   async builds() {
-    return cached(isWin ? 'elasticsearch-win' : isLinux ? 'elasticsearch-linux' : 'elasticsearch', async () => {
+    return cached(`elasticsearch-${isWin ? 'win' : isLinux ? 'linux' : 'mac'}-${process.arch}`, async () => {
       const tags: string[] = [];
       const pages = await Promise.all(
         [1, 2].map((page) =>
@@ -992,14 +992,20 @@ const elasticsearch: EngineDef = {
       );
       for (const rel of pages) for (const r of rel) if (!r.prerelease && !r.draft && /^v\d+\.\d+\.\d+$/.test(r.tag_name)) tags.push(r.tag_name.slice(1));
       // 7.17 is the last 7.x line with Apple silicon builds (kept on Windows too: same list everywhere).
-      const all = tags.filter((v) => Number(major(v)) >= 8 || minor(v) === '7.17').map((v) => ({ version: v }));
-      return latestPer(all, major).map(({ version }) => ({
-        version,
-        label: major(version),
-        source: 'download' as const,
-        url: `https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-${version}-${ES_TARGET}`,
-        algo: 'sha512' as const,
-      }));
+      const all = tags.filter((v) => Number(major(v)) >= 8 || minor(v) === '7.17').sort(cmpVersion);
+      // The newest release of each major that has a build for this platform: Elastic stopped publishing some (macOS
+      // x86_64 ends during 9.5 — 9.5.0 has one, 9.5.6 does not), so the newest tag alone can be a 404.
+      const urlOf = (v: string) => `https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-${v}-${ES_TARGET}`;
+      const out: RemoteBuild[] = [];
+      for (const m of [...new Set(all.map(major))]) {
+        for (const version of all.filter((v) => major(v) === m).slice(0, 12)) {
+          const res = await fetch(urlOf(version), { method: 'HEAD' }).catch(() => null);
+          if (!res?.ok) continue;
+          out.push({ version, label: m, source: 'download' as const, url: urlOf(version), algo: 'sha512' as const });
+          break;
+        }
+      }
+      return out;
     });
   },
   installSteps: () => ['Finding the build', ...DOWNLOAD_STEPS],
