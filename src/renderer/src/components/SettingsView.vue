@@ -334,7 +334,8 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
         </p>
         <p v-else class="text-xs opacity-70">
           Sites and object storage are served on <code>&lt;name&gt;.{{ s.domain.tld }}</code>. <code>.localhost</code> needs no setup; any other suffix
-          (e.g. <code>.test</code> or <code>.devcatz</code>) uses DevCatz's own DNS through <code>/etc/resolver</code>.
+          (e.g. <code>.test</code> or <code>.devcatz</code>) uses DevCatz's own DNS through
+          <code>{{ isLinux ? 'a systemd-resolved rule' : '/etc/resolver' }}</code>.
         </p>
         <div class="flex items-end gap-2">
           <label>
@@ -376,6 +377,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           </div>
           <p v-if="s.domain.resolver === 'foreign'" class="mt-1 text-xs text-warning">
             <template v-if="isWin">Another tool has a DNS rule (NRPT) for <code>.{{ s.domain.tld }}</code>. Remove it there first.</template>
+            <template v-else-if="isLinux">Another tool already routes <code>.{{ s.domain.tld }}</code> in systemd-resolved. Remove it there first.</template>
             <template v-else><code>/etc/resolver/{{ s.domain.tld }}</code> belongs to another tool. Remove it there first.</template>
           </p>
           <div v-else class="mt-2 flex gap-2">
@@ -406,7 +408,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <button v-if="!s.cert.caTrusted" class="btn btn-primary btn-sm" :disabled="setupBusy('ca')" @click="trust">
             Trust certificate authority…
           </button>
-          <button v-else class="btn btn-sm btn-outline" :disabled="setupBusy('ca')" @click="untrust">{{ isWin ? 'Remove from Windows' : 'Remove from keychain' }}</button>
+          <button v-else class="btn btn-sm btn-outline" :disabled="setupBusy('ca')" @click="untrust">{{ isWin ? 'Remove from Windows' : isLinux ? 'Remove from the certificate stores' : 'Remove from keychain' }}</button>
           <button class="btn btn-ghost btn-sm" @click="herd.revealCa()">Show ca.crt</button>
         </div>
         <TaskStepper v-if="s.setup?.what === 'ca'" :task="s.setup.task" compact />
@@ -448,9 +450,10 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           administrator approval once.
         </p>
         <p v-else class="text-xs opacity-70">
-          Browsers resolve <code>*.{{ s.domain.tld }}</code> to <code>::1</code> first, so DevCatz listens on the IPv6 loopback: launchd takes
+          Browsers resolve <code>*.{{ s.domain.tld }}</code> to <code>::1</code> first, so DevCatz listens on the IPv6 loopback:
+          {{ isLinux ? 'systemd (socket units with systemd-socket-proxyd)' : 'launchd' }} takes
           <code>[::1]:443</code> / <code>[::1]:80</code> and relays to the proxy on {{ s.settings.httpsPort }} / {{ s.settings.httpPort }}, and on
-          <code>127.0.0.1</code> too when no other app uses those ports. Needs your admin password once.
+          <code>127.0.0.1</code> too when no other app uses those ports. Needs your {{ isLinux ? '' : 'admin ' }}password once.
         </p>
         <p v-if="s.cleanUrls.installed" class="text-xs opacity-70">
           Covers <code>[::1]</code>{{ s.cleanUrls.ipv4 ? ' and 127.0.0.1' : '' }}.

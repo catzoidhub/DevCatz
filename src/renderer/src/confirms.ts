@@ -42,7 +42,9 @@ export function confirmCleanUrls(): Promise<boolean> {
     title: 'Serve sites without a port number?',
     text: isWin
       ? `Windows' port proxy (the IP Helper service) will relay [::1]:443 and [::1]:80 to the proxy on ${https} / ${http}, and 127.0.0.1 too when no other app uses those ports. The rules stay after a restart; Windows asks for administrator approval next.`
-      : `DevCatz will install two LaunchDaemons: launchd listens on [::1]:443 and [::1]:80 and relays each connection with /usr/bin/nc (running as "nobody") to the proxy on ${https} / ${http}. 127.0.0.1:80/443 stay with any app already using them. Files: /Library/LaunchDaemons/com.mrcatz.herd.forward-https.plist and -http.plist; macOS asks for an administrator password next.`,
+      : isLinux
+        ? `DevCatz will add two systemd socket units (devcatz-forward-https / -http): systemd listens on [::1]:443 and [::1]:80 and relays each connection with systemd-socket-proxyd (a throwaway user, no rights) to the proxy on ${https} / ${http}. 127.0.0.1:80/443 too when no other app uses them. Files in /etc/systemd/system; Linux asks for your password next.`
+        : `DevCatz will install two LaunchDaemons: launchd listens on [::1]:443 and [::1]:80 and relays each connection with /usr/bin/nc (running as "nobody") to the proxy on ${https} / ${http}. 127.0.0.1:80/443 stay with any app already using them. Files: /Library/LaunchDaemons/com.mrcatz.herd.forward-https.plist and -http.plist; macOS asks for an administrator password next.`,
     confirm: 'Enable',
     tone: 'primary',
   });
@@ -59,6 +61,13 @@ export function confirmResolver(): Promise<boolean> {
       tone: 'primary',
     });
   }
+  if (isLinux)
+    return askConfirm({
+      title: `Resolve *.${t} to this computer?`,
+      text: `DevCatz will add /etc/systemd/resolved.conf.d/devcatz-${t}.conf so systemd-resolved asks DevCatz's own DNS (127.0.0.1:53531) for *.${t} names only; every other name keeps your network's DNS. Linux asks for your password next.`,
+      confirm: 'Install',
+      tone: 'primary',
+    });
   return askConfirm({
     title: `Resolve *.${t} to this Mac?`,
     text: `DevCatz will create /etc/resolver/${t} so macOS asks DevCatz's own DNS (127.0.0.1:53531) for *.${t} names. Nothing else on the network changes. macOS asks for an administrator password next.`,

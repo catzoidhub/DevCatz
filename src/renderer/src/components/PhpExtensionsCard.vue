@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { PhpExtensions } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
 import CatMood from './CatMood.vue';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 
 /** PECL extensions for one PHP version: the catalog, any package by name, built ones with on/off, and what is compiled in. */
 const props = defineProps<{ version: string }>();
@@ -68,7 +68,7 @@ async function remove(module: string) {
       </div>
 
       <div v-if="data && !data.supported && !isWin" class="alert alert-soft text-sm">
-        Extensions can be added to DevCatz’s own PHP builds (8.x). This version comes from another tool (e.g. Homebrew): use its own <code>pecl</code>.
+        Extensions can be added to DevCatz’s own PHP builds. This version comes from another tool ({{ isLinux ? 'e.g. your distribution' : 'e.g. Homebrew' }}): use its own <code>pecl</code>.
       </div>
       <template v-else-if="data">
         <div v-if="data.problem" role="alert" class="alert alert-warning alert-soft text-sm"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />{{ data.problem }}</div>
@@ -123,7 +123,8 @@ async function remove(module: string) {
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5">
                 <span class="font-medium">{{ c.title }}</span>
-                <span v-if="c.brew && !isWin" class="badge badge-ghost badge-xs" :title="`Uses Homebrew: ${c.brew.join(', ')} (installed when missing)`">brew</span>
+                <span v-if="c.brew && isLinux" class="badge badge-ghost badge-xs" title="Uses your distribution's -dev packages (installed when missing; asks for your password)">apt</span>
+                <span v-else-if="c.brew && !isWin" class="badge badge-ghost badge-xs" :title="`Uses Homebrew: ${c.brew.join(', ')} (installed when missing)`">brew</span>
               </div>
               <div class="truncate text-xs opacity-60" :title="c.description">{{ isWin ? c.description.replace(/ \(long build[^)]*\)/, '') : c.description }}</div>
             </div>

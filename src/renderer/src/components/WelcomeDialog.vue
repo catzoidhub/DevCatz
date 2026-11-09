@@ -155,6 +155,10 @@ async function done() {
                     site calling another by name fails. DevCatz adds Windows DNS rules that send these names to its own DNS on this PC — administrator
                     approval once.
                   </template>
+                  <template v-else-if="isLinux">
+                    <span class="font-mono">*.{{ s.domain.tld }}</span> names go to DevCatz's own DNS through a systemd-resolved rule for that
+                    domain only — your password once.
+                  </template>
                   <template v-else>
                     <span class="font-mono">*.{{ s.domain.tld }}</span> names go to DevCatz's own DNS through
                     <span class="font-mono">/etc/resolver/{{ s.domain.tld }}</span> — your administrator password once.

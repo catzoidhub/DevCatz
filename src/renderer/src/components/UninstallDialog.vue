@@ -51,7 +51,9 @@ const items = computed(() => {
       ? { label: 'The app, through Homebrew', detail: 'brew uninstall --cask devcatz' }
       : isWin
         ? { label: 'The app, with its own uninstaller', detail: p.app ?? 'A development build: the app itself stays' }
-        : { label: 'The app, to the Trash', detail: p.app ?? 'A development build: the app itself stays' },
+        : isLinux && p.app && !p.app.endsWith('.AppImage')
+          ? { label: 'The app, with its package (dpkg -r devcatz)', detail: `${p.app} — Linux asks for your password` }
+          : { label: 'The app, to the Trash', detail: p.app ?? 'A development build: the app itself stays' },
   ];
 });
 
