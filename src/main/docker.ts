@@ -580,7 +580,15 @@ function rubyDockerfile(ctx: Ctx, a: AppInfo): string {
   const lock = readText(join(ctx.p.path, 'Gemfile.lock')) ?? '';
   const gem = (n: string) => new RegExp(`^\\s{4}${n} \\(`, 'm').test(lock);
   const build = ['build-essential', 'git', 'pkg-config', 'libyaml-dev', ...(gem('pg') ? ['libpq-dev'] : []), ...(gem('mysql2') ? ['default-libmysqlclient-dev'] : [])];
-  const run = ['curl', 'libyaml-0-2', ...(gem('pg') ? ['libpq5'] : []), ...(gem('mysql2') ? ['default-mysql-client'] : []), ...(gem('sqlite3') ? ['libsqlite3-0'] : [])];
+  const run = [
+    'curl',
+    'libyaml-0-2',
+    ...(gem('pg') ? ['libpq5'] : []),
+    ...(gem('mysql2') ? ['default-mysql-client'] : []),
+    ...(gem('sqlite3') ? ['libsqlite3-0'] : []),
+    // Active Storage variants (image_processing → ruby-vips).
+    ...(gem('ruby-vips') || gem('image_processing') ? ['libvips42'] : []),
+  ];
   const hasGemfile = existsSync(join(ctx.p.path, 'Gemfile'));
   const deps = hasGemfile
     ? [
@@ -611,10 +619,16 @@ function rubyDockerfile(ctx: Ctx, a: AppInfo): string {
     ].join('\n');
   const port = portOf(a);
   const cmd = (a.command ?? `ruby app.rb`).replace(/127\.0\.0\.1/g, '0.0.0.0').replace(/^env BUNDLE_GEMFILE="[^"]*" /, '');
+  // SQLite in production with no file named there (a new app leaves it to the deploy): storage/, which the compose
+  // file keeps in a volume; a DATABASE_URL from the environment still wins.
+  const dbYml = readText(join(ctx.p.path, 'config', 'database.yml')) ?? '';
+  const prod = dbYml.split(/^production:\s*$/m)[1]?.split(/^\S/m)[0] ?? '';
+  const sqliteProd = /adapter:\s*sqlite3/.test(dbYml) && !/^\s+(database|url):\s*\S/m.test(prod);
   if (a.framework === 'rails')
     return [
       ...head,
       'ENV RAILS_ENV=production RAILS_LOG_TO_STDOUT=1 RAILS_SERVE_STATIC_FILES=1',
+      ...(sqliteProd ? ['ENV DATABASE_URL="sqlite3:storage/production.sqlite3"', 'RUN mkdir -p storage'] : []),
       '# Assets with a throwaway key; the real SECRET_KEY_BASE / RAILS_MASTER_KEY comes from the environment at run time.',
       'RUN if [ -d app/assets ] || [ -f config/importmap.rb ]; then SECRET_KEY_BASE_DUMMY=1 bin/rails assets:precompile; fi',
       `ENV PORT=${port}`,
