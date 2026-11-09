@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -18,7 +19,21 @@ import { githubJson } from './github';
  * On Windows: bun-windows-x64.zip, bun.exe with a bunx.exe copy beside it.
  */
 const RELEASES = '/repos/oven-sh/bun/releases?per_page=30';
-const ASSET = isWin ? 'bun-windows-x64' : `bun-${isLinux ? 'linux' : 'darwin'}-${process.arch === 'arm64' ? 'aarch64' : 'x64'}`;
+/**
+ * Bun's x64 builds need AVX2; CPUs without it (Intel Macs before 2013, Rosetta 2, some Linux / Windows machines) take
+ * the `-baseline` build, or bun crashes on its first instruction and the install fails with an empty version.
+ */
+function hasAvx2(): boolean {
+  if (process.arch !== 'x64') return true;
+  try {
+    if (isLinux) return /\bavx2\b/.test(readFileSync('/proc/cpuinfo', 'utf8'));
+    if (isWin) return true; // checked by the version test below; Windows x64 PCs without AVX2 are rare
+    return execFileSync('/usr/sbin/sysctl', ['-n', 'hw.optional.avx2_0'], { encoding: 'utf8', timeout: 5000 }).trim() === '1';
+  } catch {
+    return false;
+  }
+}
+const ASSET = `${isWin ? 'bun-windows-x64' : `bun-${isLinux ? 'linux' : 'darwin'}-${process.arch === 'arm64' ? 'aarch64' : 'x64'}`}${hasAvx2() ? '' : '-baseline'}`;
 
 export const bunDir = () => {
   const d = dataDir('bun');
@@ -107,7 +122,8 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
     // `bunx` is the same binary under another name, as the official installer does (a copy on Windows: no symlinks).
     if (isWin) copyFileSync(join(target, 'bun.exe'), join(target, 'bunx.exe'));
     else symlinkSync('bun', join(target, 'bunx'));
-    const check = await run(join(target, exe('bun')), ['--version'], { timeout: 10_000 });
+    // A long first run is normal under Rosetta 2 (it translates the whole binary) and on a slow disk.
+    const check = await run(join(target, exe('bun')), ['--version'], { timeout: 90_000 });
     if (check.stdout.trim() !== version) {
       rmSync(target, { recursive: true, force: true });
       throw new Error(`Installed binary reports ${check.stdout.trim() || check.stderr.trim()}`);
