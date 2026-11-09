@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -7,7 +7,8 @@ import type { DbBinary, DbEngine, DbServiceConfig, TaskProgress } from '@shared/
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { brewBin } from './php';
-import { exe, isWin, moveDir, removeTemp, TAR } from './platform';
+import { exe, isLinux, isWin, moveDir, removeTemp, TAR } from './platform';
+import { runAsRootLinux } from './linuxadmin';
 import { dataDir } from './store';
 import { githubJson } from './github';
 
@@ -176,10 +177,10 @@ async function fetchTarball(b: RemoteBuild, dest: string, step: Step, signal: Ab
     if (b.hash && digest !== b.hash.toLowerCase()) throw new Error(`Checksum mismatch (expected ${b.hash.slice(0, 12)}…, got ${digest.slice(0, 12)}…); download discarded`);
     step('Unpacking', { detail: dest });
     // Windows' bsdtar reads the .zip builds too.
-    const r = await run(TAR, [isWin ? '-xf' : '-xzf', archive, '-C', tmp, '--strip-components=1', ...exclude.flatMap((x) => ['--exclude', x])], { timeout: 600_000 });
+    const r = await run(TAR, ['-xf', archive, '-C', tmp, '--strip-components=1', ...exclude.flatMap((x) => ['--exclude', x])], { timeout: 600_000 });
     if (r.code !== 0) throw new Error(`Unpacking failed: ${r.stderr.trim()}`);
     check(signal);
-    if (!isWin) await run('xattr', ['-dr', 'com.apple.quarantine', tmp]);
+    if (!isWin && !isLinux) await run('xattr', ['-dr', 'com.apple.quarantine', tmp]);
     rmSync(dest, { recursive: true, force: true });
     await moveDir(tmp, dest);
   } finally {
@@ -254,11 +255,51 @@ const mysqlShutdown = async (c: DbServiceConfig, root: string) => {
   await client(mysqlClient(root), [...mysqlClientArgs(c), '-e', 'SHUTDOWN'], { MYSQL_PWD: c.password });
 };
 
+/**
+ * Linux: MySQL's generic build needs libaio and libnuma from the system. Ubuntu 24.04 renamed libaio to libaio1t64
+ * (libaio.so.1t64), which mysqld does not look for: the package comes through the password dialog, and a
+ * libaio.so.1 link goes into the build's own lib/private (on its RUNPATH), so nothing in the system changes.
+ */
+async function mysqlLinuxLibraries(root: string, step: Step): Promise<void> {
+  const missing = async () => {
+    const r = await run('ldd', [binOf(root, 'mysqld')], { timeout: 20_000 });
+    return [...r.stdout.matchAll(/^\s*(\S+) => not found/gm)].map((m) => m[1]);
+  };
+  let libs = await missing();
+  if (!libs.length) return;
+  const triplet = `${arch ? 'aarch64' : 'x86_64'}-linux-gnu`;
+  const libDir = [`/usr/lib/${triplet}`, `/lib/${triplet}`, '/usr/lib64', '/usr/lib'].find((d) => existsSync(d)) ?? '/usr/lib';
+  const pkgs = new Set<string>();
+  for (const l of libs) {
+    if (l.startsWith('libaio')) pkgs.add('libaio1t64 libaio1');
+    else if (l.startsWith('libnuma')) pkgs.add('libnuma1');
+  }
+  if (pkgs.size && !(libs.every((l) => l.startsWith('libaio')) && existsSync(join(libDir, 'libaio.so.1t64')))) {
+    step('Unpacking', { detail: `Installing ${[...pkgs].join(', ')} (password)` });
+    // apt: whichever libaio the release has (t64 on Ubuntu 24.04+ / Debian 13, plain before); dnf: libaio / numactl-libs.
+    await runAsRootLinux(
+      `if command -v apt-get >/dev/null 2>&1; then for p in ${[...pkgs].join(' ')}; do DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$p" >/dev/null 2>&1 || true; done; elif command -v dnf >/dev/null 2>&1; then dnf install -y -q libaio numactl-libs >/dev/null; fi`,
+    );
+  }
+  if (libs.some((l) => l === 'libaio.so.1') && existsSync(join(libDir, 'libaio.so.1t64'))) {
+    const priv = join(root, 'lib', 'private');
+    mkdirSync(priv, { recursive: true });
+    rmSync(join(priv, 'libaio.so.1'), { force: true });
+    symlinkSync(join(libDir, 'libaio.so.1t64'), join(priv, 'libaio.so.1'));
+  }
+  libs = await missing();
+  if (libs.length) throw new Error(`MySQL needs ${libs.join(', ')} from your package manager (e.g. sudo apt install libaio1t64 libnuma1)`);
+}
+
 const mysql: EngineDef = {
   name: 'MySQL',
-  description: `Oracle’s MySQL Community Server; official ${isWin ? 'Windows' : 'macOS'} builds.`,
+  description: `Oracle’s MySQL Community Server; official ${isWin ? 'Windows' : isLinux ? 'Linux (glibc)' : 'macOS'} builds.`,
   defaultPort: 3306,
-  sourceNote: isWin ? 'Official Windows x64 ZIP from cdn.mysql.com (MD5 from the CDN)' : 'Official macOS tarball from cdn.mysql.com (MD5 from the CDN)',
+  sourceNote: isWin
+    ? 'Official Windows x64 ZIP from cdn.mysql.com (MD5 from the CDN)'
+    : isLinux
+      ? 'Official Linux generic tarball (glibc 2.28) from cdn.mysql.com (MD5 from the CDN)'
+      : 'Official macOS tarball from cdn.mysql.com (MD5 from the CDN)',
   sourceUrl: 'https://dev.mysql.com/downloads/mysql/',
   async builds() {
     return cached('mysql', async () => {
@@ -290,6 +331,23 @@ const mysql: EngineDef = {
         return dest;
       }
       throw new Error(`No Windows build of MySQL ${b.version} on cdn.mysql.com`);
+    }
+    if (isLinux) {
+      // The generic glibc 2.28 tarballs (.tar.xz): x86_64 has a -minimal one (~80 MB, no debug binaries); aarch64 only
+      // the full one (~800 MB), whose test suite and debug build are left out when unpacking.
+      const cpu = arch ? 'aarch64' : 'x86_64';
+      step('Finding the build', { detail: `MySQL ${b.version} for Linux ${cpu}` });
+      for (const file of [`mysql-${b.version}-linux-glibc2.28-${cpu}-minimal.tar.xz`, `mysql-${b.version}-linux-glibc2.28-${cpu}.tar.xz`]) {
+        for (const url of [`https://cdn.mysql.com/Downloads/MySQL-${minor(b.version)}/${file}`, `https://cdn.mysql.com/archives/mysql-${minor(b.version)}/${file}`]) {
+          const res = await fetch(url, { method: 'HEAD', signal }).catch(() => null);
+          if (!res?.ok) continue;
+          const md5 = res.headers.get('etag')?.match(/^"?([a-f0-9]{32})/)?.[1];
+          await fetchTarball({ ...b, url, hash: md5, algo: 'md5' }, dest, step, signal, ['*/mysql-test', '*/bin/mysqld-debug', '*/lib/plugin/debug']);
+          await mysqlLinuxLibraries(dest, step);
+          return dest;
+        }
+      }
+      throw new Error(`No Linux ${cpu} build of MySQL ${b.version} on cdn.mysql.com`);
     }
     step('Finding the build', { detail: `MySQL ${b.version} for macOS ${arch ? 'arm64' : 'x86_64'}` });
     // The tarball is named after the macOS it was built on.
@@ -359,6 +417,7 @@ interface MariaFile {
 }
 
 /** Windows: the official winx64 ZIPs, newest stable release of each supported line (MariaDB's REST API, SHA-256). */
+/** MariaDB's own downloads: Windows x64 ZIPs, or the Linux x86_64 "systemd" bintars (no aarch64 bintar is published). */
 async function mariadbWindowsBuilds(): Promise<RemoteBuild[]> {
   const api = 'https://downloads.mariadb.org/rest-api/mariadb';
   const { major_releases } = await json<{ major_releases: MariaRelease[] }>(`${api}/`);
@@ -370,7 +429,7 @@ async function mariadbWindowsBuilds(): Promise<RemoteBuild[]> {
   for (const line of pick) {
     const d = await json<{ releases: Record<string, { files: MariaFile[] }> }>(`${api}/${line.release_id}/latest/`).catch(() => null);
     for (const [version, rel] of Object.entries(d?.releases ?? {})) {
-      const zip = rel.files.find((f) => f.file_name === `mariadb-${version}-winx64.zip`);
+      const zip = rel.files.find((f) => f.file_name === (isLinux ? `mariadb-${version}-linux-systemd-x86_64.tar.gz` : `mariadb-${version}-winx64.zip`));
       if (!zip) continue;
       const lts = /long term/i.test(line.release_support_type ?? '');
       out.push({ version, label: `${line.release_id}${lts ? ' LTS' : ''}`, source: 'download', url: zip.file_download_url.replace(/^http:/, 'https:'), hash: zip.checksum.sha256sum, algo: 'sha256' });
@@ -386,14 +445,18 @@ const mariadb: EngineDef = {
   defaultPort: 3306,
   sourceNote: isWin
     ? 'Official Windows x64 ZIP from downloads.mariadb.org (SHA-256)'
-    : 'Homebrew (MariaDB publishes no macOS builds); runs with DevCatz’s own data folder and port',
-  sourceUrl: isWin ? 'https://mariadb.org/download/' : 'https://formulae.brew.sh/formula/mariadb',
+    : isLinux
+      ? 'Official Linux x86_64 tarball from downloads.mariadb.org (SHA-256); none is published for ARM64'
+      : 'Homebrew (MariaDB publishes no macOS builds); runs with DevCatz’s own data folder and port',
+  sourceUrl: isWin || isLinux ? 'https://mariadb.org/download/' : 'https://formulae.brew.sh/formula/mariadb',
   async requirement() {
     if (isWin) return null;
+    if (isLinux) return arch ? 'MariaDB publishes no Linux ARM64 build: install mariadb-server with your package manager, or use MySQL here.' : null;
     return brewBin() ? null : 'MariaDB comes from Homebrew. Install Homebrew from https://brew.sh first.';
   },
   async builds() {
     if (isWin) return cached('mariadb-win', mariadbWindowsBuilds);
+    if (isLinux) return cached('mariadb-linux', mariadbWindowsBuilds);
     return cached('mariadb', async () => {
       const out: RemoteBuild[] = [];
       for (const [formula, tag] of MARIADB_FORMULAS) {
@@ -404,9 +467,9 @@ const mariadb: EngineDef = {
       return out;
     });
   },
-  installSteps: () => (isWin ? DOWNLOAD_STEPS : ['Installing with Homebrew', 'Checking the version']),
+  installSteps: () => (isWin || isLinux ? DOWNLOAD_STEPS : ['Installing with Homebrew', 'Checking the version']),
   async install(b, dest, step, signal) {
-    if (isWin) {
+    if (isWin || isLinux) {
       await fetchTarball(b, dest, step, signal);
       return dest;
     }
@@ -471,7 +534,7 @@ const mariadb: EngineDef = {
 
 // ------------------------------------------------------------------ PostgreSQL
 
-const PG_TRIPLE = isWin ? 'x86_64-pc-windows-msvc' : `${arch ? 'aarch64' : 'x86_64'}-apple-darwin`;
+const PG_TRIPLE = isWin ? 'x86_64-pc-windows-msvc' : `${arch ? 'aarch64' : 'x86_64'}-${isLinux ? 'unknown-linux-gnu' : 'apple-darwin'}`;
 export const psqlArgs = (c: DbServiceConfig, db = 'postgres') => ['-h', '127.0.0.1', '-p', String(c.port), '-U', c.user || 'root', '-d', db, '-v', 'ON_ERROR_STOP=1', '-X'];
 
 /**
@@ -628,8 +691,12 @@ function keyValue(o: { exe: 'redis' | 'valkey'; name: string; description: strin
     sourceUrl: isWin ? (o.exe === 'redis' ? 'https://github.com/redis-windows/redis-windows' : 'https://github.com/SamuelMarks/valkey-windows') : o.sourceUrl,
     async requirement() {
       if (isWin) return winBuilds ? null : `${notOnWindows(o.name)} Use Redis instead: Valkey speaks the same protocol.`;
-      if (cltOk === null) cltOk = (await run('xcode-select', ['-p'])).code === 0;
-      return cltOk ? null : `${o.name} is compiled from source and needs the Xcode Command Line Tools: run \`xcode-select --install\` in Terminal.`;
+      // Linux: a C compiler and make (build-essential); macOS: the Xcode Command Line Tools.
+      if (cltOk === null) cltOk = isLinux ? (await run('which', ['cc'])).code === 0 && (await run('which', ['make'])).code === 0 : (await run('xcode-select', ['-p'])).code === 0;
+      if (cltOk) return null;
+      return isLinux
+        ? `${o.name} is compiled from source and needs a C compiler and make: run \`sudo apt install build-essential\` (Fedora: \`sudo dnf install gcc make\`) in a terminal.`
+        : `${o.name} is compiled from source and needs the Xcode Command Line Tools: run \`xcode-select --install\` in Terminal.`;
     },
     async builds() {
       if (isWin) {
@@ -737,11 +804,12 @@ const mongodb: EngineDef = {
   sourceUrl: 'https://www.mongodb.com/try/download/community',
   async builds() {
     // Windows: the same release list; its `windows` x86_64 ZIPs (mongodb-win32-x86_64-windows-<v>/bin/mongod.exe).
-    return cached(isWin ? 'mongodb-win' : 'mongodb', async () => {
+    return cached(isWin ? 'mongodb-win' : isLinux ? 'mongodb-linux' : 'mongodb', async () => {
       const d = await json<{ versions: MongoRelease[] }>('https://downloads.mongodb.org/full.json');
       const all: RemoteBuild[] = [];
-      const target = isWin ? 'windows' : 'macos';
-      const cpu = isWin ? 'x86_64' : arch ? 'arm64' : 'x86_64';
+      // Linux builds are per distribution: ubuntu2404, debian12 … (from /etc/os-release), Ubuntu 22.04's as the fallback.
+      const target = isWin ? 'windows' : isLinux ? linuxDistroTarget() : 'macos';
+      const cpu = isWin ? 'x86_64' : arch ? (isLinux ? 'aarch64' : 'arm64') : 'x86_64';
       for (const v of d.versions) {
         if (!v.production_release || Number(major(v.version)) < 6) continue;
         const dl = v.downloads.find((x) => x.target === target && x.arch === cpu && (x.edition === 'base' || x.edition === 'targeted'));
@@ -772,10 +840,20 @@ const mongodb: EngineDef = {
   // DevCatz ends the process tree; the WiredTiger journal recovers on the next start.
 };
 
+/** MongoDB's Linux build target for this distribution (`ubuntu2404`, `debian12` …). */
+function linuxDistroTarget(): string {
+  const os = readFileSync('/etc/os-release', 'utf8');
+  const id = os.match(/^ID=["']?([\w.-]+)/m)?.[1] ?? '';
+  const ver = os.match(/^VERSION_ID=["']?([\d.]+)/m)?.[1] ?? '';
+  if (id === 'ubuntu' && ver) return `ubuntu${ver.replace('.', '')}`;
+  if (id === 'debian' && ver) return `debian${ver.split('.')[0]}`;
+  return 'ubuntu2204';
+}
+
 // ------------------------------------------------------------------ Elasticsearch
 
 /** The build's platform suffix: `darwin-aarch64.tar.gz`, `windows-x86_64.zip`. */
-const ES_TARGET = isWin ? 'windows-x86_64.zip' : `darwin-${arch ? 'aarch64' : 'x86_64'}.tar.gz`;
+const ES_TARGET = isWin ? 'windows-x86_64.zip' : `${isLinux ? 'linux' : 'darwin'}-${arch ? 'aarch64' : 'x86_64'}.tar.gz`;
 /** Per-instance ES_PATH_CONF, outside the data folder (Elasticsearch 9 refuses a config folder inside path.data). */
 const esConf = (c: DbServiceConfig) => dataDir('db-services', 'config', c.id);
 const elasticsearch: EngineDef = {
@@ -787,7 +865,7 @@ const elasticsearch: EngineDef = {
     : 'Official builds from artifacts.elastic.co with the bundled JDK (SHA-512)',
   sourceUrl: 'https://www.elastic.co/downloads/elasticsearch',
   async builds() {
-    return cached(isWin ? 'elasticsearch-win' : 'elasticsearch', async () => {
+    return cached(isWin ? 'elasticsearch-win' : isLinux ? 'elasticsearch-linux' : 'elasticsearch', async () => {
       const tags: string[] = [];
       const pages = await Promise.all(
         [1, 2].map((page) =>
@@ -856,17 +934,18 @@ const sqlite: EngineDef = {
   name: 'SQLite',
   description: 'File databases in a folder; no server to run.',
   defaultPort: 0,
-  sourceNote: isWin ? 'Built into DevCatz; nothing to install' : 'The sqlite3 that ships with macOS',
+  // Windows / Linux: Node's own SQLite inside DevCatz (a fresh Ubuntu has no sqlite3 program).
+  sourceNote: isWin || isLinux ? 'Built into DevCatz; nothing to install' : 'The sqlite3 that ships with macOS',
   async builds() {
     const v = await sqlite.version(SQLITE_ROOT);
-    return [{ version: v ?? 'system', label: isWin ? 'Built in' : 'macOS built-in', source: 'system' }];
+    return [{ version: v ?? 'system', label: isWin || isLinux ? 'Built in' : 'macOS built-in', source: 'system' }];
   },
   installSteps: () => [],
   async install() {
     return SQLITE_ROOT;
   },
   async version(root) {
-    if (isWin) {
+    if (isWin || isLinux) {
       const db = new DatabaseSync(':memory:');
       try {
         return (db.prepare('SELECT sqlite_version() AS v').get() as { v: string }).v;
