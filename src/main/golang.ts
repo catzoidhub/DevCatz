@@ -4,7 +4,7 @@ import type { GoChoice, InstalledGo, RemoteGo, RuntimeInstallProgress } from '@s
 import { downloadVerified } from './download';
 import { run } from './env';
 import { compare, shimDir, writeCmdShim } from './node';
-import { exe, isWin, moveDir, removeTemp, TAR } from './platform';
+import { exe, isLinux, isWin, moveDir, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 
 /**
@@ -16,7 +16,7 @@ import { dataDir } from './store';
  */
 const FEED = 'https://go.dev/dl/?mode=json&include=all';
 const ARCH = process.arch === 'arm64' ? 'arm64' : 'amd64';
-const OS = isWin ? 'windows' : 'darwin';
+const OS = isWin ? 'windows' : isLinux ? 'linux' : 'darwin';
 const VERSION = /^\d+\.\d+(\.\d+)?$/;
 
 export const goDir = () => {
@@ -70,7 +70,7 @@ export async function listInstalled(): Promise<InstalledGo[]> {
   }
   const candidates = isWin
     ? [join(process.env.ProgramFiles || 'C:\\Program Files', 'Go', 'bin', 'go.exe')]
-    : ['/opt/homebrew/bin/go', '/usr/local/go/bin/go', '/usr/local/bin/go'];
+    : ['/opt/homebrew/bin/go', '/usr/local/go/bin/go', '/usr/local/bin/go', ...(isLinux ? ['/usr/bin/go', '/usr/lib/go/bin/go', '/snap/bin/go'] : [])];
   if (isWin) {
     // `where` lists every match; the first real go.exe outside our shim folder.
     const { code, stdout } = await run('where', ['go'], { timeout: 3000 });
@@ -98,7 +98,7 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
   if (existsSync(join(target, 'go', 'bin', exe('go')))) return;
   const release = (await feed()).find((r) => r.version === `go${version}`);
   const file = release?.files.find((f) => f.os === OS && f.arch === ARCH && f.kind === 'archive');
-  if (!file) throw new Error(`No ${isWin ? 'Windows' : 'macOS'} ${ARCH} build of Go ${version}`);
+  if (!file) throw new Error(`No ${isWin ? 'Windows' : isLinux ? 'Linux' : 'macOS'} ${ARCH} build of Go ${version}`);
   const tmp = join(goDir(), `.tmp-${version}-${Date.now()}`);
   mkdirSync(tmp, { recursive: true });
   try {

@@ -9,7 +9,7 @@ import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { compare } from './node';
 import { newer } from './tools';
-import { exe, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
+import { exe, isLinux, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
 import { dataDir } from './store';
 import { githubJson } from './github';
 
@@ -22,7 +22,9 @@ import { githubJson } from './github';
  * (through avm) for Anchor programs come from their own installers.
  */
 
-const TRIPLE = isWin ? 'x86_64-pc-windows-msvc' : process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
+const TRIPLE = isWin
+  ? 'x86_64-pc-windows-msvc'
+  : `${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-${isLinux ? 'unknown-linux-gnu' : 'apple-darwin'}`;
 export const WASM_TARGET = 'wasm32-unknown-unknown';
 
 export const cargoHome = () => process.env.CARGO_HOME || join(homedir(), '.cargo');
@@ -84,10 +86,12 @@ const vswhere = () => join(process.env['ProgramFiles(x86)'] || 'C:\\Program File
 
 /**
  * Rust programs need a linker: on macOS the Xcode Command Line Tools', on Windows MSVC's (link.exe from Visual
- * Studio or its Build Tools with the C++ tools) — without it every build fails.
+ * Studio or its Build Tools with the C++ tools), on Linux the system's C compiler (`cc`, build-essential) — without
+ * it every build fails.
  */
 export async function linkerMissing(arm = false): Promise<boolean> {
   if (isWin) return !(await vsWithCpp(arm));
+  if (isLinux) return (await run('which', ['cc'], { timeout: 10_000 })).code !== 0;
 
   return (await run('xcode-select', ['-p'], { timeout: 10_000 })).code !== 0;
 }

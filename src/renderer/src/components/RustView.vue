@@ -6,7 +6,7 @@ import { STACK_ICONS } from '../stackicons';
 import { attempt, herd, notify, state, runtimeTabRequest, askConfirm } from '../store';
 import CatMood from './CatMood.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 import GitConnectButton from './GitConnectButton.vue';
 
 /**
@@ -124,6 +124,12 @@ async function checkTools() {
         </div>
       </div>
       <button class="btn btn-sm btn-primary shrink-0" :disabled="!!busy" @click="installLinker">Install Build Tools</button>
+    </div>
+    <div v-else-if="b.linkerMissing && isLinux" role="alert" class="alert alert-warning flex flex-wrap"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />
+      <div class="min-w-48 flex-1">
+        <div class="font-medium">A C compiler is missing</div>
+        <div class="text-xs opacity-80">Rust links programs with the system's linker: run <code class="selectable">sudo apt install build-essential</code> (Fedora: <code class="selectable">sudo dnf install gcc</code>) in a terminal, then come back.</div>
+      </div>
     </div>
     <div v-else-if="b.linkerMissing" role="alert" class="alert alert-warning flex flex-wrap"><CatMood mood="warning" class="size-7 shrink-0 -my-0.5" />
       <div class="min-w-48 flex-1">

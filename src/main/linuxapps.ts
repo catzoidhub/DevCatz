@@ -272,3 +272,10 @@ export async function openLinuxTerminal(dir: string): Promise<boolean> {
   }
   return false;
 }
+
+/** Unpacks a .zip on Linux: `unzip` when there, else Python's zipfile (one of the two is on nearly every system). */
+export async function unzipLinux(archive: string, dir: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  if ((await run('which', ['unzip'], { timeout: 3000 })).code === 0) return run('unzip', ['-q', '-o', archive, '-d', dir], { timeout: 120_000 });
+  if ((await run('which', ['python3'], { timeout: 3000 })).code === 0) return run('python3', ['-m', 'zipfile', '-e', archive, dir], { timeout: 120_000 });
+  return { code: 1, stdout: '', stderr: 'neither unzip nor python3 is installed (sudo apt install unzip)' };
+}

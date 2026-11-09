@@ -4,7 +4,8 @@ import type { InstalledPython, PythonChoice, RemotePython, RuntimeInstallProgres
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { compare, shimDir, writeCmdShim } from './node';
-import { exe, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
+import { exe, isLinux, isWin, joinPath, pathKey, removeTemp, TAR } from './platform';
+import { words } from '@shared/platform';
 import { dataDir } from './store';
 import { githubJson } from './github';
 
@@ -58,12 +59,14 @@ export async function uvVersion(): Promise<string | null> {
 
 /** Downloads uv (and uvx) from its latest GitHub release, checksum-verified. */
 export async function installUv(progress: (p: RuntimeInstallProgress) => void): Promise<string> {
-  const triple = isWin ? 'x86_64-pc-windows-msvc' : process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
+  const triple = isWin
+    ? 'x86_64-pc-windows-msvc'
+    : `${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-${isLinux ? 'unknown-linux-gnu' : 'apple-darwin'}`;
   // Windows builds are zips with uv.exe / uvx.exe at the root; macOS ones a tarball with a top folder.
   const ext = isWin ? 'zip' : 'tar.gz';
   const rel = await githubJson<{ tag_name: string; assets: { name: string; browser_download_url: string; digest?: string }[] }>('/repos/astral-sh/uv/releases/latest');
   const asset = rel.assets.find((a) => a.name === `uv-${triple}.${ext}`);
-  if (!asset?.digest?.startsWith('sha256:')) throw new Error(`No uv build with a checksum for this ${isWin ? 'PC' : 'Mac'}`);
+  if (!asset?.digest?.startsWith('sha256:')) throw new Error(`No uv build with a checksum for this ${words.computer}`);
   const tmp = join(pythonDir(), `.uv-${Date.now()}`);
   mkdirSync(tmp, { recursive: true });
   try {

@@ -1,11 +1,12 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { BunChoice, InstalledBun, RemoteBun, RuntimeInstallProgress } from '@shared/types';
 import { checksumFor, downloadVerified } from './download';
 import { run } from './env';
 import { compare, shimDir, writeCmdShim } from './node';
-import { exe, isWin, removeTemp, TAR } from './platform';
+import { exe, isLinux, isWin, removeTemp, TAR } from './platform';
+import { unzipLinux } from './linuxapps';
 import { dataDir } from './store';
 import { githubJson } from './github';
 
@@ -17,7 +18,7 @@ import { githubJson } from './github';
  * On Windows: bun-windows-x64.zip, bun.exe with a bunx.exe copy beside it.
  */
 const RELEASES = '/repos/oven-sh/bun/releases?per_page=30';
-const ASSET = isWin ? 'bun-windows-x64' : `bun-darwin-${process.arch === 'arm64' ? 'aarch64' : 'x64'}`;
+const ASSET = isWin ? 'bun-windows-x64' : `bun-${isLinux ? 'linux' : 'darwin'}-${process.arch === 'arm64' ? 'aarch64' : 'x64'}`;
 
 export const bunDir = () => {
   const d = dataDir('bun');
@@ -52,7 +53,7 @@ export async function listInstalled(): Promise<InstalledBun[]> {
     /* none yet */
   }
   // The user's own Bun: ~/.bun/bin (official installer) or whatever the login shell finds.
-  const candidates = isWin ? [join(homedir(), '.bun', 'bin', 'bun.exe')] : [join(homedir(), '.bun/bin/bun'), '/opt/homebrew/bin/bun', '/usr/local/bin/bun'];
+  const candidates = isWin ? [join(homedir(), '.bun', 'bin', 'bun.exe')] : [join(homedir(), '.bun/bin/bun'), '/opt/homebrew/bin/bun', '/usr/local/bin/bun', ...(isLinux ? ['/usr/bin/bun'] : [])];
   if (isWin) {
     // `where` lists every match; the first real bun.exe outside our shim folder.
     const { code, stdout } = await run('where', ['bun'], { timeout: 3000 });
@@ -95,10 +96,14 @@ export async function install(version: string, progress: (p: RuntimeInstallProgr
     // Windows 10+ ships bsdtar as tar.exe, which unpacks zips (no ditto there).
     const { code, stderr } = isWin
       ? await run(TAR, ['-xf', archive, '-C', tmp], { timeout: 120_000 })
-      : await run('/usr/bin/ditto', ['-x', '-k', archive, tmp], { timeout: 120_000 });
+      : isLinux
+        ? await unzipLinux(archive, tmp)
+        : await run('/usr/bin/ditto', ['-x', '-k', archive, tmp], { timeout: 120_000 });
     if (code !== 0) throw new Error(`unzip: ${stderr.trim()}`);
     mkdirSync(target, { recursive: true });
     renameSync(join(tmp, ASSET, exe('bun')), join(target, exe('bun')));
+    // Python's zipfile (Linux without unzip) drops the executable bit.
+    if (!isWin) chmodSync(join(target, 'bun'), 0o755);
     // `bunx` is the same binary under another name, as the official installer does (a copy on Windows: no symlinks).
     if (isWin) copyFileSync(join(target, 'bun.exe'), join(target, 'bunx.exe'));
     else symlinkSync('bun', join(target, 'bunx'));
