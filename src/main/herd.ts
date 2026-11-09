@@ -2886,10 +2886,17 @@ export class Herd extends EventEmitter {
       const inst = this.installedRubies.find((i) => i.version === rb.version);
       if (inst) dirs.unshift(inst.binDir);
     }
+    // macOS: Homebrew's newest OpenSSL (4) is what pkg-config finds, and the openssl gem does not build against it yet;
+    // native gems (openssl, via Falcon / async-http …) build against Homebrew's OpenSSL 3 when it is there.
+    let rubyEnv: Record<string, string> = {};
+    if ((stackNow?.runtime === 'ruby' || stackNow?.subRuntimes?.includes('ruby')) && !isWin && !isLinux) {
+      const ssl3 = ['/opt/homebrew/opt/openssl@3', '/usr/local/opt/openssl@3'].find((d) => existsSync(d));
+      if (ssl3) rubyEnv = { BUNDLE_BUILD__OPENSSL: `--with-openssl-dir=${ssl3}` };
+    }
     // Tools installed on the Runtimes pages (pnpm, air, swag, poetry …), after the site's own runtimes.
     dirs.push(...tools.toolPathDirs());
     // The site's Redis DB index (any stack).
-    const extra = { ...phpEnv, ...pyEnv, ...(this.redisEnv.get(p.id) ?? {}) };
+    const extra = { ...phpEnv, ...pyEnv, ...rubyEnv, ...(this.redisEnv.get(p.id) ?? {}) };
     if (!dirs.length) return extra;
     // `Path` with `;` on Windows, `PATH` with `:` on macOS.
     const key = pathKey(getShellEnv());
