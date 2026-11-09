@@ -12,6 +12,7 @@ import { dataDir, store, tld } from './store';
 import { exe, removeTemp, isLinux, isWin, TAR } from './platform';
 import { unzipLinux } from './linuxapps';
 import { githubJson } from './github';
+import { brewBin } from './php';
 
 /**
  * Local S3-compatible object storage, one instance per kind: RustFS, MinIO and
@@ -78,6 +79,28 @@ export async function githubAsset(repo: string, match: RegExp, perPage = 100): P
   const found = pick(false) ?? pick(true);
   if (found) return found;
   throw new Error(`No ${isWin ? 'Windows' : isLinux ? 'Linux' : 'macOS'} build with a checksum found in ${repo} releases`);
+}
+
+/**
+ * macOS: a downloaded binary that links Homebrew libraries (/usr/local/opt/<formula>/…, /opt/homebrew/opt/<formula>/…)
+ * gets the missing formulas through Homebrew (user, 2026-11-09: RustFS's last Intel build needs xz), as MariaDB comes
+ * from Homebrew on a Mac; without Homebrew the message says what to install.
+ */
+async function homebrewLibraries(bin: string, progress: Report): Promise<void> {
+  const r = await run('otool', ['-L', bin], { timeout: 20_000 });
+  const libs = [...r.stdout.matchAll(/^\s+((?:\/usr\/local|\/opt\/homebrew)\/opt\/([\w@.+-]+)\/\S+)/gm)].filter((m) => !existsSync(m[1]));
+  const missing = [...new Set(libs.map((m) => m[2]))];
+  if (!missing.length) return;
+  const brew = brewBin();
+  if (!brew) throw new Error(`This build needs ${missing.join(', ')} from Homebrew: install Homebrew (https://brew.sh), then Install again`);
+  for (const formula of missing) {
+    progress({ detail: `brew install ${formula}` });
+    const b = await run(brew, ['install', formula], { timeout: 900_000, env: { HOMEBREW_NO_AUTO_UPDATE: '1', NONINTERACTIVE: '1', HOMEBREW_NO_ENV_HINTS: '1' } });
+    if (b.code !== 0) throw new Error(`brew install ${formula} failed: ${(b.stderr || b.stdout).trim().split('\n').slice(-3).join(' ')}`);
+  }
+  // A Homebrew in the other prefix (Apple silicon's /opt/homebrew for an Intel build) does not provide /usr/local/opt.
+  const still = libs.map((m) => m[1]).filter((f) => !existsSync(f));
+  if (still.length) throw new Error(`This build needs ${still.join(', ')}: Homebrew for this Mac's processor (${still[0].startsWith('/usr/local') ? 'Intel, in /usr/local' : 'Apple silicon, in /opt/homebrew'}) has to provide it`);
 }
 
 async function unpack(archive: string, into: string): Promise<void> {
@@ -236,6 +259,8 @@ export const ENGINES: Record<StorageKind, Engine> = {
       const a = await githubAsset('rustfs/rustfs', RUSTFS_ASSET);
       check(signal);
       await installFrom(a.url, a.sha256, dir, 'rustfs', `RustFS ${a.tag}`, progress, signal);
+      // The last Intel macOS builds (1.0.0-beta) link Homebrew's xz (/usr/local/opt/xz/lib/liblzma.5.dylib).
+      if (!isWin && !isLinux) await homebrewLibraries(join(dir, exe('rustfs')), progress);
     },
     specs: (c, bin) => [
       {
