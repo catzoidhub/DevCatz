@@ -36,8 +36,10 @@ import { words } from '@shared/platform';
 
 app.setName('DevCatz');
 
+// A second process (a devcatz:// link on Linux / Windows, a second launch) hands its arguments to the running one through
+// 'second-instance' and leaves at once: app.quit() let it reach whenReady and flash a window of its own (found by DBCatz).
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  app.exit(0);
 }
 
 const RESOURCES = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources');
