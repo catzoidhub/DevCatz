@@ -5,6 +5,14 @@ import { homedir, release } from 'node:os';
 import type { ReportKind, ReportPreview, ReportShot, ReportsState } from '@shared/types';
 import { siteBase } from './shared';
 import { dataDir, store } from './store';
+import { isLinux, isWin } from './platform';
+
+/**
+ * The build a report comes from, as the download pages name it (mac-arm64 | mac-x64 | win-x64). Linux has no
+ * download yet, so it sends none: the site only accepts its catalog's platforms (Catzoid reports.KnownPlatform).
+ */
+const PLATFORM = isWin ? 'win-x64' : isLinux ? undefined : process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64';
+const OS = isWin ? 'windows' : isLinux ? 'linux' : 'macos';
 
 /**
  * Reports to the Catzoid site (Catzoid family #65, the in-app side of #28):
@@ -31,10 +39,10 @@ interface Body {
   app: 'devcatz';
   version: string;
   channel: string;
-  os: 'macos';
+  os: 'macos' | 'windows' | 'linux';
   osVersion: string;
   arch: string;
-  platform: string;
+  platform?: string;
   message: string;
   stack?: string;
   log?: string;
@@ -132,7 +140,7 @@ export class Reports {
         submitURL: `${siteBase()}/api/reports/minidump`,
         uploadToServer: store.settings.crashReports,
         compress: true,
-        globalExtra: { app: 'devcatz', _productName: 'DevCatz', platform: process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64', channel: this.channel() },
+        globalExtra: { app: 'devcatz', _productName: 'DevCatz', ...(PLATFORM ? { platform: PLATFORM } : {}), os: OS, channel: this.channel() },
       });
     } catch (e) {
       console.warn('crashReporter:', (e as Error).message);
@@ -165,10 +173,10 @@ export class Reports {
       app: 'devcatz',
       version: app.getVersion(),
       channel: this.channel(),
-      os: 'macos',
+      os: OS,
       osVersion: process.getSystemVersion?.() ?? release(),
       arch: process.arch,
-      platform: process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64',
+      platform: PLATFORM,
       message,
       installId: this.installId(),
     };
