@@ -198,7 +198,11 @@ export async function offerAppImageInstall(resources: string): Promise<boolean> 
     // Every inherited descriptor above stderr is closed first: one into the old AppImage's mount (app.asar) kept that
     // mount alive until the new DevCatz quit.
     const args = process.argv.slice(1).filter((x) => !x.startsWith('--appimage') && x !== '--no-sandbox');
-    spawn('/bin/sh', ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.2; done; for fd in $(ls /proc/$$/fd); do [ "$fd" -gt 2 ] && eval "exec $fd>&-"; done; exec "$0" "$@"`, target, ...args], { detached: true, stdio: ['ignore', log, log], env, cwd: homedir() }).unref();
+    // bash: dash (Ubuntu's /bin/sh) reads `exec 10>&-` as a command named "10", and the relaunch never happened (seen by
+    // DoCatz, #101). Without bash, only single-digit descriptors are closed there.
+    const shell = existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
+    const close = shell === '/bin/bash' ? 'for fd in $(ls /proc/$$/fd); do [ "$fd" -gt 2 ] && eval "exec $fd>&-"; done' : 'for fd in 3 4 5 6 7 8 9; do eval "exec $fd>&-"; done';
+    spawn(shell, ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.2; done; ${close} 2>/dev/null; exec "$0" "$@"`, target, ...args], { detached: true, stdio: ['ignore', log, log], env, cwd: homedir() }).unref();
     app.exit(0);
     return true;
   } catch (e) {
