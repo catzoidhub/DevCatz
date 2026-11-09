@@ -1,4 +1,4 @@
-import { docatzPlatform, otherEngineName } from './docker';
+import { docatzAvailable, otherEngineName } from './docker';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +23,7 @@ export const DOCATZ_REPO = 'catzoidhub/DoCatz';
  * (`engine: "running" | "stopped"`). Read at most every few seconds (route updates and status checks are frequent).
  * DOCATZ_BRIDGE points elsewhere, for tests.
  */
-type DocatzBridge = { proxy?: { httpPort?: number; httpsPort?: number }; engine?: string; containers?: { project?: string; service?: string; url?: string | null }[] };
+type DocatzBridge = { proxy?: { httpPort?: number; httpsPort?: number }; engine?: string; engineEndpoint?: string; containers?: { project?: string; service?: string; url?: string | null }[] };
 let bridgeCache: { at: number; value: DocatzBridge | null } = { at: 0, value: null };
 function docatzBridge(): DocatzBridge | null {
   if (Date.now() - bridgeCache.at < 5000) return bridgeCache.value;
@@ -69,6 +69,12 @@ export function docatzHttpsPort(): number {
   return Number.isInteger(p) && p > 0 && p < 65536 ? p : 8743;
 }
 
+/**
+ * The docker endpoint DoCatz's engine listens on (`engineEndpoint` in bridge.json, e.g. unix:///var/run/docker.sock
+ * when DoCatz on Linux uses the system's Docker — DoCatz #101), null when it does not say.
+ */
+export const docatzEngineEndpoint = (): string | null => docatzBridge()?.engineEndpoint ?? null;
+
 /** DoCatz's engine as its bridge.json says: running / stopped, null when DoCatz is not there. */
 export function docatzEngine(): 'running' | 'stopped' | null {
   const e = docatzBridge()?.engine;
@@ -96,7 +102,7 @@ export class DoCatz {
   }
 
   state(): DbCatzState {
-    return { installed: this.found !== null, task: this.task, engine: docatzEngine(), forGateways: docatzPlatform, otherEngine: otherEngineName() };
+    return { installed: this.found !== null, task: this.task, engine: docatzEngine(), forGateways: docatzAvailable(), otherEngine: otherEngineName() };
   }
 
   /** A compose file (absolute path) → its compose project; else the site's containers. */

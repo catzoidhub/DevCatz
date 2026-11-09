@@ -9,7 +9,7 @@ import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
 import { exePath, isLinux, isMac, isWin, killTree } from './platform';
 import { runAsRootLinux, shq } from './linuxadmin';
-import { docatzEngine, docatzEnvFile, docatzEnvPath } from './docatz';
+import { docatzEngine, docatzEngineEndpoint, docatzEnvFile, docatzEnvPath } from './docatz';
 import { store } from './store';
 
 /**
@@ -77,13 +77,23 @@ export const dockerCompose = (): string[] => [cli.bin, ...cli.compose];
  * Windows, the system's engine elsewhere).
  */
 export type GwContainer = 'docatz' | 'system';
-export const docatzPlatform = isWin || isMac;
+/**
+ * DoCatz is where Docker gateways go: macOS and Windows (DoCatz is installed for them when missing); Linux once DoCatz
+ * is there (its bridge.json, ~/.config/DoCatz — DoCatz has no Linux build yet, DoCatz #101).
+ */
+export const docatzAvailable = (): boolean => isWin || isMac || (isLinux && docatzEngine() !== null);
 export const containerOf = (c?: { container?: GwContainer } | null): GwContainer => c?.container ?? (isWin ? 'docatz' : 'system');
-export const defaultContainer = (): GwContainer => (docatzPlatform ? 'docatz' : 'system');
+export const defaultContainer = (): GwContainer => (docatzAvailable() ? 'docatz' : 'system');
 
 /** The other container engine a gateway could run on (the first one installed), for the "Run in" choice. */
 export function otherEngineName(): string | null {
-  if (isLinux) return 'Docker Engine';
+  // Linux: the system's Docker Engine — unless DoCatz's engine is that very daemon (DoCatz #101 option a), when
+  // "DoCatz or Docker Engine" would be one engine twice.
+  if (isLinux) {
+    const ep = docatzEngineEndpoint();
+    const system = ['unix:///var/run/docker.sock', 'unix:///run/docker.sock', `unix:///run/user/${process.getuid?.() ?? 0}/docker.sock`];
+    return ep && system.includes(ep) ? null : 'Docker Engine';
+  }
   const e = ENGINES.find(
     (x) => x.id !== 'docatz' && (engineAppInstalled(x) || (!!x.bin && !isWin && ['/opt/homebrew/bin', '/usr/local/bin'].some((d) => existsSync(join(d, x.bin!))))),
   );

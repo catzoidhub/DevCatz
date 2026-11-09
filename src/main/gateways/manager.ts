@@ -7,7 +7,7 @@ import { connect as netConnect } from 'node:net';
 import { join } from 'node:path';
 import type { CaughtSms, GwCategory, GwConfig, GwKind, GwSendInput, GwSendResult, GwState, ProjectConfig, StorageAction, TaskProgress } from '@shared/types';
 import { readEnvFiles } from '../detect';
-import { containerOf, defaultContainer, docatzPlatform, gatewayCompose, gatewayDocker, gatewayEngineReady, otherEngineName, type GwContainer } from '../docker';
+import { containerOf, defaultContainer, docatzAvailable, gatewayCompose, gatewayDocker, gatewayEngineReady, otherEngineName, type GwContainer } from '../docker';
 import { getShellEnv, run } from '../env';
 import { sendMail } from '../mail/smtp';
 import { ProcessManager } from '../processes';
@@ -662,7 +662,7 @@ ${svc('postal worker', '')}`;
     try {
       if (e.docker) {
         // A choice the platform does not have (DoCatz on Linux) falls back to the system's engine.
-        c.container = c.container === 'docatz' && docatzPlatform ? 'docatz' : c.container === 'system' ? 'system' : defaultContainer();
+        c.container = c.container === 'docatz' && docatzAvailable() ? 'docatz' : c.container === 'system' ? 'system' : defaultContainer();
         this.installingIn.set(kind, c.container);
         await gatewayEngineReady(c.container, (detail) => t.report({ detail }), abort.signal);
         t.report({ step: 1, detail: IMAGE[kind as Exclude<GwKind, 'stalwart'>] });
@@ -878,7 +878,7 @@ ${svc('postal worker', '')}`;
     if (!c || !e.docker) throw new Error(`${e.name} is not an installed Docker gateway`);
     const from = containerOf(c);
     if (from === to) return;
-    if (to === 'docatz' && !docatzPlatform) throw new Error('DoCatz has no build for this system yet');
+    if (to === 'docatz' && !docatzAvailable()) throw new Error('DoCatz is not on this system');
     const label = (w: GwContainer) => (w === 'docatz' ? 'DoCatz' : (otherEngineName() ?? 'the container engine'));
     const wasActive = this.isActive(kind);
     const steps = ['Stopping', `Checking ${label(to)}`, 'Pulling the images', `Removing it from ${label(from)}`, ...(wasActive ? ['Starting'] : [])];

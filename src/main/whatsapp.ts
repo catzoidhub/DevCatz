@@ -7,7 +7,7 @@ import { request as httpsRequest } from 'node:https';
 import { basename, extname, join } from 'node:path';
 import type { ProcessStatus, ProjectConfig, StorageAction, TaskProgress, WaConfig, WaContact, WaDelivery, WaEngine, WaHook, WaMessage, WaSendInput, WaSendResult, WaSession, WaState } from '@shared/types';
 import { readEnvFiles } from './detect';
-import { containerOf, defaultContainer, docatzPlatform, gatewayDocker, gatewayEngineReady, otherEngineName, type GwContainer } from './docker';
+import { containerOf, defaultContainer, docatzAvailable, gatewayDocker, gatewayEngineReady, otherEngineName, type GwContainer } from './docker';
 import { getShellEnv, run } from './env';
 import { ProcessManager } from './processes';
 import type { Route } from './proxy';
@@ -366,7 +366,7 @@ export class WaManager {
       if (engine === 'gowa') c.version = await this.fetchGowa(this.binDir('gowa'), t.report, abort.signal);
       else {
         t.report({ step: 0 });
-        c.container = c.container === 'docatz' && docatzPlatform ? 'docatz' : c.container === 'system' ? 'system' : defaultContainer();
+        c.container = c.container === 'docatz' && docatzAvailable() ? 'docatz' : c.container === 'system' ? 'system' : defaultContainer();
         this.installingIn = c.container;
         c.version = c.version || (await wahaLatest().catch(() => 'latest'));
         await this.pullWaha(c.version, t.report, abort.signal);
@@ -458,7 +458,7 @@ export class WaManager {
     if (!c) throw new Error('WAHA is not installed');
     const from = containerOf(c);
     if (from === to) return;
-    if (to === 'docatz' && !docatzPlatform) throw new Error('DoCatz has no build for this system yet');
+    if (to === 'docatz' && !docatzAvailable()) throw new Error('DoCatz is not on this system');
     if (this.aborts.has('waha')) throw new Error('WAHA is busy');
     const label = (w: GwContainer) => (w === 'docatz' ? 'DoCatz' : (otherEngineName() ?? 'the container engine'));
     const wasActive = this.isActive('waha');
