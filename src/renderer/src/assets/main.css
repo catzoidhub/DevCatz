@@ -1971,7 +1971,8 @@ button.dv-card-head:hover {
 
 /* Windows (Catzoid #76): the minimize / maximize / close buttons sit over the top-right corner (title bar overlay,
    40 px). Every page's top header gets `win-top`: 48 px of room above it on Windows, nothing on macOS. */
-html.is-win .win-top {
+html.is-win .win-top,
+html.is-linux .win-top {
   padding-top: 3rem;
 }
 

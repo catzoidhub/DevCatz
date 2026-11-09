@@ -24,7 +24,7 @@ import { detectPackageManager, readEnvFiles, readJson, readText, runScriptComman
 import { readCargo } from './runtimes/rust';
 import { detectStack, isLinkableDir, isProjectDir } from './runtimes';
 import { getShellEnv, hasCommand, isListening, isPortOpen, portOwner, run, setUserPath } from './env';
-import { isWin, joinPath, pathKey, samePath, shellCommand, splitPath } from './platform';
+import { isLinux, isWin, joinPath, pathKey, samePath, shellCommand, splitPath } from './platform';
 import { lookup } from 'node:dns/promises';
 import { ProcessManager } from './processes';
 import { captureScreenshot, screenshotTime } from './screenshots';
@@ -2403,8 +2403,12 @@ export class Herd extends EventEmitter {
     const names = isWin && t !== 'localhost' ? `*.${t} and *.localhost` : `*.${t}`;
     const steps = [
       `Start DevCatz's DNS on ${DNS_HOST}:${DNS_PORT}`,
-      isWin ? `Add Windows DNS rules (NRPT) for ${names} — administrator approval` : `Create /etc/resolver/${t} — your administrator password`,
-      `Check that ${names} resolve to this ${isWin ? 'PC' : 'Mac'}`,
+      isWin
+        ? `Add Windows DNS rules (NRPT) for ${names} — administrator approval`
+        : isLinux
+          ? `Route *.${t} to it in systemd-resolved — your password`
+          : `Create /etc/resolver/${t} — your administrator password`,
+      `Check that ${names} resolve to this ${words.computer}`,
     ];
     return this.setupSteps('dns', isWin ? 'Adding DNS rules' : 'Installing the resolver', steps, async (step) => {
       if (!this.dns.running) await this.dns.start(t);
@@ -2421,7 +2425,7 @@ export class Herd extends EventEmitter {
       this.changed();
       if (!this.resolves) throw new Error(`The ${isWin ? 'rules are' : 'resolver is'} in place, but *.${t} does not resolve yet: try again in a moment`);
       return true;
-    }, `*.${t} resolves to this ${isWin ? 'PC' : 'Mac'}`);
+    }, `*.${t} resolves to this ${words.computer}`);
   }
 
   /** Settings → Default domain → Try again: after the program holding the DNS port is gone. */
@@ -2436,7 +2440,11 @@ export class Herd extends EventEmitter {
   uninstallResolver(): Promise<boolean> {
     const t = tld();
     const steps = [
-      isWin ? 'Remove the DevCatz DNS rules (NRPT) — administrator approval' : `Remove /etc/resolver/${t} — your administrator password`,
+      isWin
+        ? 'Remove the DevCatz DNS rules (NRPT) — administrator approval'
+        : isLinux
+          ? `Remove the systemd-resolved route for *.${t} — your password`
+          : `Remove /etc/resolver/${t} — your administrator password`,
       'Check that they are gone',
     ];
     return this.setupSteps('dns', isWin ? 'Removing DNS rules' : 'Removing the resolver', steps, async (step) => {
@@ -2446,7 +2454,7 @@ export class Herd extends EventEmitter {
       step(1);
       await this.checkResolution();
       this.changed();
-      if (resolverStatus(t) === 'ours') throw new Error(isWin ? 'The DNS rules are still there (administrator approval refused?)' : `/etc/resolver/${t} is still there`);
+      if (resolverStatus(t) === 'ours') throw new Error(isWin ? 'The DNS rules are still there (administrator approval refused?)' : isLinux ? `The systemd-resolved route for *.${t} is still there` : `/etc/resolver/${t} is still there`);
       return true;
     }, isWin ? 'DNS rules removed' : 'Resolver removed');
   }
@@ -4791,26 +4799,35 @@ export class Herd extends EventEmitter {
   trustCa(): Promise<boolean> {
     const steps = [
       'Prepare the DevCatz Local CA',
-      isWin ? 'Add it to your Trusted Root certificates — Windows asks “install this certificate?”' : 'Add it to your login keychain — macOS asks for your password or Touch ID',
+      isWin
+        ? 'Add it to your Trusted Root certificates — Windows asks “install this certificate?”'
+        : isLinux
+          ? "Add it to the system's certificate store and your browsers' — Linux asks for your password"
+          : 'Add it to your login keychain — macOS asks for your password or Touch ID',
       'Check that it is trusted (Node.js and Bun get it too)',
     ];
     return this.setupSteps('ca', 'Trusting the DevCatz Local CA', steps, async (step) => {
       step(1, isWin ? 'Waiting for your answer: if Windows’ question is not in front, click the flashing key icon in the taskbar' : 'Waiting for your password');
       const r = await this.certs.trust();
+      if (isLinux && r.ok && r.message) console.warn('CA trust:', r.message);
       step(2);
       this.refreshNodes();
       await this.refreshBuns();
       this.systemNode = await nodes.systemNode();
       this.caTrusted = await this.certs.isTrusted();
       this.changed();
-      if (!r.ok && !this.caTrusted) throw new Error(/cancel|-128|1223/i.test(r.message) ? 'Cancelled' : r.message || (isWin ? 'Windows did not add the certificate' : 'Keychain refused the certificate'));
+      if (!r.ok && !this.caTrusted) throw new Error(/cancel|-128|1223/i.test(r.message) ? 'Cancelled' : r.message || (isWin ? 'Windows did not add the certificate' : isLinux ? 'The certificate store did not take the certificate' : 'Keychain refused the certificate'));
       return this.caTrusted;
     }, 'DevCatz Local CA trusted — reload your browser tabs');
   }
 
   untrustCa(): Promise<boolean> {
     const steps = [
-      isWin ? 'Remove it from your Trusted Root certificates — Windows asks “delete this certificate?”' : 'Remove it from your login keychain — macOS asks for your password',
+      isWin
+        ? 'Remove it from your Trusted Root certificates — Windows asks “delete this certificate?”'
+        : isLinux
+          ? "Remove it from the system's certificate store and your browsers' — Linux asks for your password"
+          : 'Remove it from your login keychain — macOS asks for your password',
       'Check that it is gone',
     ];
     return this.setupSteps('ca', 'Removing the DevCatz Local CA', steps, async (step) => {
@@ -4822,7 +4839,7 @@ export class Herd extends EventEmitter {
       this.systemNode = await nodes.systemNode();
       this.caTrusted = await this.certs.isTrusted();
       this.changed();
-      if (this.caTrusted) throw new Error(isWin ? 'The certificate is still in your Trusted Root certificates (the question was answered No?)' : 'The certificate is still in the keychain');
+      if (this.caTrusted) throw new Error(isWin ? 'The certificate is still in your Trusted Root certificates (the question was answered No?)' : isLinux ? "The certificate is still in the system's store" : 'The certificate is still in the keychain');
       return true;
     }, 'DevCatz Local CA removed');
   }
@@ -4840,9 +4857,9 @@ export class Herd extends EventEmitter {
         https: ours || !(await isListening('127.0.0.1', 443)),
         http: ours || !(await isListening('127.0.0.1', 80)),
       };
-      step(1, isWin ? 'netsh interface portproxy, through one administrator prompt' : 'LaunchDaemons with /usr/bin/nc, through one password prompt');
+      step(1, isWin ? 'netsh interface portproxy, through one administrator prompt' : isLinux ? 'systemd socket units with systemd-socket-proxyd, through one password prompt' : 'LaunchDaemons with /usr/bin/nc, through one password prompt');
       const r = await installCleanUrls(store.settings.httpsPort, store.settings.httpPort, ipv4);
-      if (!r.ok) throw new Error(r.message.includes('-128') ? 'Cancelled' : r.message);
+      if (!r.ok) throw new Error(/-128|^Cancelled$/.test(r.message) ? 'Cancelled' : r.message);
       step(2);
       this.cleanUrls = await cleanUrlsWorking();
       this.cleanHttp = await cleanHttpWorking();
@@ -4858,9 +4875,9 @@ export class Herd extends EventEmitter {
       'Check that sites answer on :' + store.settings.httpsPort + ' again',
     ];
     return this.setupSteps('urls', 'Turning off names without a port', steps, async (step) => {
-      step(0, isWin ? 'netsh interface portproxy, through one administrator prompt' : 'LaunchDaemons, through one password prompt');
+      step(0, isWin ? 'netsh interface portproxy, through one administrator prompt' : isLinux ? 'systemd socket units, through one password prompt' : 'LaunchDaemons, through one password prompt');
       const r = await uninstallCleanUrls();
-      if (!r.ok) throw new Error(r.message.includes('-128') ? 'Cancelled' : r.message);
+      if (!r.ok) throw new Error(/-128|^Cancelled$/.test(r.message) ? 'Cancelled' : r.message);
       step(1);
       this.cleanUrls = await cleanUrlsWorking();
       this.cleanHttp = await cleanHttpWorking();

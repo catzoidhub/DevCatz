@@ -1,5 +1,5 @@
 import { Menu, Tray, nativeImage } from 'electron';
-import { isWin } from './platform';
+import { isLinux, isWin } from './platform';
 import { join } from 'node:path';
 import type { AppState, GwKind, SearchKind, StorageAction, StorageKind, WaEngine, WsKind } from '@shared/types';
 import { dot, type DotColor } from './menuicons';
@@ -67,8 +67,9 @@ export class HerdTray {
   private pending: AppState | null = null;
 
   constructor(resources: string, private actions: TrayActions) {
-    if (isWin) {
-      // Windows: the app icon (a black template glyph would vanish on the dark taskbar); no GUID (macOS's placement).
+    if (isWin || isLinux) {
+      // Windows and Linux: the app icon (a black template glyph would vanish on a dark taskbar or panel); no GUID
+      // (macOS's placement).
       this.idle = this.active = nativeImage.createFromPath(join(resources, 'icon-192.png')).resize({ width: 32, height: 32 });
       this.tray = new Tray(this.idle);
     } else {

@@ -4,7 +4,7 @@ import { confirmCleanUrls, confirmResolver, confirmTrustCa } from '../confirms';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import CatMood from './CatMood.vue';
 import { attempt, herd, state } from '../store';
-import { isWin } from '../platform';
+import { isLinux, isWin } from '../platform';
 
 /**
  * First-run welcome (Catzoid #29): what DevCatz does, and the things that ask for your password — each only
@@ -114,6 +114,7 @@ async function done() {
                   So <span class="font-mono">https://</span> works without warnings — cookies, sign-in callbacks and service workers behave as
                   in production.
                   <template v-if="isWin">DevCatz Local CA lives only on this PC and goes into your own Trusted Root certificates; Windows asks you to confirm once.</template>
+                  <template v-else-if="isLinux">DevCatz Local CA lives only on this computer and goes into the system's certificate store and your browsers' own; Linux asks for your password once.</template>
                   <template v-else>DevCatz Local CA lives only on this Mac and goes into your login keychain; macOS asks for your password or Touch ID once.</template>
                 </p>
               </div>
@@ -174,7 +175,7 @@ async function done() {
             No changes to the <span class="font-mono">hosts</span> file, no drivers, nothing at sign-in unless you turn it on.
           </template>
           <template v-else>No changes to <span class="font-mono">/etc/hosts</span>, no kernel extensions, nothing at login unless you turn it on.</template>
-          {{ ' ' }}<a class="link" @click="securityDoc">What DevCatz changes on your {{ isWin ? 'PC' : 'Mac' }}</a>
+          {{ ' ' }}<a class="link" @click="securityDoc">What DevCatz changes on your {{ isWin ? 'PC' : isLinux ? 'computer' : 'Mac' }}</a>
         </p>
 
         <div class="modal-action mt-0 shrink-0">

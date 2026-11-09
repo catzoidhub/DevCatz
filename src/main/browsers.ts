@@ -6,7 +6,8 @@ import { basename, join } from 'node:path';
 import type { BrowserInfo, BrowsersState } from '@shared/types';
 import { run } from './env';
 import { store } from './store';
-import { isWin } from './platform';
+import { isLinux, isWin } from './platform';
+import { defaultBrowser, launchDesktop, linuxBrowsers, linuxIconUrl } from './linuxapps';
 
 /**
  * Web browsers for Settings → General → Browser: the ones installed here, the
@@ -56,6 +57,12 @@ const icons = new Map<string, string>();
 async function iconOf(path: string): Promise<string> {
   const known = icons.get(path);
   if (known) return known;
+  // Linux: `path` is the app's .desktop file; its Icon= from the icon theme.
+  if (isLinux) {
+    const url = linuxIconUrl(path);
+    icons.set(path, url);
+    return url;
+  }
   // Quick Look's thumbnail of an .app is its real icon (getFileIcon can hand back a generic one). It needs the
   // real bundle: /Applications/Safari.app is a symlink into the system cryptex.
   const real = (() => {
@@ -139,6 +146,7 @@ function friendlyPath(path: string): string {
  */
 export async function refreshBrowsers(): Promise<boolean> {
   if (isWin) return refreshWinBrowsers();
+  if (isLinux) return refreshLinuxBrowsers();
   const found = new Map<string, string>(); // name → path
   for (const p of await httpsHandlers().catch(() => [])) if (existsSync(p) && (await isBrowser(p))) found.set(nameOf(p), friendlyPath(p));
   for (const name of KNOWN)
@@ -200,6 +208,20 @@ async function refreshWinBrowsers(): Promise<boolean> {
   return changed;
 }
 
+/** Linux: the browsers the desktop lists (.desktop files with Categories=WebBrowser); the default from xdg-settings. */
+async function refreshLinuxBrowsers(): Promise<boolean> {
+  const apps = linuxBrowsers();
+  const def = await defaultBrowser(apps);
+  const list: BrowserInfo[] = apps.map((a) => ({ name: a.name, path: a.file, icon: '' }));
+  for (const b of list) b.icon = await iconOf(b.path);
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  const systemDefault = def ? (list.find((b) => b.path === def.file) ?? null) : null;
+  const next: BrowsersState = { list, systemDefault };
+  const changed = JSON.stringify(next) !== JSON.stringify(state);
+  state = next;
+  return changed;
+}
+
 // ---- editors: their app icons for Settings → Open with → Editor
 
 let editorIconMap: Record<string, string> = {};
@@ -224,6 +246,7 @@ export function browsersState(): BrowsersState {
 /** A browser setting is '' (system default) or the path of an installed browser. */
 export function validBrowser(path: string): boolean {
   if (isWin) return path === '' || (/\.exe$/i.test(path) && existsSync(path));
+  if (isLinux) return path === '' || (/\.desktop$/i.test(path) && existsSync(path));
   return path === '' || (/\.app$/i.test(path) && existsSync(join(path, 'Contents', 'Info.plist')));
 }
 
@@ -231,6 +254,12 @@ export function validBrowser(path: string): boolean {
 export async function openWeb(url: string): Promise<void> {
   const chosen = store.settings.browser;
   if (/^https?:\/\//i.test(url) && chosen && existsSync(chosen)) {
+    if (isLinux) {
+      if (await launchDesktop(chosen, url)) return;
+      console.warn(`open in ${chosen} failed; using the system default`);
+      await shell.openExternal(url);
+      return;
+    }
     if (isWin) {
       // The browser's own program with the link; it hands it to its open window.
       const child = spawn(chosen, [url], { detached: true, stdio: 'ignore' });

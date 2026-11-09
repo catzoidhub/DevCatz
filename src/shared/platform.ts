@@ -30,7 +30,25 @@ export function wordsFor(os: OS) {
     phpServer: os === 'windows' ? 'PHP (FastCGI)' : 'PHP-FPM',
     /** The container apps DevCatz works with, for "must be running" hints. */
     dockerEngines: os === 'mac' ? 'OrbStack / Docker Desktop' : os === 'windows' ? 'Docker Desktop / Rancher Desktop / Podman' : 'Docker / Podman',
-    installGit: os === 'mac' ? 'run xcode-select --install in Terminal' : os === 'windows' ? 'install Git for Windows from git-scm.com' : 'install git with your package manager',
+    installGit: os === 'mac' ? 'run xcode-select --install in Terminal' : os === 'windows' ? 'install Git for Windows from git-scm.com' : 'install git with your package manager (sudo apt install git)',
+    // Linux words (2026-11-09): what DevCatz on Linux does or will do — Ubuntu first, other distros where they differ.
+    /** The terminal app, for "run … in <terminal>". */
+    terminal: os === 'mac' ? 'Terminal' : os === 'windows' ? 'Windows Terminal' : 'a terminal',
+    /** Where the local CA goes so browsers trust it. Linux: the system store (update-ca-certificates) plus the NSS
+     *  databases Chrome and Firefox read. */
+    caStore: os === 'mac' ? 'your login keychain' : os === 'windows' ? 'your Trusted Root certificates' : "the system's certificate store and your browsers' own",
+    /** Who asks before a change that needs administrator rights. */
+    adminPrompt: os === 'mac' ? 'macOS asks for your password or Touch ID' : os === 'windows' ? 'Windows asks for administrator approval' : 'Linux asks for your password',
+    /** The other package manager people use for tools DevCatz does not install itself. */
+    packageManager: os === 'mac' ? 'Homebrew' : os === 'windows' ? 'winget' : 'your package manager (apt)',
+    /** What compiles native code (PHP extensions, small helpers). */
+    buildTools: os === 'mac' ? 'the Xcode Command Line Tools (xcode-select --install)' : os === 'windows' ? 'the Visual Studio Build Tools' : 'the build tools (sudo apt install build-essential)',
+    /** What keeps a small helper running in the background (ports 80/443). */
+    serviceManager: os === 'mac' ? 'launchd' : os === 'windows' ? 'a Windows service' : 'systemd',
+    /** Starting with the computer. */
+    loginItem: os === 'mac' ? 'login item' : os === 'windows' ? 'startup app' : 'autostart entry',
+    /** Where the system's own settings live. */
+    systemSettings: os === 'mac' ? 'System Settings' : os === 'windows' ? 'Settings' : 'Settings',
   };
 }
 

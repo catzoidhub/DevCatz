@@ -17,7 +17,7 @@ import DbServiceForm from './DbServiceForm.vue';
 import { DB_LOGO } from '../db';
 import { attempt, herd, navRequest, notify, state } from '../store';
 import { navVisit } from '../nav';
-import { isWin, WIN_SETTINGS_TABS } from '../platform';
+import { isLinux, isWin, WIN_SETTINGS_TABS } from '../platform';
 
 const s = computed(() => state.value!);
 const setUpdateNotifications = (on: boolean) => attempt(() => herd.updateSettings({ updateNotifications: on }));
@@ -398,9 +398,9 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <span class="badge badge-ghost badge-sm ml-1" title="DoCatz uses the same certificate authority for its containers' HTTPS names">Shared with Catzoid apps</span>
         </h2>
         <p class="text-xs opacity-70">
-          A local certificate authority signs a certificate for every <code>*.{{ s.domain.tld }}</code> site. Add it to {{ isWin ? 'your Trusted Root certificates' : 'your login keychain' }} once
-          so browsers show no warning (Firefox uses its own store: import <code>ca.crt</code> there, or set
-          <code>security.enterprise_roots.enabled</code>).
+          A local certificate authority signs a certificate for every <code>*.{{ s.domain.tld }}</code> site. Add it to {{ words.caStore }} once
+          so browsers show no warning<template v-if="isLinux"> (Chrome and Firefox profiles that exist now; a browser installed later: trust it again)</template><template v-else> (Firefox uses its own store: import <code>ca.crt</code> there, or set
+          <code>security.enterprise_roots.enabled</code>)</template>.
         </p>
         <div class="flex gap-2">
           <button v-if="!s.cert.caTrusted" class="btn btn-primary btn-sm" :disabled="setupBusy('ca')" @click="trust">

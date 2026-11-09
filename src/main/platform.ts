@@ -9,6 +9,11 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
  */
 export const isWin = process.platform === 'win32';
 export const isMac = process.platform === 'darwin';
+/**
+ * Linux (started 2026-11-09, Ubuntu 24.04 first). Most branches are still `isWin ? win : mac`, so Linux runs the macOS
+ * path; a branch that is ported reads `isWin ? win : isLinux ? linux : mac` (TODO §35).
+ */
+export const isLinux = process.platform === 'linux';
 
 /** `node` → `node.exe` on Windows. */
 export const exe = (name: string): string => (isWin ? `${name}.exe` : name);

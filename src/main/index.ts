@@ -26,7 +26,8 @@ import { setGithubToken } from './github';
 import { githubToken } from './githosts';
 import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3UploadProgress, type Settings, type TaskProgress, type GwKind, type SearchKind, type StorageKind, type WaEngine, type WsKind } from '@shared/types';
 import { uninstall, uninstallPlan, UNINSTALL_STEPS } from './uninstall';
-import { isMac, isWin } from './platform';
+import { isLinux, isMac, isWin } from './platform';
+import { LINUX_EDITORS, launchDesktop, linuxEditorFile, openLinuxTerminal } from './linuxapps';
 import { openWeb, refreshBrowsers, refreshEditorIcons } from './browsers';
 import { isSvcKind } from './svcdocker';
 import { words } from '@shared/platform';
@@ -40,7 +41,9 @@ if (!app.requestSingleInstanceLock()) {
 const RESOURCES = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources');
 const EDITORS = isWin
   ? ['Visual Studio Code', 'Cursor', 'Windsurf', 'Zed', 'WebStorm', 'PhpStorm', 'Sublime Text', 'Notepad++']
-  : ['Visual Studio Code', 'Cursor', 'Zed', 'WebStorm', 'PhpStorm', 'Sublime Text', 'Nova'];
+  : isLinux
+    ? LINUX_EDITORS
+    : ['Visual Studio Code', 'Cursor', 'Zed', 'WebStorm', 'PhpStorm', 'Sublime Text', 'Nova'];
 
 let herd: Herd;
 let mcatzp: Mcatzp;
@@ -102,8 +105,9 @@ function winEditorCandidates(e: string): string[] {
       return [];
   }
 }
-/** The editor's app (macOS) or program (Windows), when it is installed. */
+/** The editor's app (macOS), program (Windows) or .desktop file (Linux), when it is installed. */
 function editorPath(e: string): string | null {
+  if (isLinux) return linuxEditorFile(e);
   const candidates = isWin ? winEditorCandidates(e) : [`/Applications/${e}.app`, `${app.getPath('home')}/Applications/${e}.app`];
   return candidates.find((p) => existsSync(p)) ?? null;
 }
@@ -200,9 +204,11 @@ function showWindow(target?: string): void {
  * background they vanished in dark mode); repainted when the theme changes.
  */
 function titleBarOverlay(): { color: string; symbolColor: string; height: number } {
+  // Linux (GNOME): the buttons bring their own round grey backgrounds, so no strip behind them — the page shows through.
+  if (isLinux) return { color: '#00000000', symbolColor: nativeTheme.shouldUseDarkColors ? '#e5e7eb' : '#1f2937', height: 40 };
   return nativeTheme.shouldUseDarkColors ? { color: '#2b2d34', symbolColor: '#e5e7eb', height: 40 } : { color: '#e7e8ec', symbolColor: '#1f2937', height: 40 };
 }
-if (isWin) nativeTheme.on('updated', () => win && !win.isDestroyed() && win.setTitleBarOverlay(titleBarOverlay()));
+if (isWin || isLinux) nativeTheme.on('updated', () => win && !win.isDestroyed() && win.setTitleBarOverlay(titleBarOverlay()));
 
 function createWindow(): void {
   win = new BrowserWindow({
@@ -212,9 +218,10 @@ function createWindow(): void {
     minHeight: 520,
     show: false,
     title: 'DevCatz',
-    ...(isWin
+    ...(isWin || isLinux
       ? {
-          // Windows: the page draws its own title strip; the system buttons sit over it on the right.
+          // Windows and Linux: the page draws its own title strip; the system buttons sit over it on the right
+          // (macOS's inset traffic lights and vibrancy would leave Linux without window buttons).
           titleBarStyle: 'hidden' as const,
           titleBarOverlay: titleBarOverlay(),
           backgroundColor: nativeTheme.shouldUseDarkColors ? '#1d1f24' : '#f6f7f9',
@@ -317,6 +324,12 @@ async function openEditor(path: string): Promise<void> {
     await shell.openPath(path);
     return;
   }
+  if (isLinux) {
+    const file = editorPath(store.settings.editor || installedEditors()[0] || '');
+    if (file && (await launchDesktop(file, path))) return;
+    await shell.openPath(path);
+    return;
+  }
   const editor = store.settings.editor || installedEditors()[0];
   if (editor) {
     const { code } = await run('open', ['-a', editor, path]);
@@ -330,6 +343,10 @@ async function openTerminal(path: string): Promise<void> {
     // Windows Terminal when it is there, else a plain Command Prompt in the folder.
     if ((await run('where', ['wt'])).code === 0 && (await startDetached('wt', ['-d', `"${path}"`]))) return;
     await startDetached('start', ['""', 'cmd', '/K', `cd /d "${path}"`]);
+    return;
+  }
+  if (isLinux) {
+    if (!(await openLinuxTerminal(path))) await shell.openPath(path);
     return;
   }
   const apps = ['Warp', 'iTerm', 'Ghostty'].filter((t) => existsSync(`/Applications/${t}.app`));
@@ -1284,8 +1301,9 @@ app.whenReady().then(async () => {
     const key = String(herd.updater.pending());
     if (key === menuKey) return;
     menuKey = key;
-    // Windows: no menu bar in the window (the page has its own controls); the same items stay on Alt / shortcuts.
-    if (isWin) {
+    // Windows and Linux: no menu bar in the window (the page has its own controls); the same items stay on Alt /
+    // shortcuts. The macOS app menu (Services, Hide …) means nothing there.
+    if (isWin || isLinux) {
       Menu.setApplicationMenu(
         Menu.buildFromTemplate([
           {

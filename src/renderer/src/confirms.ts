@@ -1,5 +1,5 @@
 import { askConfirm, state } from './store';
-import { isWin } from './platform';
+import { isLinux, isWin } from './platform';
 
 /** The confirmations of actions that change the system or cannot be undone, in DevCatz's own dialog (askConfirm). */
 
@@ -26,8 +26,10 @@ export function confirmTrustCa(): Promise<boolean> {
     title: 'Trust the DevCatz local certificate authority?',
     text: isWin
       ? `The CA is created on this PC and only signs certificates for your *.${tld} sites. It goes into your own Trusted Root certificates (no administrator needed); Windows asks you to confirm next. You can remove it again from Settings.`
-      : `The CA is created on this Mac and only signs certificates for your *.${tld} sites. It will be added to your login keychain as trusted for SSL; macOS asks for your password next. You can remove it again from Settings.`,
-    confirm: isWin ? 'Add to Windows' : 'Add to Keychain',
+      : isLinux
+        ? `The CA is created on this computer and only signs certificates for your *.${tld} sites. It goes into the system's certificate store and into your browsers' own (Chrome, Firefox); Linux asks for your password next. You can remove it again from Settings.`
+        : `The CA is created on this Mac and only signs certificates for your *.${tld} sites. It will be added to your login keychain as trusted for SSL; macOS asks for your password next. You can remove it again from Settings.`,
+    confirm: isWin ? 'Add to Windows' : isLinux ? 'Trust it' : 'Add to Keychain',
     tone: 'primary',
   });
 }

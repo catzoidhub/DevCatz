@@ -1,5 +1,6 @@
 node_modules/
 out/
 dist/
+dist-win/
 .DS_Store
 *.log

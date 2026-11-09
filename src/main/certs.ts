@@ -1,15 +1,41 @@
 import { X509Certificate, generateKeyPairSync, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createSecureContext, type SecureContext } from 'node:tls';
 import forge from 'node-forge';
 import { run } from './env';
-import { isWin } from './platform';
+import { isLinux, isWin } from './platform';
+import { runAsRootLinux, shq } from './linuxadmin';
 import { dataDir } from './store';
 
 const CA_NAME = 'DevCatz Local CA';
 const KEYCHAIN = join(homedir(), 'Library/Keychains/login.keychain-db'); // macOS only
+
+/**
+ * Linux: where the CA goes in the system store — Debian / Ubuntu (update-ca-certificates) or Fedora / RHEL / Arch
+ * (update-ca-trust). Chrome and Firefox keep their own NSS databases on Linux, filled per user with certutil.
+ */
+const LINUX_STORES = [
+  { dir: '/usr/local/share/ca-certificates', update: 'update-ca-certificates', bundle: '/etc/ssl/certs/ca-certificates.crt' },
+  { dir: '/etc/pki/ca-trust/source/anchors', update: 'update-ca-trust', bundle: '/etc/pki/tls/certs/ca-bundle.crt' },
+];
+const LINUX_CA_FILE = 'devcatz-local-ca.crt';
+const linuxStore = () => LINUX_STORES.find((s) => existsSync(s.dir)) ?? LINUX_STORES[0];
+
+/** The NSS databases (cert9.db) browsers read on Linux: Chrome / Chromium's per user, Firefox's per profile (deb, snap, flatpak). */
+function nssDatabases(): string[] {
+  const h = homedir();
+  const dbs = [join(h, '.pki', 'nssdb'), join(h, 'snap', 'chromium', 'current', '.pki', 'nssdb')].filter((d) => d === join(h, '.pki', 'nssdb') || existsSync(d));
+  for (const root of [join(h, '.mozilla', 'firefox'), join(h, 'snap', 'firefox', 'common', '.mozilla', 'firefox'), join(h, '.var', 'app', 'org.mozilla.firefox', '.mozilla', 'firefox')]) {
+    try {
+      for (const p of readdirSync(root)) if (existsSync(join(root, p, 'cert9.db'))) dbs.push(join(root, p));
+    } catch {
+      /* no such Firefox */
+    }
+  }
+  return dbs;
+}
 
 function certsDir(): string {
   const dir = dataDir('certs');
@@ -157,6 +183,12 @@ export class CertManager {
     this.ensureCa();
     // Windows: the CA in the current user's Trusted Root store (Chrome and Edge read it).
     if (isWin) return (await run('certutil', ['-user', '-verifystore', 'Root', this.thumbprint()])).code === 0;
+    if (isLinux) {
+      // The system store (curl, PHP, git, Node with the system CAs …); the browsers' NSS copies are added with it.
+      const probe = join(certsDir(), 'localhost.crt');
+      this.leaf('localhost');
+      return existsSync(join(linuxStore().dir, LINUX_CA_FILE)) && (await run('openssl', ['verify', '-CAfile', linuxStore().bundle, probe])).code === 0;
+    }
     // Verify a leaf against the user's trust settings (not against the CA directly).
     const probe = join(certsDir(), 'localhost.crt');
     this.leaf('localhost');
@@ -170,6 +202,7 @@ export class CertManager {
    */
   async trust(): Promise<{ ok: boolean; message: string }> {
     this.ensureCa();
+    if (isLinux) return this.trustLinux();
     if (isWin) {
       // The user's own store, no admin: Windows shows its "Install this certificate?" confirmation.
       const r = await run('certutil', ['-user', '-addstore', 'Root', this.caPath], { timeout: 120_000 });
@@ -183,8 +216,44 @@ export class CertManager {
     return { ok: code === 0, message: stderr.trim() };
   }
 
+  /**
+   * Linux: one password (pkexec) puts the CA in the system store and, where apt can, installs certutil
+   * (libnss3-tools); then, as the user, the CA goes into each browser's NSS database (Chrome's is created if missing).
+   */
+  private async trustLinux(): Promise<{ ok: boolean; message: string }> {
+    const s = linuxStore();
+    const root = await runAsRootLinux(
+      [
+        `mkdir -p ${shq(s.dir)}`,
+        `install -m 644 ${shq(this.caPath)} ${shq(join(s.dir, LINUX_CA_FILE))}`,
+        `${s.update} >/dev/null`,
+        'if ! command -v certutil >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libnss3-tools >/dev/null 2>&1 || true; fi',
+      ].join('\n'),
+    );
+    if (!root.ok) return { ok: false, message: root.message };
+    const missed: string[] = [];
+    if ((await run('which', ['certutil'])).code !== 0) missed.push('browsers (certutil is missing: install libnss3-tools / nss-tools)');
+    else
+      for (const db of nssDatabases()) {
+        if (!existsSync(join(db, 'cert9.db'))) {
+          mkdirSync(db, { recursive: true });
+          await run('certutil', ['-d', `sql:${db}`, '-N', '--empty-password']);
+        }
+        await run('certutil', ['-d', `sql:${db}`, '-D', '-n', CA_NAME]);
+        const r = await run('certutil', ['-d', `sql:${db}`, '-A', '-t', 'C,,', '-n', CA_NAME, '-i', this.caPath]);
+        if (r.code !== 0) missed.push(db);
+      }
+    return { ok: true, message: missed.length ? `Not added for: ${missed.join(', ')}` : '' };
+  }
+
   async untrust(): Promise<{ ok: boolean; message: string }> {
     const fingerprint = this.thumbprint();
+    if (isLinux) {
+      if ((await run('which', ['certutil'])).code === 0) for (const db of nssDatabases()) await run('certutil', ['-d', `sql:${db}`, '-D', '-n', CA_NAME]);
+      const s = linuxStore();
+      const r = await runAsRootLinux(`rm -f ${shq(join(s.dir, LINUX_CA_FILE))}\n${s.update === 'update-ca-certificates' ? 'update-ca-certificates --fresh' : s.update} >/dev/null`);
+      return { ok: r.ok, message: r.message };
+    }
     if (isWin) {
       const r = await run('certutil', ['-user', '-delstore', 'Root', fingerprint], { timeout: 120_000 });
       return { ok: r.code === 0, message: (r.stderr || r.stdout).trim() };
