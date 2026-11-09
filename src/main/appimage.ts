@@ -195,8 +195,10 @@ export async function offerAppImageInstall(resources: string): Promise<boolean> 
     }
     const log = openSync(join(app.getPath('userData'), 'logs', 'appimage-relaunch.log'), 'a');
     // Started once this instance is gone: it still holds the single-instance lock, so the new one would quit at once.
+    // Every inherited descriptor above stderr is closed first: one into the old AppImage's mount (app.asar) kept that
+    // mount alive until the new DevCatz quit.
     const args = process.argv.slice(1).filter((x) => !x.startsWith('--appimage') && x !== '--no-sandbox');
-    spawn('/bin/sh', ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.2; done; exec "$0" "$@"`, target, ...args], { detached: true, stdio: ['ignore', log, log], env, cwd: homedir() }).unref();
+    spawn('/bin/sh', ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.2; done; for fd in $(ls /proc/$$/fd); do [ "$fd" -gt 2 ] && eval "exec $fd>&-"; done; exec "$0" "$@"`, target, ...args], { detached: true, stdio: ['ignore', log, log], env, cwd: homedir() }).unref();
     app.exit(0);
     return true;
   } catch (e) {
