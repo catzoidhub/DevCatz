@@ -12,7 +12,7 @@ import type { Route } from './proxy';
 import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './storage';
 import { githubLatest, isNewer, packagistLatest, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
-import { exe, isWin, killTree, shellCommand } from './platform';
+import { exe, isLinux, isWin, killTree, shellCommand } from './platform';
 import { svcCompose, svcComposeFile, svcEngineReady, svcInDocker, svcPull, svcRemove, svcRemoveImage, svcUpCommand, vol, writeSvcCompose } from './svcdocker';
 import { forwardFromWsl } from './wslhost';
 
@@ -114,9 +114,23 @@ const secret = (n = 24) => randomBytes(n).toString('base64url');
 const origins = (c: WsConfig) => c.allowedOrigins.split(/[\s,]+/).filter(Boolean);
 
 /** Each server's release asset for this computer (GitHub, SHA-256 in the release): Windows x64 zips, macOS tarballs. */
-const CENTRIFUGO_ASSET = isWin ? /^centrifugo_[\d.]+_windows_amd64\.zip$/ : process.arch === 'arm64' ? /^centrifugo_[\d.]+_darwin_arm64\.tar\.gz$/ : /^centrifugo_[\d.]+_darwin_amd64\.tar\.gz$/;
-const MERCURE_ASSET = isWin ? /^mercure_Windows_x86_64\.zip$/ : process.arch === 'arm64' ? /^mercure_Darwin_arm64\.tar\.gz$/ : /^mercure_Darwin_x86_64\.tar\.gz$/;
-const NATS_ASSET = isWin ? /^nats-server-v[\d.]+-windows-amd64\.zip$/ : process.arch === 'arm64' ? /^nats-server-v[\d.]+-darwin-arm64\.tar\.gz$/ : /^nats-server-v[\d.]+-darwin-amd64\.tar\.gz$/;
+const CENTRIFUGO_ASSET = isWin
+  ? /^centrifugo_[\d.]+_windows_amd64\.zip$/
+  : isLinux
+    ? new RegExp(`^centrifugo_[\\d.]+_linux_${process.arch === 'arm64' ? 'arm64' : 'amd64'}\\.tar\\.gz$`)
+    : process.arch === 'arm64' ? /^centrifugo_[\d.]+_darwin_arm64\.tar\.gz$/ : /^centrifugo_[\d.]+_darwin_amd64\.tar\.gz$/;
+const MERCURE_ASSET = isWin
+  ? /^mercure_Windows_x86_64\.zip$/
+  : isLinux
+    ? new RegExp(`^mercure_Linux_${process.arch === 'arm64' ? 'arm64' : 'x86_64'}\\.tar\\.gz$`)
+    : process.arch === 'arm64' ? /^mercure_Darwin_arm64\.tar\.gz$/ : /^mercure_Darwin_x86_64\.tar\.gz$/;
+/** Sockudo: Rust builds for macOS and Linux (gnu); none for Windows. */
+const SOCKUDO_ASSET = new RegExp(`^sockudo-v[\\d.]+-${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-${isLinux ? 'unknown-linux-gnu' : 'apple-darwin'}\\.tgz$`);
+const NATS_ASSET = isWin
+  ? /^nats-server-v[\d.]+-windows-amd64\.zip$/
+  : isLinux
+    ? new RegExp(`^nats-server-v[\\d.]+-linux-${process.arch === 'arm64' ? 'arm64' : 'amd64'}\\.tar\\.gz$`)
+    : process.arch === 'arm64' ? /^nats-server-v[\d.]+-darwin-arm64\.tar\.gz$/ : /^nats-server-v[\d.]+-darwin-amd64\.tar\.gz$/;
 
 const ENGINES: Record<WsKind, Engine> = {
   reverb: {
@@ -246,11 +260,11 @@ const ENGINES: Record<WsKind, Engine> = {
     defaults: { port: 6001, extraPort: 9601, domain: 'ws', appId: 'devcatz', key: 'devcatz-key', secret: '' },
     async install(dir, progress, signal) {
       progress({ step: 0, detail: 'github.com/sockudo/sockudo releases' });
-      const a = await githubAsset('sockudo/sockudo', process.arch === 'arm64' ? /^sockudo-v[\d.]+-aarch64-apple-darwin\.tgz$/ : /^sockudo-v[\d.]+-x86_64-apple-darwin\.tgz$/);
+      const a = await githubAsset('sockudo/sockudo', SOCKUDO_ASSET);
       check(signal);
       await installFrom(a.url, a.sha256, dir, 'sockudo', `Sockudo ${a.tag}`, progress, signal);
     },
-    latest: async () => (await githubAsset('sockudo/sockudo', process.arch === 'arm64' ? /^sockudo-v[\d.]+-aarch64-apple-darwin\.tgz$/ : /^sockudo-v[\d.]+-x86_64-apple-darwin\.tgz$/)).tag.replace(/^v/, ''),
+    latest: async () => (await githubAsset('sockudo/sockudo', SOCKUDO_ASSET)).tag.replace(/^v/, ''),
     versionArgs: ['--version'],
     versionRe: /sockudo\s+([\w.-]+)/,
     spec(c, bin, hook) {

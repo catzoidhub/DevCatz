@@ -9,7 +9,8 @@ import { isPortOpen, portOwner, run } from './env';
 import { ProcessManager } from './processes';
 import type { Route } from './proxy';
 import { dataDir, store, tld } from './store';
-import { exe, removeTemp, isWin, TAR } from './platform';
+import { exe, removeTemp, isLinux, isWin, TAR } from './platform';
+import { unzipLinux } from './linuxapps';
 import { githubJson } from './github';
 
 /**
@@ -67,7 +68,7 @@ export async function githubAsset(repo: string, match: RegExp, perPage = 10): Pr
     const a = r.assets.find((x) => match.test(x.name));
     if (a?.digest?.startsWith('sha256:')) return { url: a.browser_download_url, sha256: a.digest.slice(7), tag: r.tag_name };
   }
-  throw new Error(`No ${isWin ? 'Windows' : 'macOS'} build with a checksum found in ${repo} releases`);
+  throw new Error(`No ${isWin ? 'Windows' : isLinux ? 'Linux' : 'macOS'} build with a checksum found in ${repo} releases`);
 }
 
 async function unpack(archive: string, into: string): Promise<void> {
@@ -76,7 +77,9 @@ async function unpack(archive: string, into: string): Promise<void> {
   const r = isWin
     ? await run(TAR, ['-xf', archive, '-C', into], { timeout: 300_000 })
     : archive.endsWith('.zip')
-      ? await run('ditto', ['-x', '-k', archive, into], { timeout: 300_000 })
+      ? isLinux
+        ? await unzipLinux(archive, into)
+        : await run('ditto', ['-x', '-k', archive, into], { timeout: 300_000 })
       : await run('tar', ['-xf', archive, '-C', into], { timeout: 300_000 }); // bsdtar detects gzip / xz by content
   if (r.code !== 0) throw new Error(`Unpacking failed: ${r.stderr.trim()}`);
 }
@@ -119,7 +122,9 @@ export async function installFrom(
   // Windows programs end in .exe (callers name the tool: `cloudflared` → cloudflared.exe).
   const exe = isWin && !/\.\w+$/.test(name) ? `${name}.exe` : name;
   // A bare program instead of an archive (cloudflared-windows-amd64.exe): nothing to unpack.
-  const bare = /\.exe$/i.test(url.split('?')[0]);
+  // Linux builds are often a bare program too (cloudflared-linux-arm64); Homebrew bottles (ghcr.io blobs) are tarballs.
+  const path = url.split('?')[0];
+  const bare = /\.exe$/i.test(path) || (!/\.(zip|tar\.gz|tgz|tar\.xz)$/i.test(path) && !path.includes('/blobs/'));
   // Unpack next to DevCatz's data (the target folder may be on another volume).
   const tmp = join(dataDir('storage'), `.tmp-${exe}-${Date.now()}`);
   mkdirSync(tmp, { recursive: true });
@@ -154,7 +159,7 @@ export async function installFrom(
     if (!isWin) {
       chmodSync(found, 0o755);
       // Downloaded with fetch, so no quarantine flag; clear it anyway in case.
-      await run('xattr', ['-dr', 'com.apple.quarantine', found]);
+      if (!isLinux) await run('xattr', ['-dr', 'com.apple.quarantine', found]);
     }
     const dest = join(dir, exe);
     check(signal);
@@ -173,6 +178,12 @@ export async function installFrom(
 
 /** Homebrew bottle tag for this macOS (MinIO only ships through Homebrew now). */
 function bottleTag(files: Record<string, unknown>): string {
+  // Linux: Homebrew's x86_64_linux / arm64_linux bottles (static Go binaries, they run on any distribution).
+  if (isLinux) {
+    const tag = process.arch === 'arm64' ? 'arm64_linux' : 'x86_64_linux';
+    if (tag in files) return tag;
+    throw new Error('No Linux build of MinIO for this computer');
+  }
   const major = Number(release().split('.')[0]); // Darwin 25 = macOS 26
   const byDarwin: Record<number, string> = { 25: 'tahoe', 24: 'sequoia', 23: 'sonoma', 26: 'golden_gate' };
   const arch = process.arch === 'arm64' ? 'arm64_' : '';
@@ -184,16 +195,22 @@ function bottleTag(files: Record<string, unknown>): string {
 }
 
 /** Each server's GitHub release asset for this computer (SHA-256 in the release): Windows x64 zips, macOS builds. */
-const RUSTFS_ASSET = isWin ? /^rustfs-windows-x86_64-v[\d.]+\.zip$/ : process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\d.]+\.zip$/ : /^rustfs-macos-x86_64-v[\d.]+\.zip$/;
+const RUSTFS_ASSET = isWin
+  ? /^rustfs-windows-x86_64-v[\d.]+\.zip$/
+  : isLinux
+    ? new RegExp(`^rustfs-linux-${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-gnu-v[\\d.]+\\.zip$`)
+    : process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\d.]+\.zip$/ : /^rustfs-macos-x86_64-v[\d.]+\.zip$/;
 /** Windows: MinIO's own builds on its (archived) GitHub releases; the newest releases have none, so a few are looked through. */
 const MINIO_WIN_ASSET = /^minio\.windows-amd64\.RELEASE\.[\dT-]+Z\.exe$/;
 /** Silo (the same fork under its own name): Windows zips (older ones .tar.gz), macOS tarballs. */
 const SILO_ASSET = isWin
   ? /^silo_[\d.]+_windows_amd64\.(zip|tar\.gz)$/
-  : process.arch === 'arm64'
+  : isLinux
+    ? new RegExp(`^silo_[\\d.]+_linux_${process.arch === 'arm64' ? 'arm64' : 'amd64'}\\.tar\\.gz$`)
+    : process.arch === 'arm64'
     ? /^silo_[\d.]+_darwin_arm64\.tar\.gz$/
     : /^silo_[\d.]+_darwin_amd64\.tar\.gz$/;
-const WEED_ASSET = isWin ? /^windows_amd64\.zip$/ : process.arch === 'arm64' ? /^darwin_arm64\.tar\.gz$/ : /^darwin_amd64\.tar\.gz$/;
+const WEED_ASSET = isWin ? /^windows_amd64\.zip$/ : isLinux ? new RegExp(`^linux_${process.arch === 'arm64' ? 'arm64' : 'amd64'}\\.tar\\.gz$`) : process.arch === 'arm64' ? /^darwin_arm64\.tar\.gz$/ : /^darwin_amd64\.tar\.gz$/;
 
 export const ENGINES: Record<StorageKind, Engine> = {
   rustfs: {

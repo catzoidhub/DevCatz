@@ -14,7 +14,7 @@ import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './storage';
 import { dataDir, store } from './store';
-import { exe, isWin } from './platform';
+import { exe, isLinux, isWin } from './platform';
 import { OPENAPI_FILE_PREFIX } from './proxy';
 import { githubLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { getPhpRuntime } from './websocket';
@@ -119,7 +119,16 @@ async function ngrokScoop(): Promise<{ version: string; url: string; sha256: str
 }
 
 /** ngrok's release for this platform: Homebrew's cask on macOS, Scoop's manifest on Windows. */
-const ngrokRelease = () => (isWin ? ngrokScoop() : ngrokCask());
+/**
+ * Linux: ngrok publishes no checksums for its Linux archives and no package source DevCatz can read one from, and
+ * DevCatz installs nothing it cannot verify: ngrok's own apt / yum repository (signed) is the way there.
+ */
+const ngrokRelease = () =>
+  isWin
+    ? ngrokScoop()
+    : isLinux
+      ? Promise.reject(new Error('ngrok on Linux comes from its own signed repository (ngrok.com/download/linux): install it there; DevCatz uses it from the PATH. Cloudflare Tunnel installs here.'))
+      : ngrokCask();
 
 export class ExposeManager {
   private live = new Map<string, Live>();
@@ -216,7 +225,7 @@ export class ExposeManager {
     mkdirSync(dir, { recursive: true });
     if (tool === 'cloudflared') {
       report({ step: 0, detail: 'github.com/cloudflare/cloudflared releases' });
-      const a = await githubAsset('cloudflare/cloudflared', isWin ? /^cloudflared-windows-amd64\.exe$/ : process.arch === 'arm64' ? /^cloudflared-darwin-arm64\.tgz$/ : /^cloudflared-darwin-amd64\.tgz$/);
+      const a = await githubAsset('cloudflare/cloudflared', isWin ? /^cloudflared-windows-amd64\.exe$/ : isLinux ? (process.arch === 'arm64' ? /^cloudflared-linux-arm64$/ : /^cloudflared-linux-amd64$/) : process.arch === 'arm64' ? /^cloudflared-darwin-arm64\.tgz$/ : /^cloudflared-darwin-amd64\.tgz$/);
       check(signal);
       await installFrom(a.url, a.sha256, dir, 'cloudflared', `cloudflared ${a.tag}`, report, signal);
     } else if (tool === 'ngrok') {

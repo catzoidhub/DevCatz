@@ -17,7 +17,7 @@ import { dataDir, store, tld } from '../store';
 import { githubLatest, isNewer } from '../svcupdate';
 import { jcli } from './jcli';
 import { SmppCatcher } from './smpp';
-import { exe, isWin } from '../platform';
+import { exe, isLinux, isWin } from '../platform';
 import { firewallWords, forwardFromWsl, wslReaches } from '../wslhost';
 import { words } from '@shared/platform';
 
@@ -632,7 +632,7 @@ ${svc('postal worker', '')}`;
   /** Stalwart and its CLI from GitHub releases (SHA-256 checked); returns the version. */
   private async fetchStalwart(dir: string, report: Report, signal: AbortSignal): Promise<string> {
     // Windows: x86_64-pc-windows-msvc zips; macOS: apple-darwin tarballs.
-    const triple = isWin ? 'x86_64-pc-windows-msvc' : `${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-apple-darwin`;
+    const triple = isWin ? 'x86_64-pc-windows-msvc' : `${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-${isLinux ? 'unknown-linux-gnu' : 'apple-darwin'}`;
     report({ step: 0, detail: 'github.com/stalwartlabs/stalwart releases' });
     const a = await githubAsset('stalwartlabs/stalwart', new RegExp(`^stalwart-${triple}\\.${isWin ? 'zip' : 'tar\\.gz'}$`));
     check(signal);

@@ -14,7 +14,7 @@ import type { Route } from './proxy';
 import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './storage';
 import { dataDir, store, tld } from './store';
 import { githubLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
-import { exe, isWin } from './platform';
+import { exe, isLinux, isWin } from './platform';
 import { firewallWords, forwardFromWsl, wslReaches } from './wslhost';
 
 /**
@@ -309,7 +309,7 @@ export class WaManager {
   /** GOWA: this platform's build of the newest release (darwin-<arch> / windows-amd64.exe inside); placed as `gowa` in `dir`. Resolves with the release tag. */
   private async fetchGowa(dir: string, report: Report, signal: AbortSignal): Promise<string> {
     report({ step: 0, detail: `github.com/${GOWA_REPO} releases` });
-    const os = isWin ? 'windows' : 'darwin';
+    const os = isWin ? 'windows' : isLinux ? 'linux' : 'darwin';
     const arch = isWin || process.arch !== 'arm64' ? 'amd64' : 'arm64';
     const a = await githubAsset(GOWA_REPO, new RegExp(`^whatsapp_[\\d.]+_${os}_${arch}\\.zip$`));
     check(signal);

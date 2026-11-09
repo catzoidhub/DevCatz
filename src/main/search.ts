@@ -26,7 +26,7 @@ import type { Route } from './proxy';
 import { Cancelled, check, githubAsset } from './storage';
 import { brewLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
-import { exe, isWin, removeTemp, TAR } from './platform';
+import { exe, isLinux, isWin, removeTemp, TAR } from './platform';
 import { svcCompose, svcComposeFile, svcEngineReady, svcInDocker, svcPull, svcRemove, svcRemoveImage, svcUpCommand, vol, writeSvcCompose, type SvcKind } from './svcdocker';
 import { githubJson } from './github';
 
@@ -88,7 +88,7 @@ const SEARCHD = exe('searchd');
 async function unquarantine(path: string, recursive = false): Promise<void> {
   if (isWin) return;
   if (!recursive) chmodSync(path, 0o755);
-  await run('xattr', [recursive ? '-dr' : '-d', 'com.apple.quarantine', path]);
+  if (!isLinux) await run('xattr', [recursive ? '-dr' : '-d', 'com.apple.quarantine', path]);
 }
 
 /** Downloads `url` into a fresh temp folder (next to DevCatz's data) and returns the file and its digest. */
@@ -120,7 +120,7 @@ async function fetchTmp(
 async function untar(file: string, into: string): Promise<void> {
   mkdirSync(into, { recursive: true });
   // Windows' own bsdtar reads .zip and .tar.gz alike.
-  const r = await run(TAR, [isWin ? '-xf' : '-xzf', file, '-C', into], { timeout: 900_000 });
+  const r = await run(TAR, ['-xf', file, '-C', into], { timeout: 900_000 });
   if (r.code !== 0) throw new Error(`Unpacking failed: ${r.stderr.trim()}`);
 }
 
@@ -142,8 +142,14 @@ async function latestTag(repo: string): Promise<string> {
   return tag;
 }
 
-const MEILI_ASSET = isWin ? /^meilisearch-windows-amd64\.exe$/ : ARM ? /^meilisearch-macos-apple-silicon$/ : /^meilisearch-macos-amd64$/;
-const ZINC_ASSET = isWin ? /^zincsearch_.+_windows_x86_64\.tar\.gz$/ : ARM ? /^zincsearch_.+_darwin_arm64\.tar\.gz$/ : /^zincsearch_.+_darwin_x86_64\.tar\.gz$/;
+const MEILI_ASSET = isWin ? /^meilisearch-windows-amd64\.exe$/ : isLinux ? (ARM ? /^meilisearch-linux-aarch64$/ : /^meilisearch-linux-amd64$/) : ARM ? /^meilisearch-macos-apple-silicon$/ : /^meilisearch-macos-amd64$/;
+const ZINC_ASSET = isWin
+  ? /^zincsearch_.+_windows_x86_64\.tar\.gz$/
+  : isLinux
+    ? ARM
+      ? /^zincsearch_.+_linux_arm64\.tar\.gz$/
+      : /^zincsearch_.+_linux_x86_64\.tar\.gz$/
+    : ARM ? /^zincsearch_.+_darwin_arm64\.tar\.gz$/ : /^zincsearch_.+_darwin_x86_64\.tar\.gz$/;
 /** Manticore's own package repository: Windows x64 zips, macOS tarballs (no checksums published; HTTPS). */
 const MANTICORE_REPO = isWin
   ? 'https://repo.manticoresearch.com/repository/manticoresearch_windows/release/x64/'
@@ -215,7 +221,7 @@ const ENGINES: Record<SearchKind, Engine> = {
       report({ step: S.find, detail: 'github.com/typesense/typesense releases' });
       const v = (await latestTag('typesense/typesense')).replace(/^v/, '');
       report({ title: `Installing Typesense ${v}` });
-      const url = `https://dl.typesense.org/releases/${v}/typesense-server-${v}-darwin-${ARM ? 'arm64' : 'amd64'}.tar.gz`;
+      const url = `https://dl.typesense.org/releases/${v}/typesense-server-${v}-${isLinux ? 'linux' : 'darwin'}-${ARM ? 'arm64' : 'amd64'}.tar.gz`;
       const d = await fetchTmp(url, 'typesense.tar.gz', '', 'sha256', report, signal);
       try {
         report({ step: S.unpack, detail: 'tar.gz' });
@@ -283,11 +289,11 @@ const ENGINES: Record<SearchKind, Engine> = {
           place(join(d.tmp, 'x', root), join(dir, 'opensearch'));
           return;
         }
-        // Its JDK is for Linux; DevCatz runs it on Temurin for macOS.
+        // Its JDK is for Linux x64; DevCatz runs it on Temurin for this OS and CPU.
         rmSync(join(d.tmp, 'x', root, 'jdk'), { recursive: true, force: true });
         check(signal);
         // Java: Eclipse Temurin 21 JRE (Adoptium API, SHA-256).
-        const jre = (await (await fetch(`https://api.adoptium.net/v3/assets/latest/21/hotspot?architecture=${ARM ? 'aarch64' : 'x64'}&image_type=jre&os=mac&vendor=eclipse`)).json()) as {
+        const jre = (await (await fetch(`https://api.adoptium.net/v3/assets/latest/21/hotspot?architecture=${ARM ? 'aarch64' : 'x64'}&image_type=jre&os=${isLinux ? 'linux' : 'mac'}&vendor=eclipse`)).json()) as {
           release_name: string;
           binary: { package: { link: string; checksum: string } };
         }[];
@@ -338,6 +344,8 @@ const ENGINES: Record<SearchKind, Engine> = {
     defaults: { port: 9308, extraPort: 9306, domain: 'manticore' },
     needsKey: false,
     async install(dir, report, signal) {
+      // Linux: Manticore ships .deb / .rpm packages for each distribution, no generic tarball to run from a folder.
+      if (isLinux) throw new Error('Manticore has no generic Linux build: install manticore from its apt / yum repository (manticoresearch.com/install), or use Meilisearch / Typesense here.');
       report({ step: S.find, detail: `repo.manticoresearch.com (${isWin ? 'Windows' : 'macOS'} builds)` });
       const base = MANTICORE_REPO;
       const listing = await (await fetch(base)).text();
@@ -480,12 +488,13 @@ const ENGINES: Record<SearchKind, Engine> = {
         versions: { stable: string };
         bottle: { stable: { files: Record<string, { url: string; sha256: string }> } };
       };
-      // Bottles are per macOS release: this one, else the newest older one (they run on later releases).
+      // Bottles are per macOS release: this one, else the newest older one (they run on later releases); Linux has its own.
+      const linuxTag = ARM ? 'arm64_linux' : 'x86_64_linux';
       const NAMES = ['golden_gate', 'tahoe', 'sequoia', 'sonoma', 'ventura', 'monterey'];
       const darwin = Number(release().split('.')[0]);
       const mine = Math.max(0, NAMES.length - 1 - (darwin - 21));
       const files = f.bottle.stable.files;
-      const pick = NAMES.slice(Math.min(mine, NAMES.length - 1)).map((n) => (ARM ? `arm64_${n}` : n)).find((n) => files[n]);
+      const pick = isLinux ? (files[linuxTag] ? linuxTag : undefined) : NAMES.slice(Math.min(mine, NAMES.length - 1)).map((n) => (ARM ? `arm64_${n}` : n)).find((n) => files[n]);
       if (!pick) throw new Error(`No Sonic build for this Mac (Homebrew has ${Object.keys(files).join(', ')})`);
       const v = f.versions.stable;
       report({ title: `Installing Sonic ${v}` });
