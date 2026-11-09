@@ -1,28 +1,36 @@
 import { spawn } from 'node:child_process';
 import { app, shell } from 'electron';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { TaskProgress } from '@shared/types';
 import { downloadVerified } from './download';
 import { run } from './env';
-import { isWin, removeTemp } from './platform';
+import { isLinux, isWin, removeTemp } from './platform';
 import { githubAsset } from './storage';
 
 /**
  * Which build of a Catzoid app fits this computer (Catzoid family rule, user 2026-10-27): every install and update
  * check of another Catzoid app picks it by platform AND architecture — Windows `<App>-Setup-<v>.exe`, Mac Apple
- * silicon `<App>-<v>-arm64.dmg`, Mac Intel `<App>-<v>-x64.dmg` — and says so when there is none, never another
- * platform's file.
+ * silicon `<App>-<v>-arm64.dmg`, Mac Intel `<App>-<v>-x64.dmg`, Linux `<App>-<v>-<arm64|x64>.AppImage` (the
+ * family's artifactName) — and says so when there is none, never another platform's file.
  */
 export function platformAsset(name: string): { pattern: RegExp; label: string } {
   if (isWin) return { pattern: new RegExp(`^${name}-Setup-.*\\.exe$`), label: 'Windows' };
+  if (isLinux) {
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+    return { pattern: new RegExp(`^${name}-.*-${arch}\\.AppImage$`), label: arch === 'arm64' ? 'Linux (ARM64)' : 'Linux (x64)' };
+  }
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
   return { pattern: new RegExp(`^${name}-.*-${arch}\\.dmg$`), label: arch === 'arm64' ? 'Mac (Apple silicon)' : 'Mac (Intel)' };
 }
 
-/** Where a Catzoid app is installed by default: /Applications on a Mac, the per-user NSIS folder on Windows. */
+/**
+ * Where a Catzoid app is installed by default: /Applications on a Mac, the per-user NSIS folder on Windows; on Linux
+ * the AppImage DevCatz puts in ~/Applications, or a .deb's /opt/<App>.
+ */
 export function catzoidAppPaths(name: string): string[] {
+  if (isLinux) return [join(homedir(), 'Applications', `${name}.AppImage`), `/opt/${name}/${name.toLowerCase()}`, `/opt/${name}/${name}`];
   if (isWin) {
     const local = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local');
     return [join(local, 'Programs', name, `${name}.exe`), join(process.env.ProgramFiles ?? 'C:\\Program Files', name, `${name}.exe`)];
@@ -39,6 +47,7 @@ export async function findCatzoidApp(name: string, scheme: string, bundleId: str
     !!p && (isWin ? /\.exe$/i.test(p) && existsSync(p) : !p.includes('/.Trash/') && existsSync(join(p, 'Contents', 'Info.plist')));
   const known = catzoidAppPaths(name).find((p) => existsSync(p));
   if (known) return known;
+  if (isLinux) return null;
   const handler = await app.getApplicationInfoForProtocol(`${scheme}://open`).catch(() => null);
   if (usable(handler?.path) && new RegExp(name, 'i').test(handler.path)) return handler.path;
   if (isWin) return null;
@@ -48,7 +57,7 @@ export async function findCatzoidApp(name: string, scheme: string, bundleId: str
 
 /** Opens a Catzoid app at a link: `open -a` on a Mac (that very copy), the .exe with the link on Windows. */
 export async function openCatzoidApp(path: string, link: string): Promise<void> {
-  if (isWin) {
+  if (isWin || isLinux) {
     const ok = await new Promise<boolean>((resolve) => {
       const child = spawn(path, [link], { detached: true, stdio: 'ignore' });
       child.once('error', () => resolve(false));
@@ -82,7 +91,7 @@ export async function installCatzoidApp(
     const asset = await githubAsset(repo, want.pattern).catch((e: Error) => {
       // 404 = the repository cannot be seen without signing in (private until the public repos, Catzoid #52).
       if (/HTTP 404/.test(e.message)) throw new Error(`${name}'s releases are not public yet, so DevCatz cannot download it (${releases})`);
-      throw new Error(/No macOS build/.test(e.message) ? `There is no ${name} build for ${want.label} yet (${releases})` : e.message);
+      throw new Error(/No (macOS|Windows|Linux) build/.test(e.message) ? `There is no ${name} build for ${want.label} yet (${releases})` : e.message);
     });
     if (signal.aborted) throw new Error('cancelled');
     set({ step: 1, title: `Installing ${name} ${asset.tag.replace(/^v/, '')}`, detail: asset.url });
@@ -100,6 +109,22 @@ export async function installCatzoidApp(
       if (!installed) throw new Error(`${name} was installed but could not be found`);
       set({ step: 4, detail: '' });
       await openCatzoidApp(installed, link);
+      return;
+    }
+    if (isLinux) {
+      // The AppImage into ~/Applications (no administrator needed), a menu entry that also opens its links, then the app.
+      const file = join(tmp, `${name}.AppImage`);
+      await downloadVerified(asset.url, file, asset.sha256, (received, total) => set({ received, total }), undefined, signal);
+      set({ step: 2, received: undefined, total: undefined, detail: 'SHA-256 matches the release digest' });
+      const target = catzoidAppPaths(name)[0];
+      set({ step: 3, detail: target });
+      mkdirSync(join(target, '..'), { recursive: true });
+      rmSync(target, { force: true });
+      renameSync(file, target);
+      chmodSync(target, 0o755);
+      writeDesktopEntry(name, target);
+      set({ step: 4, detail: '' });
+      await openCatzoidApp(target, link);
       return;
     }
     const dmg = join(tmp, `${name}.dmg`);
@@ -128,5 +153,19 @@ export async function installCatzoidApp(
   }
 }
 
+/** A menu entry for an AppImage, registered for the app's `scheme://` links (xdg-mime), like a .deb would. */
+function writeDesktopEntry(name: string, exe: string): void {
+  const scheme = name.toLowerCase();
+  const dir = join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'applications');
+  mkdirSync(dir, { recursive: true });
+  const id = `${scheme}.desktop`;
+  writeFileSync(
+    join(dir, id),
+    ['[Desktop Entry]', 'Type=Application', `Name=${name}`, `Exec="${exe}" %U`, `Icon=${scheme}`, 'Terminal=false', 'Categories=Development;', `MimeType=x-scheme-handler/${scheme};`, ''].join('\n'),
+  );
+  void run('xdg-mime', ['default', id, `x-scheme-handler/${scheme}`], { timeout: 10_000 }).catch(() => undefined);
+  void run('update-desktop-database', [dir], { timeout: 10_000 }).catch(() => undefined);
+}
+
 /** The steps every Catzoid app install shows. */
-export const installSteps = (name: string) => ['Find the latest release', 'Download', 'Verify the checksum', isWin ? 'Install' : 'Install to Applications', `Open ${name}`];
+export const installSteps = (name: string) => ['Find the latest release', 'Download', 'Verify the checksum', isWin ? 'Install' : isLinux ? 'Install to ~/Applications' : 'Install to Applications', `Open ${name}`];

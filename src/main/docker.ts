@@ -7,7 +7,7 @@ import { isPhpFramework, isPythonFramework, type AppInfo, type DockerEngineId, t
 import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './detect';
 import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
-import { exePath, isWin, killTree } from './platform';
+import { exePath, isLinux, isWin, killTree } from './platform';
 import { docatzEngine, docatzEnvFile, docatzEnvPath } from './docatz';
 import { store } from './store';
 
@@ -29,6 +29,8 @@ interface EngineDef {
   app?: string;
   /** Windows: the app's .exe (`%ProgramFiles%` / `%LOCALAPPDATA%` placeholders); engines without one are macOS-only. */
   win?: string;
+  /** Linux: the folder its package installs (engines without one are found by their CLI, or not offered). */
+  linux?: string;
   macOnly?: boolean;
   /** CLI that, when found on PATH, means it is installed (Colima, Podman, Finch). */
   bin?: string;
@@ -40,18 +42,19 @@ export const ENGINES: EngineDef[] = ([
   // The Catzoid engine (DoCatz TODO #23): recommended first. Its context is "docatz".
   { id: 'docatz', name: 'DoCatz', app: 'DoCatz.app', win: '%LOCALAPPDATA%\\Programs\\DoCatz\\DoCatz.exe', download: 'https://catzoid.com/docatz/download' },
   { id: 'orbstack', name: 'OrbStack', app: 'OrbStack.app', macOnly: true, download: 'https://orbstack.dev/download' },
-  { id: 'docker-desktop', name: 'Docker Desktop', app: 'Docker.app', win: '%ProgramFiles%\\Docker\\Docker\\Docker Desktop.exe', download: 'https://www.docker.com/products/docker-desktop/' },
+  { id: 'docker-desktop', name: 'Docker Desktop', app: 'Docker.app', win: '%ProgramFiles%\\Docker\\Docker\\Docker Desktop.exe', linux: '/opt/docker-desktop', download: 'https://www.docker.com/products/docker-desktop/' },
   { id: 'colima', name: 'Colima', bin: 'colima', macOnly: true, download: 'https://github.com/abiosoft/colima#installation' },
-  { id: 'rancher', name: 'Rancher Desktop', app: 'Rancher Desktop.app', win: '%LOCALAPPDATA%\\Programs\\Rancher Desktop\\Rancher Desktop.exe', download: 'https://rancherdesktop.io/' },
+  { id: 'rancher', name: 'Rancher Desktop', app: 'Rancher Desktop.app', win: '%LOCALAPPDATA%\\Programs\\Rancher Desktop\\Rancher Desktop.exe', linux: '/opt/rancher-desktop', download: 'https://rancherdesktop.io/' },
   { id: 'podman', name: 'Podman', app: 'Podman Desktop.app', win: '%LOCALAPPDATA%\\Programs\\Podman Desktop\\Podman Desktop.exe', bin: 'podman', download: 'https://podman-desktop.io/downloads' },
   { id: 'finch', name: 'Finch', bin: 'finch', macOnly: true, download: 'https://github.com/runfinch/finch/releases' },
-] as EngineDef[]).filter((e) => !(isWin && e.macOnly));
+] as EngineDef[]).filter((e) => !((isWin || isLinux) && e.macOnly));
 
 /** Windows: an engine's .exe with %ProgramFiles% / %LOCALAPPDATA% filled in. */
 const winExe = (e: EngineDef) => e.win?.replace(/%(\w+)%/g, (_m, k: string) => process.env[k] ?? '');
 
 const appInstalled = (app: string) => existsSync(join('/Applications', app)) || existsSync(join(homedir(), 'Applications', app));
-const engineAppInstalled = (e: EngineDef) => (isWin ? !!winExe(e) && existsSync(winExe(e)!) : !!e.app && appInstalled(e.app));
+const engineAppInstalled = (e: EngineDef) =>
+  isWin ? !!winExe(e) && existsSync(winExe(e)!) : isLinux ? !!e.linux && existsSync(e.linux) : !!e.app && appInstalled(e.app);
 
 const onPath = (bin: string): Promise<boolean> => hasCommand(bin);
 
@@ -163,6 +166,11 @@ export async function dockerStatus(): Promise<DockerStatus> {
     }
     // The docker CLI is there but its engine is down; Podman/Finch may still be up below.
     dockerError = info.stderr.trim().split('\n').pop() || 'The Docker engine is not running';
+    // Linux's own Docker Engine (docker.io / docker-ce): the socket is root's and the docker group's.
+    if (isLinux && /permission denied.*docker\.sock/i.test(dockerError))
+      dockerError = 'Docker runs, but this user may not use it: add yourself to the docker group (sudo usermod -aG docker $USER), then log out and in again';
+    else if (isLinux && /Cannot connect to the Docker daemon/i.test(dockerError) && existsSync('/lib/systemd/system/docker.service'))
+      dockerError = 'The Docker engine is not running: start it with sudo systemctl start docker (enable it to start with the computer)';
     Object.assign(base, { cliFound: true, context: ctx || null });
   }
   for (const [bin, id] of [['podman', 'podman'], ['finch', 'finch']] as const) {
@@ -182,10 +190,20 @@ export async function startEngine(id: DockerEngineId): Promise<void> {
   const e = ENGINES.find((x) => x.id === id);
   if (!e) throw new Error(`Unknown engine ${id}`);
   if (engineAppInstalled(e)) {
+    if (isLinux) {
+      // Docker Desktop runs as a user service; Rancher Desktop is an app.
+      if (id === 'docker-desktop') {
+        const r = await run('systemctl', ['--user', 'start', 'docker-desktop'], { timeout: 60_000 });
+        if (r.code !== 0) throw new Error(`systemctl --user start docker-desktop: ${(r.stderr || r.stdout).trim().split('\n').pop()}`);
+      } else spawn(join(e.linux!, id === 'rancher' ? 'rancher-desktop' : id), [], { detached: true, stdio: 'ignore' }).unref();
+      return;
+    }
     if (isWin) spawn(winExe(e)!, [], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
     else await run('open', ['-a', e.app!.replace(/\.app$/, '')]);
     return;
   }
+  // Podman on Linux runs without a VM: there is nothing to start.
+  if (isLinux && id === 'podman') return;
   const cmd: Record<string, string[]> = { colima: ['colima', 'start'], podman: ['podman', 'machine', 'start'], finch: ['finch', 'vm', 'start'] };
   const c = cmd[id];
   if (!c) throw new Error(`${e.name} is not installed`);
