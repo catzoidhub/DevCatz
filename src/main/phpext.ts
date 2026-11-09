@@ -8,6 +8,7 @@ import { getShellEnv, run } from './env';
 import { brewBin, etcDir, phpDir } from './php';
 import { dataDir } from './store';
 import { isLinux, isWin, TAR } from './platform';
+import { runAsRootLinux } from './linuxadmin';
 
 /**
  * PHP extensions beyond the ones compiled into static-php.dev's build: built
@@ -46,6 +47,43 @@ export const CATALOG: PhpExtCatalogItem[] = [
   { pkg: 'uploadprogress', title: 'Upload progress', description: 'Track file upload progress' },
   { pkg: 'grpc', title: 'gRPC', description: 'gRPC client (long build: 10+ minutes)' },
 ];
+
+/** Linux: the distribution packages behind each catalog item's Homebrew formulas (apt, or dnf on Fedora). */
+const LINUX_DEPS: Record<string, { apt: string[]; dnf: string[] }> = {
+  mongodb: { apt: ['libssl-dev'], dnf: ['openssl-devel'] },
+  yaml: { apt: ['libyaml-dev'], dnf: ['libyaml-devel'] },
+  memcached: { apt: ['libmemcached-dev', 'zlib1g-dev'], dnf: ['libmemcached-awesome-devel', 'zlib-devel'] },
+  ssh2: { apt: ['libssh2-1-dev'], dnf: ['libssh2-devel'] },
+  rdkafka: { apt: ['librdkafka-dev'], dnf: ['librdkafka-devel'] },
+  decimal: { apt: ['libmpdec-dev'], dnf: ['mpdecimal-devel'] },
+  zstd: { apt: ['libzstd-dev'], dnf: ['libzstd-devel'] },
+};
+const LINUX_TOOLS = { apt: ['build-essential', 'autoconf', 'pkg-config'], dnf: ['gcc', 'gcc-c++', 'make', 'autoconf', 'pkgconf-pkg-config'] };
+
+/**
+ * Linux: the compiler, autoconf, pkg-config and the item's -dev packages, installed through the password dialog when
+ * any is missing (apt, or dnf on Fedora) — the Linux counterpart of the Command Line Tools + Homebrew formulas.
+ */
+async function linuxBuildDeps(pkg: string, task: (t: Partial<PhpExtTask>) => void): Promise<void> {
+  const apt = (await run('/bin/sh', ['-c', 'command -v apt-get'], { timeout: 5000 })).code === 0;
+  const deps = LINUX_DEPS[pkg];
+  const want = apt ? [...LINUX_TOOLS.apt, ...(deps?.apt ?? [])] : [...LINUX_TOOLS.dnf, ...(deps?.dnf ?? [])];
+  const missing: string[] = [];
+  for (const p of want) {
+    const r = apt
+      ? await run('dpkg-query', ['-W', '-f=${Status}', p], { timeout: 10_000 })
+      : await run('rpm', ['-q', p], { timeout: 10_000 });
+    if (r.code !== 0 || (apt && !r.stdout.includes('install ok installed'))) missing.push(p);
+  }
+  if (!missing.length) return;
+  task({ phase: 'deps', detail: `Installing ${missing.join(', ')} (password)` });
+  const root = await runAsRootLinux(
+    apt
+      ? `DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${missing.join(' ')} >/dev/null`
+      : `dnf install -y -q ${missing.join(' ')} >/dev/null`,
+  );
+  if (!root.ok) throw new Error(root.cancelled ? `Cancelled: building ${pkg} needs ${missing.join(', ')}` : `Installing ${missing.join(', ')} failed: ${root.message}`);
+}
 
 const VERSION = /^\d+\.\d+\.\d+$/;
 const PKG = /^[A-Za-z][A-Za-z0-9_]{1,40}$/;
@@ -131,9 +169,8 @@ function stream(cmd: string, args: string[], cwd: string, log: (line: string) =>
 /** What a build needs: Xcode Command Line Tools, autoconf (from Homebrew when missing). */
 export async function buildProblem(): Promise<string | null> {
   if (isWin) return null; // ready-made DLLs: nothing to build with
-  // static-php.dev's Linux PHP is fully static (musl): it cannot load a .so ("Dynamic loading not supported").
-  if (isLinux)
-    return 'This PHP is a fully static build (static-php.dev), which cannot load extra extensions on Linux. The extensions listed as built in are all it has; for another one, use your distribution’s PHP (e.g. sudo apt install php8.3-<extension>).';
+  // Linux: DevCatz's PHP is static-php.dev's glibc build, which loads extensions; build tools come with the first build.
+  if (isLinux) return null;
   const clt = await run('xcode-select', ['-p'], { timeout: 10_000 });
   if (clt.code !== 0) return 'Xcode Command Line Tools are needed to build extensions: run “xcode-select --install” in Terminal.';
   const ac = await run('/bin/sh', ['-c', 'command -v autoconf'], { env: buildEnv(), timeout: 10_000 });
@@ -354,11 +391,13 @@ export async function install(
   const problem = await buildProblem();
   if (problem) throw new Error(problem);
   const item = CATALOG.find((c) => c.pkg === pkgName.toLowerCase());
-  if (!(await run('/bin/sh', ['-c', 'command -v autoconf'], { env: buildEnv() })).stdout.trim()) await brewPrefix('autoconf', task, log);
+  if (isLinux) await linuxBuildDeps(pkgName.toLowerCase(), task);
+  else if (!(await run('/bin/sh', ['-c', 'command -v autoconf'], { env: buildEnv() })).stdout.trim()) await brewPrefix('autoconf', task, log);
 
   const prefix = await makeToolkit(version, task, log);
   const vars: Record<string, string> = {};
-  for (const f of item?.brew ?? []) vars[f] = await brewPrefix(f, task, log);
+  // Linux: the -dev packages live under /usr.
+  for (const f of item?.brew ?? []) vars[f] = isLinux ? '/usr' : await brewPrefix(f, task, log);
 
   task({ phase: 'download', detail: `Looking up ${pkgName} on PECL` });
   const pv = await peclVersion(pkgName);
@@ -374,7 +413,9 @@ export async function install(
     task({ phase: 'build', detail: `phpize (PHP ${version})` });
     await stream(join(prefix, 'bin', 'phpize'), [], dir, log);
     task({ detail: `Configuring ${pkgName} ${pv}` });
-    const extra = (item?.configure ?? []).map((a) => a.replace(/\{(\w+)\}/g, (_m, k: string) => vars[k] ?? ''));
+    const extra = (item?.configure ?? [])
+      .map((a) => (isLinux && a === '--with-mongodb-ssl=darwin' ? '--with-mongodb-ssl=openssl' : a))
+      .map((a) => a.replace(/\{(\w+)\}/g, (_m, k: string) => vars[k] ?? ''));
     await stream('./configure', [`--with-php-config=${join(prefix, 'bin', 'php-config')}`, ...extra], dir, log);
     task({ detail: `Compiling ${pkgName} ${pv}` });
     await stream('make', [`-j${Math.max(2, cpus().length)}`], dir, log);

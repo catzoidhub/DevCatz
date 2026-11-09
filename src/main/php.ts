@@ -26,9 +26,13 @@ import { dataDir } from './store';
  * releases.json), unpacked as php/<version>/{php.exe,php-cgi.exe,ext/*.dll};
  * no php-fpm (fpm.ts runs php-cgi workers), no Herd / Homebrew / static-php.
  */
-const BASE = 'https://dl.static-php.dev/static-php-cli/bulk';
+/**
+ * Linux takes the glibc builds (gnu-bulk): the musl ones in bulk/ are fully static and cannot load an extension
+ * ("Dynamic loading not supported"); the glibc ones can, so PECL extensions build and load as on macOS.
+ */
+const BASE = isLinux ? 'https://dl.static-php.dev/static-php-cli/gnu-bulk' : 'https://dl.static-php.dev/static-php-cli/bulk';
 const ARCH = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
-/** static-php.dev's OS in a file name: php-8.4.23-fpm-macos-aarch64.tar.gz, …-linux-x86_64.tar.gz (static, musl). */
+/** static-php.dev's OS in a file name: php-8.4.23-fpm-macos-aarch64.tar.gz, …-linux-x86_64.tar.gz (glibc). */
 const OS_NAME = isLinux ? 'linux' : 'macos';
 const VERSION = /^\d+\.\d+\.\d+$/;
 const HERD_BIN = join(homedir(), 'Library/Application Support/Herd/bin');
