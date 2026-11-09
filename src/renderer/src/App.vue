@@ -31,7 +31,7 @@ import StatusDot from './components/StatusDot.vue';
 import PopMenu from './components/PopMenu.vue';
 import { groupByType, sortList, useListView } from './listview';
 import { ICONS, STAR } from './icons';
-import { siteStatus, stackTag, isDesktopSite } from './runtimes';
+import { siteStatus, stackTag, isDesktopSite, runtimeLabel } from './runtimes';
 import { backIndex, backList, canBack, canForward, forwardList, goBack, goForward, goTo, navApply, navPrune, navVisit, type NavEntry } from './nav';
 import type { AppState, ProjectState } from '@shared/types';
 import { isWin, WIN_SECTIONS } from './platform';
@@ -189,7 +189,7 @@ onMounted(() => window.addEventListener('keydown', onSearchKey));
 onBeforeUnmount(() => window.removeEventListener('keydown', onSearchKey));
 
 /** Sort and grouping of the sidebar (⇅ menu): default = drag-and-drop order and the user's groups. */
-const listView = useListView('mrcatz-herd.sites.view', 'stack', 'Running sites only');
+const listView = useListView('mrcatz-herd.sites.view', 'stack', 'Running sites only', true);
 const view = listView.view;
 /**
  * "Running sites only" (⇅ menu): what the status dot shows as running or starting — PHP sites served by PHP-FPM
@@ -232,8 +232,9 @@ const sections = computed<Section[]>(() => {
   const out: Section[] = [];
   const favSites = all.filter((p) => favs.value.has(p.id) && shownTree(p, 'favorites'));
   if (favSites.length) out.push(mk('fav', 'Favorites', favSites));
-  if (view.value.group === 'type') {
-    for (const [label, sites] of groupByType(all.filter((p) => shownTree(p, null)), (p) => stackTag(p).label)) out.push(mk(`t:${label}`, label, sites));
+  if (view.value.group === 'type' || view.value.group === 'runtime') {
+    const by = view.value.group === 'type' ? (p: ProjectState) => stackTag(p).label : runtimeLabel;
+    for (const [label, sites] of groupByType(all.filter((p) => shownTree(p, null)), by)) out.push(mk(`${view.value.group === 'type' ? 't' : 'r'}:${label}`, label, sites));
     return out;
   }
   if (view.value.group === 'none') {
@@ -603,7 +604,7 @@ function missingIn(sec: Section, i: number): Missing[] {
   if (sec.group) return list.filter((m) => state.value!.settings.siteGroups.find((g) => g.name === sec.group)?.sites.includes(m.id));
   const grouped = new Set(view.value.group === 'default' ? (state.value?.settings.siteGroups ?? []).flatMap((g) => g.sites) : []);
   // Grouped by stack: there is no stack for a missing folder, so they come last.
-  if (view.value.group === 'type') return i === sections.value.length - 1 ? list.filter((m) => !favs.value.has(m.id)) : [];
+  if (view.value.group === 'type' || view.value.group === 'runtime') return i === sections.value.length - 1 ? list.filter((m) => !favs.value.has(m.id)) : [];
   return sec.key === 'rest' ? list.filter((m) => !grouped.has(m.id) && !favs.value.has(m.id)) : [];
 }
 

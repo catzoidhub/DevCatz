@@ -7,7 +7,8 @@ import type { MenuItem } from './components/PopMenu.vue';
  * Remembered per window in localStorage (a convenience, not a setting).
  */
 export type ListSort = 'default' | 'name' | 'type';
-export type ListGroup = 'default' | 'type' | 'none';
+/** `runtime`: the sites list only (PHP, Python, Ruby, Node.js …). */
+export type ListGroup = 'default' | 'type' | 'runtime' | 'none';
 export interface ListView {
   sort: ListSort;
   group: ListGroup;
@@ -17,12 +18,12 @@ export interface ListView {
   runningOnly: boolean;
 }
 
-export function useListView(key: string, typeLabel: string, runningLabel = 'Running only') {
+export function useListView(key: string, typeLabel: string, runningLabel = 'Running only', byRuntime = false) {
   const view = ref<ListView>({ sort: 'default', group: 'default', collapsed: [], runningOnly: false });
   try {
     const v = JSON.parse(localStorage.getItem(key) ?? '') as Partial<ListView>;
     if (['default', 'name', 'type'].includes(v.sort ?? '')) view.value.sort = v.sort!;
-    if (['default', 'type', 'none'].includes(v.group ?? '')) view.value.group = v.group!;
+    if (['default', 'type', 'none', ...(byRuntime ? ['runtime'] : [])].includes(v.group ?? '')) view.value.group = v.group!;
     if (Array.isArray(v.collapsed)) view.value.collapsed = v.collapsed.filter((x) => typeof x === 'string');
     view.value.runningOnly = v.runningOnly === true;
   } catch {
@@ -38,6 +39,7 @@ export function useListView(key: string, typeLabel: string, runningLabel = 'Runn
     { label: `Sort by ${typeLabel}`, checked: view.value.sort === 'type', action: () => (view.value.sort = 'type') },
     { label: 'Group by default (your groups)', checked: view.value.group === 'default', action: () => (view.value.group = 'default'), separator: true },
     { label: `Group by ${typeLabel}`, checked: view.value.group === 'type', action: () => (view.value.group = 'type') },
+    ...(byRuntime ? [{ label: 'Group by runtime', checked: view.value.group === 'runtime', action: () => (view.value.group = 'runtime' as ListGroup) }] : []),
     { label: 'No grouping', checked: view.value.group === 'none', action: () => (view.value.group = 'none') },
   ]);
   const custom = computed(() => view.value.sort !== 'default' || view.value.group !== 'default');

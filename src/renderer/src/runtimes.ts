@@ -103,6 +103,25 @@ export function runtimesOf(p: ProjectState): RuntimeRow[] {
   return rows;
 }
 
+/**
+ * The language a site runs on, for "Group by runtime" in the site list: PHP, Python, Ruby, Go, Rust, Node.js (Bun /
+ * Deno when that runs it), Static; a site whose folders run on more than one says "Several runtimes".
+ */
+export function runtimeLabel(p: ProjectState): string {
+  const s = p.stack;
+  const name = (r: string) => ({ php: 'PHP', python: 'Python', ruby: 'Ruby', go: 'Go', rust: 'Rust', node: 'Node.js' })[r] ?? r;
+  const subs = (s.subRuntimes ?? []).filter((r) => r !== s.runtime);
+  if (s.layout === 'folders' && subs.length) return 'Several runtimes';
+  if (s.runtime === 'node') {
+    if (s.apps.length && s.apps.every((a) => a.framework === 'static')) return 'Static';
+    if (s.apps.some((a) => a.library === 'deno')) return 'Deno';
+    if (s.packageManager === 'bun' || s.apps.some((a) => a.library === 'bun')) return 'Bun';
+    if (s.apps.length && s.apps.every((a) => a.framework === 'go')) return 'Go';
+    if (s.apps.length && s.apps.every((a) => a.framework === 'rust' || a.library === 'tauri')) return 'Rust';
+  }
+  return name(s.runtime);
+}
+
 /** What the status dot shows: PHP sites count as running while PHP-FPM serves them; a start in progress as starting. */
 /** Electron and Tauri apps open their own window: their frontend (if any) is not a page to open in a browser. */
 export const isDesktopApp = (app: { library?: string | null }): boolean => app.library === 'electron' || app.library === 'tauri';
