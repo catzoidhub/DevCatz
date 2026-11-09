@@ -271,7 +271,7 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.searchUninstal
               <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="selected.inDocatz" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ selected.inDocatz ? 'Install in DoCatz…' : `Install ${selected.name}…` }}
             </button>
             <p v-if="!needDocatz" class="text-xs opacity-60">
-              <template v-if="selected.inDocatz">{{ selected.name }} publishes no {{ words.os }} build: here it runs from its official image in DoCatz's container engine (WSL 2). DevCatz pulls it there, starts and stops it and keeps its port, domain, key and .env lines as usual; DoCatz shows the container under DevCatz Services.</template>
+              <template v-if="selected.inDocatz">{{ selected.name }} publishes no {{ words.os }} build: here it runs from its official image in DoCatz's container engine{{ isWin ? ' (WSL 2)' : '' }}. DevCatz pulls it there, starts and stops it and keeps its port, domain, key and .env lines as usual; DoCatz shows the container under DevCatz Services.</template>
               <template v-else-if="selected.kind === 'opensearch' && isWin">About 1 GB to download: OpenSearch's Windows build only comes as the full bundle (its own Java included); DevCatz drops its plugins after unpacking.</template>
               <template v-else-if="selected.kind === 'opensearch'">About 300 MB: the core build runs on Eclipse Temurin 21{{ isLinux ? '' : ' (no official macOS build)' }}.</template>
               <template v-else-if="selected.unavailable" />

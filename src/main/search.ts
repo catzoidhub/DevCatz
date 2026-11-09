@@ -28,7 +28,7 @@ import type { Route } from './proxy';
 import { Cancelled, check, githubAsset } from './storage';
 import { brewLatest, isNewer, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
-import { exe, isLinux, isWin, removeTemp, TAR } from './platform';
+import { exe, isLinux, isMac, isWin, removeTemp, TAR } from './platform';
 import { svcCompose, svcComposeFile, svcEngineReady, svcInDocker, svcPull, svcRemove, svcRemoveImage, svcUpCommand, vol, writeSvcCompose, type SvcKind } from './svcdocker';
 import { githubJson } from './github';
 
@@ -80,6 +80,8 @@ interface Engine {
   unavailable?: string;
   /** Windows (svcdocker.ts): the official image, its tag for a version, its newest version, the compose file. */
   docker?: { image: string; tag(v: string): string; latest(): Promise<string>; compose(c: SearchConfig, image: string): string };
+  /** false: no native build for this computer (it runs from `docker` in DoCatz instead). */
+  nativeHere?: boolean;
 }
 
 /** Program names per platform (.exe on Windows). */
@@ -529,6 +531,8 @@ const ENGINES: Record<SearchKind, Engine> = {
     defaults: { port: 1491, extraPort: 0, domain: 'sonic' },
     needsKey: true,
     async install(dir, report, signal) {
+      // Intel Macs: Homebrew builds Sonic for Apple silicon only since 1.9; the last bottle with an Intel one is used.
+      if (isMac && !ARM) return installSonicIntel(dir, report, signal);
       report({ step: S.find, detail: 'formulae.brew.sh (Homebrew bottle of sonic)' });
       const f = (await (await fetch('https://formulae.brew.sh/api/formula/sonic.json')).json()) as {
         versions: { stable: string };
@@ -560,7 +564,7 @@ const ENGINES: Record<SearchKind, Engine> = {
         rmSync(d.tmp, { recursive: true, force: true });
       }
     },
-    latest: () => brewLatest('sonic'),
+    latest: () => (isMac && !ARM ? sonicIntelBottle().then((b) => b.v) : brewLatest('sonic')),
     async version(dir) {
       const r = await run(join(dir, 'sonic'), ['--version'], { timeout: 60_000 });
       return `${r.stdout}${r.stderr}`.match(/sonic-server\s+([\d.]+)/)?.[1] ?? null;
@@ -588,6 +592,55 @@ function relocateBottleInterpreter(file: string): void {
   buf.fill(0, at, at + want.length);
   buf.write(loader, at, 'latin1');
   writeFileSync(file, buf);
+}
+
+/**
+ * Intel Macs (user, 2026-11-09: "gunakan saja rilis terakhir"): the newest Sonic whose Homebrew bottle still has an
+ * Intel macOS build, read from the bottle registry (ghcr.io/homebrew/core/sonic): each version's index names its
+ * platforms (`1.8.1.sonoma` — Intel names carry no `arm64_`), and that platform's manifest gives the bottle's
+ * SHA-256 (its layer digest), checked like any other download.
+ */
+async function sonicIntelBottle(): Promise<{ v: string; sha: string; ref: string; auth: Record<string, string>; reg: string }> {
+  const reg = 'https://ghcr.io/v2/homebrew/core/sonic';
+  const token = ((await (await fetch('https://ghcr.io/token?scope=repository:homebrew/core/sonic:pull')).json()) as { token: string }).token;
+  const auth = { Authorization: `Bearer ${token}` };
+  const tags = ((await (await fetch(`${reg}/tags/list`, { headers: auth })).json()) as { tags: string[] }).tags.filter((t) => /^\d+\.\d+\.\d+$/.test(t));
+  tags.sort((a, b) => (isNewer(a, b) ? -1 : isNewer(b, a) ? 1 : 0));
+  const INTEL = ['tahoe', 'sequoia', 'sonoma', 'ventura', 'monterey'];
+  for (const v of tags.slice(0, 15)) {
+    const index = (await (await fetch(`${reg}/manifests/${v}`, { headers: { ...auth, Accept: 'application/vnd.oci.image.index.v1+json' } })).json()) as {
+      manifests?: { digest: string; annotations?: Record<string, string> }[];
+    };
+    const pick = INTEL.map((n) => index.manifests?.find((m) => m.annotations?.['org.opencontainers.image.ref.name'] === `${v}.${n}`)).find(Boolean);
+    if (!pick) continue;
+    const man = (await (await fetch(`${reg}/manifests/${pick.digest}`, { headers: { ...auth, Accept: 'application/vnd.oci.image.manifest.v1+json' } })).json()) as {
+      layers: { digest: string }[];
+    };
+    const sha = man.layers?.[0]?.digest?.replace(/^sha256:/, '');
+    if (sha) return { v, sha, ref: pick.annotations?.['org.opencontainers.image.ref.name'] ?? v, auth, reg };
+  }
+  throw new Error('No Sonic bottle with an Intel macOS build was found');
+}
+
+async function installSonicIntel(dir: string, report: (p: Partial<TaskProgress>) => void, signal: AbortSignal): Promise<void> {
+  report({ step: S.find, detail: 'ghcr.io/homebrew/core/sonic (the last bottle for Intel Macs)' });
+  const { v, sha, ref, auth, reg } = await sonicIntelBottle();
+  {
+    report({ title: `Installing Sonic ${v}` });
+    const d = await fetchTmp(`${reg}/blobs/sha256:${sha}`, 'sonic.tar.gz', sha, 'sha256', report, signal, auth);
+    try {
+      report({ step: S.unpack, detail: `bottle ${ref}` });
+      await untar(d.file, join(d.tmp, 'x'));
+      const bin = join(d.tmp, 'x', 'sonic', v, 'bin', 'sonic');
+      if (!existsSync(bin)) throw new Error('sonic not found in the bottle');
+      report({ step: S.place, detail: join(dir, 'sonic') });
+      chmodSync(bin, 0o755);
+      place(bin, join(dir, 'sonic'));
+      await run('xattr', ['-dr', 'com.apple.quarantine', dir]);
+    } finally {
+      rmSync(d.tmp, { recursive: true, force: true });
+    }
+  }
 }
 
 /** Sonic's config file (same layout as its own config.cfg, 1.10): `inet` it listens on, `store` each store's folder. */
@@ -741,7 +794,11 @@ export function defaultsFor(kind: SearchKind): SearchConfig {
 // ------------------------------------------------------------------ manager
 
 /** Windows: the engine runs from its official image in DoCatz (svcdocker.ts); undefined = its own binary. */
-const dockerOf = (kind: SearchKind) => (svcInDocker ? ENGINES[kind].docker : undefined);
+/**
+ * Runs in DoCatz from its official image: on Windows for the engines with a docker variant, and wherever the engine
+ * has no native build (`nativeHere: false` — Sonic on Intel Macs: Homebrew builds no Intel macOS bottle of it).
+ */
+const dockerOf = (kind: SearchKind) => (svcInDocker || ENGINES[kind].nativeHere === false ? ENGINES[kind].docker : undefined);
 const imageOf = (kind: SearchKind, v: string | null | undefined) => `${ENGINES[kind].docker!.image}:${ENGINES[kind].docker!.tag(v ?? '')}`;
 const DOCKER_STEPS = ["Starting DoCatz's engine", 'Finding the latest release', 'Pulling the image', 'Preparing the data folder', 'Saving settings'];
 

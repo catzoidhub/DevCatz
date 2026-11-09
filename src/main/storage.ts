@@ -60,14 +60,23 @@ const S = { find: 0, download: 1, verify: 2, unpack: 3, place: 4, version: 5, da
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const host = (label: string) => `${label}.${tld()}`;
 
-/** GitHub release asset with its published SHA-256 digest. */
-export async function githubAsset(repo: string, match: RegExp, perPage = 10): Promise<{ url: string; sha256: string; tag: string }> {
+/**
+ * GitHub release asset with its published SHA-256 digest: the newest stable release that has one for this computer,
+ * else (user, 2026-11-09: local development only) the newest pre-release that does — RustFS's Intel macOS builds end at
+ * 1.0.0-beta.10, Sockudo's macOS ones at 4.7.0. Up to 100 releases back.
+ */
+export async function githubAsset(repo: string, match: RegExp, perPage = 100): Promise<{ url: string; sha256: string; tag: string }> {
   const releases = await githubJson<{ tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string; digest?: string }[] }[]>(`/repos/${repo}/releases?per_page=${perPage}`);
-  for (const r of releases) {
-    if (r.prerelease || r.draft) continue;
-    const a = r.assets.find((x) => match.test(x.name));
-    if (a?.digest?.startsWith('sha256:')) return { url: a.browser_download_url, sha256: a.digest.slice(7), tag: r.tag_name };
-  }
+  const pick = (pre: boolean) => {
+    for (const r of releases) {
+      if (r.draft || r.prerelease !== pre) continue;
+      const a = r.assets.find((x) => match.test(x.name));
+      if (a?.digest?.startsWith('sha256:')) return { url: a.browser_download_url, sha256: a.digest.slice(7), tag: r.tag_name };
+    }
+    return null;
+  };
+  const found = pick(false) ?? pick(true);
+  if (found) return found;
   throw new Error(`No ${isWin ? 'Windows' : isLinux ? 'Linux' : 'macOS'} build with a checksum found in ${repo} releases`);
 }
 
@@ -199,7 +208,8 @@ const RUSTFS_ASSET = isWin
   ? /^rustfs-windows-x86_64-v[\d.]+\.zip$/
   : isLinux
     ? new RegExp(`^rustfs-linux-${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-gnu-v[\\d.]+\\.zip$`)
-    : process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\d.]+\.zip$/ : /^rustfs-macos-x86_64-v[\d.]+\.zip$/;
+    : // Pre-release names too (v1.0.0-beta.9): the last Intel macOS builds are betas.
+      process.arch === 'arm64' ? /^rustfs-macos-aarch64-v[\w.-]+\.zip$/ : /^rustfs-macos-x86_64-v[\w.-]+\.zip$/;
 /** Windows: MinIO's own builds on its (archived) GitHub releases; the newest releases have none, so a few are looked through. */
 const MINIO_WIN_ASSET = /^minio\.windows-amd64\.RELEASE\.[\dT-]+Z\.exe$/;
 /** Silo (the same fork under its own name): Windows zips (older ones .tar.gz), macOS tarballs. */
@@ -659,6 +669,8 @@ export class StorageManager {
         : c.kind === 'minio' || c.kind === 'silo'
           ? text.match(/RELEASE\.[\dT:-]+Z/)?.[0]
           : text.match(/rustfs\s+([\w.-]+)/)?.[1];
+    // A loader error ("dyld: Library not loaded … Reason: …") is not a version, whatever the pattern found in it.
+    if (/dyld|Library not loaded|cannot execute|error while loading shared libraries/i.test(text)) return null;
     return r.code === 0 || v ? (v ?? 'unknown') : null;
   }
 

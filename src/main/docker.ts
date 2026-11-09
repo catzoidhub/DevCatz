@@ -86,6 +86,9 @@ export const containerOf = (c?: { container?: GwContainer } | null): GwContainer
 export const defaultContainer = (): GwContainer => (docatzAvailable() ? 'docatz' : 'system');
 
 /** The other container engine a gateway could run on (the first one installed), for the "Run in" choice. */
+/** The engine behind the system's docker context, as the last dockerStatus() found it (not DoCatz's). */
+let lastSystemEngine: DockerEngineId | null = null;
+
 export function otherEngineName(): string | null {
   // Linux: the system's Docker Engine — unless DoCatz's engine is that very daemon (DoCatz #101 option a), when
   // "DoCatz or Docker Engine" would be one engine twice.
@@ -94,6 +97,10 @@ export function otherEngineName(): string | null {
     const system = ['unix:///var/run/docker.sock', 'unix:///run/docker.sock', `unix:///run/user/${process.getuid?.() ?? 0}/docker.sock`];
     return ep && system.includes(ep) ? null : 'Docker Engine';
   }
+  // The engine the system's docker context points at (what "system" really runs on) when the last status saw it;
+  // else the first one installed (Docker Desktop, Rancher Desktop …).
+  const current = lastSystemEngine && ENGINES.find((x) => x.id === lastSystemEngine && x.id !== 'docatz');
+  if (current) return current.name;
   const e = ENGINES.find(
     (x) => x.id !== 'docatz' && (engineAppInstalled(x) || (!!x.bin && !isWin && ['/opt/homebrew/bin', '/usr/local/bin'].some((d) => existsSync(join(d, x.bin!))))),
   );
@@ -184,6 +191,7 @@ export async function dockerStatus(): Promise<DockerStatus> {
     const endpoint = (await run('docker', ['context', 'inspect', ctx, '--format', '{{.Endpoints.docker.Host}}'], { timeout: 5000 })).stdout.trim();
     const info = await run('docker', ['info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 });
     const sysEngine = engineFromDocker(ctx, endpoint, info.stdout.trim());
+    if (ctx && ctx !== 'docatz' && sysEngine !== 'docatz' && sysEngine !== 'other') lastSystemEngine = sysEngine;
     // DoCatz's own context, whether or not it is the current one (DoCatz never switches the current context itself).
     const docatzUp = ctx !== 'docatz' && (docatz === 'running' || (await run('docker', ['context', 'inspect', 'docatz'], { timeout: 5000 })).code === 0)
       ? (await run('docker', ['--context', 'docatz', 'info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 })).code === 0

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isWin } from '../platform';
 import { words } from '@shared/platform';
 import { WS_LOGO } from '../logos';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
@@ -354,7 +355,7 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.wsUninstall(re
               <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="selected.inDocatz" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ selected.inDocatz ? 'Install in DoCatz…' : `Install ${selected.name}…` }}
             </button>
             <p v-if="selected.inDocatz && !needDocatz" class="text-xs opacity-60">
-              {{ selected.name }} publishes no {{ words.os }} build: here it runs from its official image in DoCatz's container engine (WSL 2). DevCatz pulls it there, starts and stops it and keeps its port, domain, keys and .env lines as usual; DoCatz shows the container under DevCatz Services.
+              {{ selected.name }} publishes no {{ words.os }} build: here it runs from its official image in DoCatz's container engine{{ isWin ? ' (WSL 2)' : '' }}. DevCatz pulls it there, starts and stops it and keeps its port, domain, keys and .env lines as usual; DoCatz shows the container under DevCatz Services.
             </p>
             <p class="text-xs opacity-60">
               Sites with their own WebSocket server (Socket.IO, ws, Django Channels …) need nothing here: DevCatz passes the upgrade on the site's domain. Install a
