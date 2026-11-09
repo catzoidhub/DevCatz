@@ -419,6 +419,13 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
           <template v-else>Containers are published on <code>127.0.0.1</code> ports.</template>
           <template v-if="!engineOptions.some((e) => e.id === 'docatz')"> <b>DoCatz</b>, the Catzoid container manager, is recommended: a light engine with every container, image and volume in one window.</template>
         </p>
+        <!-- Windows (§31): the engine runs in WSL 2, and edits made on Windows send no file events into containers. -->
+        <p v-if="isWin" class="text-xs opacity-60">
+          Editing on Windows does not wake file watchers inside containers (no file events cross into WSL 2). A dev server
+          that watches a mounted folder needs polling: <code>CHOKIDAR_USEPOLLING=true</code>, <code>WATCHPACK_POLLING=true</code>
+          (webpack, Next.js), Vite's <code>server.watch.usePolling</code>, or <code>docker compose watch</code>. Images DevCatz builds
+          copy the code in, so they are not affected.
+        </p>
       </div>
     </div>
 

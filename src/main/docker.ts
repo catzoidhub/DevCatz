@@ -1546,6 +1546,14 @@ export function loopbackToHost(env: Record<string, string>): Record<string, stri
 /** Compose's project name for a file: the -p DevCatz passes (generated files), else compose's own (`name:`, else its folder's). */
 export const composeProjectName = (root: string, file: string, project: string | null) => project ?? projectNameOf(root, file);
 
+/**
+ * A project's own compose file in a sub-folder (docker/, deploy/ …) with no top-level `name:`: Compose would name the
+ * project after that folder, so every such site would be project "docker", sharing containers, networks and DoCatz's
+ * docker.env (flask-inventory on the Windows PC, §31). Those get the site's name instead (`-p`).
+ */
+export const needsSiteProjectName = (root: string, file: string): boolean =>
+  /[\\/]/.test(file) && !/^name:\s*\S/m.test(readText(join(root, file)) ?? '');
+
 /** Writes the project's .env as DoCatz's .env of `name` (local hosts → host.docker.internal, 0600); its path, or null. */
 export function copyEnvToDocatz(root: string, name: string): string | null {
   const target = docatzEnvPath(name);

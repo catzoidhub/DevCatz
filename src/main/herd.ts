@@ -4367,7 +4367,12 @@ export class Herd extends EventEmitter {
         .filter((a) => dirs.some((d) => d === a.dir || (d === '.' && apps.length === 1) || a.dir.startsWith(`${d}/`) || d.startsWith(`${a.dir}/`)) || names.includes(basename(a.dir === '.' ? a.name : a.dir).toLowerCase()))
         .map((a) => (a.dir === '.' ? a.name : basename(a.dir)));
       // A worktree always gets a compose project of its own (feat-login-shop), also for the project's own files.
-      return { ...c, project: c.generated || p.worktreeOf ? docker.projectName(p, c.file) : null, covers, coversAll: apps.length > 1 && covers.length === apps.length };
+      return {
+        ...c,
+        project: c.generated || p.worktreeOf || docker.needsSiteProjectName(p.path, c.file) ? docker.projectName(p, c.file) : null,
+        covers,
+        coversAll: apps.length > 1 && covers.length === apps.length,
+      };
     });
   }
 
