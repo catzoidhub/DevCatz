@@ -7,7 +7,7 @@ import type { DbBinary, DbEngine, DbServiceConfig, TaskProgress } from '@shared/
 import { downloadVerified } from './download';
 import { getShellEnv, run } from './env';
 import { brewBin } from './php';
-import { exe, isLinux, isWin, moveDir, removeTemp, TAR } from './platform';
+import { exe, isLinux, isMac, isWin, moveDir, removeTemp, TAR } from './platform';
 import { runAsRootLinux } from './linuxadmin';
 import { dataDir } from './store';
 import { githubJson } from './github';
@@ -311,6 +311,34 @@ async function linuxLibraries(name: string, bin: string, root: string, step: Ste
   if (libs.length) throw new Error(`${name} needs ${libs.join(', ')} from your package manager (e.g. sudo apt install ${[...pkgs].map((p) => p.split(' ')[0]).join(' ') || 'the matching packages'})`);
 }
 
+/**
+ * macOS: Oracle's tarball of `version` for this CPU — named after the macOS it was built on, under Downloads/ while
+ * current and archives/ once superseded — with the MD5 the CDN gives as its ETag. Null when there is none.
+ */
+async function mysqlMacTarball(version: string, signal?: AbortSignal): Promise<{ url: string; md5: string | null } | null> {
+  const cpu = arch ? 'arm64' : 'x86_64';
+  for (const base of [`https://cdn.mysql.com/Downloads/MySQL-${minor(version)}`, `https://cdn.mysql.com/archives/mysql-${minor(version)}`])
+    for (const os of ['macos15', 'macos26', 'macos14', 'macos13']) {
+      const url = `${base}/mysql-${version}-${os}-${cpu}.tar.gz`;
+      const res = await fetch(url, { method: 'HEAD', signal }).catch(() => null);
+      if (res?.ok) return { url, md5: res.headers.get('etag')?.match(/^"?([a-f0-9]{32})/)?.[1] ?? null };
+    }
+  return null;
+}
+
+/**
+ * Intel Macs: Oracle stopped building macOS x86_64 after 8.4.11 and 9.7.0 (checked 2026-11-09; 8.0.46 still has one).
+ * Each release line offers the newest version that still has an Intel build — earlier patches of the line, and for
+ * the Innovation line (26.x has none) the last 9.x — so the list never shows a version that cannot be installed.
+ */
+async function mysqlIntelVersion(newest: string): Promise<string | null> {
+  const [ma, mi, pa] = newest.split('.').map(Number);
+  for (let p = pa; p >= 0; p--) if (await mysqlMacTarball(`${ma}.${mi}.${p}`)) return `${ma}.${mi}.${p}`;
+  if (ma === 8) return null;
+  for (let m = 9; m >= 1; m--) if (await mysqlMacTarball(`9.${m}.0`)) return `9.${m}.0`;
+  return null;
+}
+
 const mysql: EngineDef = {
   name: 'MySQL',
   description: `Oracle’s MySQL Community Server; official ${isWin ? 'Windows' : isLinux ? 'Linux (glibc)' : 'macOS'} builds.`,
@@ -322,7 +350,7 @@ const mysql: EngineDef = {
       : 'Official macOS tarball from cdn.mysql.com (MD5 from the CDN)',
   sourceUrl: 'https://dev.mysql.com/downloads/mysql/',
   async builds() {
-    return cached('mysql', async () => {
+    return cached(`mysql-${process.arch}`, async () => {
       const lines: [string, string][] = [
         ['mysql', ''],
         ['mysql@8.4', 'LTS'],
@@ -330,7 +358,8 @@ const mysql: EngineDef = {
       ];
       const out: RemoteBuild[] = [];
       for (const [formula, tag] of lines) {
-        const v = await brewVersion(formula).catch(() => null);
+        let v = await brewVersion(formula).catch(() => null);
+        if (v && isMac && !arch) v = await mysqlIntelVersion(v).catch(() => null);
         if (v && !out.some((o) => o.version === v)) out.push({ version: v, label: `${minor(v)}${tag ? ` ${tag}` : ''}`, source: 'download' });
       }
       if (!out.length) throw new Error('Could not read MySQL versions (formulae.brew.sh)');
@@ -370,17 +399,11 @@ const mysql: EngineDef = {
       throw new Error(`No Linux ${cpu} build of MySQL ${b.version} on cdn.mysql.com`);
     }
     step('Finding the build', { detail: `MySQL ${b.version} for macOS ${arch ? 'arm64' : 'x86_64'}` });
-    // The tarball is named after the macOS it was built on.
-    let found: { url: string; md5: string | null } | null = null;
-    for (const os of ['macos26', 'macos15', 'macos14', 'macos13']) {
-      const url = `https://cdn.mysql.com/Downloads/MySQL-${minor(b.version)}/mysql-${b.version}-${os}-${arch ? 'arm64' : 'x86_64'}.tar.gz`;
-      const res = await fetch(url, { method: 'HEAD', signal }).catch(() => null);
-      if (res?.ok) {
-        found = { url, md5: res.headers.get('etag')?.match(/^"?([a-f0-9]{32})/)?.[1] ?? null };
-        break;
-      }
-    }
-    if (!found) throw new Error(`No macOS build of MySQL ${b.version} on cdn.mysql.com`);
+    const found = await mysqlMacTarball(b.version, signal);
+    if (!found)
+      throw new Error(
+        arch ? `No macOS build of MySQL ${b.version} on cdn.mysql.com` : `Oracle has no Intel (x86_64) macOS build of MySQL ${b.version}: pick a version from the list (the newest with an Intel build)`,
+      );
     await fetchTarball({ ...b, url: found.url, hash: found.md5 ?? undefined, algo: 'md5' }, dest, step, signal);
     return dest;
   },
