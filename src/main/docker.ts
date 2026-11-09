@@ -3,7 +3,7 @@ import { app } from 'electron';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { basename, dirname, isAbsolute, join, posix, relative } from 'node:path';
-import { isPhpFramework, isPythonFramework, type AppInfo, type DockerEngineId, type DockerFile, type DockerGenOptions, type DockerTarget, type DockerService, type DockerStatus, type ProjectConfig, type StackInfo } from '@shared/types';
+import { isPhpFramework, isPythonFramework, isRubyFramework, type AppInfo, type DockerEngineId, type DockerFile, type DockerGenOptions, type DockerTarget, type DockerService, type DockerStatus, type ProjectConfig, type StackInfo } from '@shared/types';
 import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './detect';
 import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
@@ -389,6 +389,7 @@ interface Ctx {
   phpVersion: string | null;
   goVersion: string | null;
   pythonVersion: string | null;
+  rubyVersion: string | null;
   nodeMajor: number;
 }
 
@@ -396,7 +397,16 @@ const INTERNAL_PORT: Record<string, number> = { go: 8080, laravel: 8080, php: 80
 const STATIC = new Set(['vite-vue', 'vite-react', 'vite-svelte', 'vite', 'astro', 'static']);
 /** Rust WebAssembly frontends built by trunk: static files behind nginx. */
 const rustStatic = (a: AppInfo) => a.framework === 'rust' && !!a.command?.startsWith('trunk');
-const portOf = (a: AppInfo) => (STATIC.has(a.framework) || rustStatic(a) ? 80 : a.framework === 'rust' ? 8080 : (INTERNAL_PORT[a.framework] ?? 3000));
+/** Ruby static-site generators (Jekyll, Bridgetown, Middleman): built in a Ruby image, served by nginx. */
+const rubyStatic = (a: AppInfo): { build: string; out: string } | null =>
+  a.framework === 'jekyll'
+    ? { build: 'bundle exec jekyll build', out: '_site' }
+    : /bridgetown\b.*\bstart\b/.test(a.command ?? '')
+      ? { build: 'bin/bridgetown deploy || bundle exec bridgetown build', out: 'output' }
+      : /middleman server/.test(a.command ?? '')
+        ? { build: 'bundle exec middleman build', out: 'build' }
+        : null;
+const portOf = (a: AppInfo) => (STATIC.has(a.framework) || rustStatic(a) || (isRubyFramework(a.framework) && rubyStatic(a)) ? 80 : a.framework === 'rust' ? 8080 : (INTERNAL_PORT[a.framework] ?? 3000));
 
 /** Services that become containers (the Vite dev server of a Laravel site is built into its image instead). */
 const servedApps = (s: StackInfo) => s.apps.filter((a) => a.kind !== 'assets');
@@ -556,6 +566,63 @@ function pythonDockerfile(ctx: Ctx, a: AppInfo): string {
     `CMD ${JSON.stringify(['sh', '-c', cmd])}`,
     '',
   ].join('\n');
+}
+
+/**
+ * Ruby (§37): Rails, Rack apps (Sinatra, Roda, Hanami, Padrino, Rage, Grape …) and plain Ruby run the command DevCatz
+ * starts them with, bound to 0.0.0.0; Rails in production mode (assets precompiled, db:prepare at start, logs to
+ * stdout). Static-site generators build in Ruby and are served by nginx. System libraries for native gems come from
+ * Gemfile.lock (pg → libpq, mysql2 → MySQL client, psych → libyaml). A project's own Dockerfile (Rails 7.1+ makes one)
+ * is used instead, as for every stack.
+ */
+function rubyDockerfile(ctx: Ctx, a: AppInfo): string {
+  const v = ctx.rubyVersion?.split('.').slice(0, 2).join('.') ?? '3.4';
+  const lock = readText(join(ctx.p.path, 'Gemfile.lock')) ?? '';
+  const gem = (n: string) => new RegExp(`^\\s{4}${n} \\(`, 'm').test(lock);
+  const build = ['build-essential', 'git', 'pkg-config', 'libyaml-dev', ...(gem('pg') ? ['libpq-dev'] : []), ...(gem('mysql2') ? ['default-libmysqlclient-dev'] : [])];
+  const run = ['curl', 'libyaml-0-2', ...(gem('pg') ? ['libpq5'] : []), ...(gem('mysql2') ? ['default-mysql-client'] : []), ...(gem('sqlite3') ? ['libsqlite3-0'] : [])];
+  const hasGemfile = existsSync(join(ctx.p.path, 'Gemfile'));
+  const deps = hasGemfile
+    ? [
+        '# Gems first (cached until Gemfile.lock changes).',
+        `COPY Gemfile ${lock ? 'Gemfile.lock ' : ''}./`,
+        'RUN bundle install --jobs 4 && rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache',
+      ]
+    : [];
+  const head = [
+    GENERATED_MARK + ` for ${a.name} (Ruby ${v}). Build context: the project root.`,
+    `FROM ruby:${v}-slim AS base`,
+    'WORKDIR /app',
+    `RUN apt-get update -qq && apt-get install --no-install-recommends -y ${[...new Set([...build, ...run])].join(' ')} && rm -rf /var/lib/apt/lists/*`,
+    'ENV BUNDLE_WITHOUT="development:test" BUNDLE_PATH="/usr/local/bundle"',
+    ...deps,
+    'COPY . .',
+  ];
+  const site = rubyStatic(a);
+  if (site)
+    return [
+      ...head,
+      `RUN JEKYLL_ENV=production BRIDGETOWN_ENV=production ${site.build}`,
+      '',
+      'FROM nginx:alpine',
+      `COPY --from=base /app/${site.out} /usr/share/nginx/html`,
+      'EXPOSE 80',
+      '',
+    ].join('\n');
+  const port = portOf(a);
+  const cmd = (a.command ?? `ruby app.rb`).replace(/127\.0\.0\.1/g, '0.0.0.0').replace(/^env BUNDLE_GEMFILE="[^"]*" /, '');
+  if (a.framework === 'rails')
+    return [
+      ...head,
+      'ENV RAILS_ENV=production RAILS_LOG_TO_STDOUT=1 RAILS_SERVE_STATIC_FILES=1',
+      '# Assets with a throwaway key; the real SECRET_KEY_BASE / RAILS_MASTER_KEY comes from the environment at run time.',
+      'RUN if [ -d app/assets ] || [ -f config/importmap.rb ]; then SECRET_KEY_BASE_DUMMY=1 bin/rails assets:precompile; fi',
+      `ENV PORT=${port}`,
+      `EXPOSE ${port}`,
+      `CMD ${JSON.stringify(['sh', '-c', `bin/rails db:prepare && ${cmd}`])}`,
+      '',
+    ].join('\n');
+  return [...head, 'ENV RACK_ENV=production APP_ENV=production', `ENV PORT=${port}`, `EXPOSE ${port}`, `CMD ${JSON.stringify(['sh', '-c', cmd])}`, ''].join('\n');
 }
 
 /** A Go module's `replace … => ../path` directives that point at a local checkout (outside the build context). */
@@ -1030,6 +1097,7 @@ export interface GenerateInput {
   phpVersion: string | null;
   goVersion: string | null;
   pythonVersion: string | null;
+  rubyVersion?: string | null;
   nodeVersion: string | null;
 }
 
@@ -1179,6 +1247,7 @@ export function generate(
     phpVersion: input.phpVersion,
     goVersion: input.goVersion,
     pythonVersion: input.pythonVersion,
+    rubyVersion: input.rubyVersion ?? null,
     nodeMajor: Number(input.nodeVersion?.replace(/^v/, '').split('.')[0]) || 22,
   };
   const local = opts.target === 'local';
@@ -1269,7 +1338,7 @@ export function generate(
     let content =
       a.library === 'electron'
         ? [GENERATED_MARK + ` for ${a.name} (Electron).`, '# An Electron app is a desktop app: electron-builder / Electron Forge make its installers, not a container.', 'FROM scratch', ''].join('\n')
-        : a.framework === 'static' ? staticDockerfile(a) : a.framework === 'go' ? goDockerfile(actx, a) : a.framework === 'rust' ? rustDockerfile(actx, a) : php ? phpDockerfile(actx, a) : isPythonFramework(a.framework) ? pythonDockerfile(actx, a) : jsDockerfile(actx, a);
+        : a.framework === 'static' ? staticDockerfile(a) : a.framework === 'go' ? goDockerfile(actx, a) : a.framework === 'rust' ? rustDockerfile(actx, a) : php ? phpDockerfile(actx, a) : isPythonFramework(a.framework) ? pythonDockerfile(actx, a) : isRubyFramework(a.framework) ? rubyDockerfile(actx, a) : jsDockerfile(actx, a);
     if (sqlite && !local) content = withSqliteFolder(content, sqlite.file, php);
     if (folders) content = content.replace('Build context: the project root.', `Build context: this folder (${app.dir}/), as docker-compose.yml at the project root builds it.`);
     files.push({ path: dockerfile, content });

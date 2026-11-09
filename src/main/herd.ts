@@ -4632,6 +4632,7 @@ export class Herd extends EventEmitter {
       phpVersion: st.php.version,
       goVersion: st.go.version,
       pythonVersion: st.python.version,
+      rubyVersion: st.ruby?.version ?? null,
       nodeVersion: st.node.version ?? this.systemNode,
     }, opts);
   }
