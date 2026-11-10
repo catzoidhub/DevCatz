@@ -135,6 +135,19 @@ export async function gatewayEngineReady(where: GwContainer, report: (detail: st
   }
   const up = async () => (await run('docker', ['--context', 'docatz', 'info', '--format', '{{.ServerVersion}}'], { timeout: 10_000 })).code === 0;
   if (await up()) return;
+  // Linux: DoCatz's engine is the system's Docker Engine (bridge.json engineEndpoint on /var/run/docker.sock, DoCatz
+  // #101). Stopped → start that daemon behind the password dialog, the same way 'system' does, instead of opening
+  // DoCatz to start it.
+  if (isLinux && /^unix:\/\/\/(var\/)?run\/docker\.sock$/.test(docatzEngineEndpoint() ?? '')) {
+    report('Starting Docker Engine (password)');
+    await linuxDockerEngine();
+    for (const end = Date.now() + 60_000; Date.now() < end; ) {
+      if (signal?.aborted) throw new Error('Cancelled');
+      if (await up()) return;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error('Docker Engine did not answer within a minute: start it in DoCatz (Engine), then try again');
+  }
   const def = ENGINES.find((e) => e.id === 'docatz')!;
   const context = (await onPath('docker')) && (await run('docker', ['context', 'inspect', 'docatz'], { timeout: 5000 })).code === 0;
   if (!engineAppInstalled(def) && !context) throw new Error(`This gateway runs in DoCatz, which is not installed. Install DoCatz (${def.download}), then Install in DoCatz again`);
