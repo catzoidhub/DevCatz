@@ -12,7 +12,12 @@ export async function runAsRootLinux(script: string): Promise<{ ok: boolean; can
   const dir = mkdtempSync(join(tmpdir(), 'devcatz-admin-'));
   const file = join(dir, 'step.sh');
   try {
-    writeFileSync(file, `set -e\n${script}\n`, { mode: 0o600 });
+    // apt-get waits up to 3 minutes for another package manager (an update, App Center, another app's install) instead
+    // of failing at once with "Could not get lock /var/lib/dpkg/lock-frontend" (seen while DBCatz's .deb installed).
+    // APT_CONFIG is read on top of the system's configuration.
+    const aptConf = join(dir, 'apt.conf');
+    writeFileSync(aptConf, 'DPkg::Lock::Timeout "180";\n', { mode: 0o644 });
+    writeFileSync(file, `set -e\nexport APT_CONFIG=${JSON.stringify(aptConf)}\n${script}\n`, { mode: 0o600 });
     const r = await run('pkexec', ['/bin/sh', file], { timeout: 600_000 });
     const cancelled = r.code === 126 || r.code === 127;
     const message = cancelled ? 'Cancelled' : (r.stderr || r.stdout).trim() || (r.code === null || r.code === 0 ? 'No answer at the password prompt in 10 minutes' : `exit ${r.code}`);

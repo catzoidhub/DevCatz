@@ -230,12 +230,15 @@ const broken = reactive(new Set<string>());
                   <td class="text-right"><button class="btn btn-ghost btn-xs">Open Git tab</button></td>
                 </tr>
                 <tr v-if="!repoSites.length">
-                  <td colspan="5" class="py-5 text-center text-xs opacity-60">No site is a Git repository yet.</td>
+                  <td colspan="5" class="py-5 text-center text-xs opacity-60">
+                    {{ state?.git.checked && !state.git.version ? 'Git is not installed: install it to see your sites’ repositories here.' : 'No site is a Git repository yet.' }}
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <p v-if="plainSites.length" class="text-xs opacity-60">
+          <!-- Without git, Initialize repository cannot run: no list pointing at it. -->
+          <p v-if="plainSites.length && state?.git.version" class="text-xs opacity-60">
             Not in Git: {{ plainSites.map((p) => p.name).join(', ') }} (Git tab → Initialize repository).
           </p>
         </div>
