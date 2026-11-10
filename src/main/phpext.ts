@@ -240,7 +240,7 @@ export function setEnabled(version: string, module: string, on: boolean): void {
     const meta = listInstalled(version).find((e) => e.module === module);
     const bundled = listBundled(version).find((e) => e.module === module);
     if (meta) writeFileSync(to, iniText(moduleFile(version, module), { pkg: meta.pkg, version: meta.version, zend: meta.zend }, module));
-    else if (bundled && !isWin) writeFileSync(to, `; Part of PHP ${version} (${module}.so)\n${bundled.zend ? 'zend_extension' : 'extension'}=${module}\n`);
+    else if (bundled && !isWin) writeFileSync(to, `; Part of PHP ${version} (${module}.so)\n${bundled.zend ? 'zend_extension' : 'extension'}=${module}.so\n`);
     else if (bundled) writeFileSync(to, `; Part of PHP ${version} (ext\\php_${module}.dll)\r\n${bundled.zend ? 'zend_extension' : 'extension'}=${module}\r\n`);
     else throw new Error(`${module} is not installed for PHP ${version}`);
   }

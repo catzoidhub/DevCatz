@@ -449,10 +449,15 @@ function winBaseIni(phpBin: string): string {
   ].join('\r\n');
 }
 
-/** Windows: a php.ini from before the per-extension conf.d files (it has `extension=` lines of its own). */
+/**
+ * Windows: a php.ini from before the per-extension conf.d files (it has `extension=` lines of its own). Linux, a PHP
+ * from the ondrej / sury packages: a php.ini naming its extensions without `.so`, which PHP before 7.2 does not load.
+ */
 export function iniNeedsUpgrade(version: string): boolean {
   try {
-    return /^\s*(zend_)?extension\s*=/m.test(readFileSync(join(etcDir(version), 'php.ini'), 'utf8'));
+    const ini = readFileSync(join(etcDir(version), 'php.ini'), 'utf8');
+    if (isLinux) return ini.includes('ondrej / sury') && /^(zend_)?extension=\w+$/m.test(ini);
+    return /^\s*(zend_)?extension\s*=/m.test(ini);
   } catch {
     return false;
   }
@@ -485,15 +490,22 @@ function debBaseIni(versionDir: string, version: string): void {
     [
       '; Base php.ini for DevCatz (PHP from the ondrej / sury packages). Extensions: conf.d/20-<name>.ini; settings: conf.d/99-mrcatz.ini.',
       `extension_dir = "${info.extensionDir}"`,
-      ...core.map((e) => `${e === 'opcache' ? 'zend_extension' : 'extension'}=${e}`),
+      // `<name>.so`: PHP before 7.2 (5.6, 7.0, 7.1) takes no bare names and loaded none of them.
+      ...core.map((e) => `${e === 'opcache' ? 'zend_extension' : 'extension'}=${e}.so`),
       '',
     ].join('\n'),
   );
   for (const e of all.filter((x) => !core.includes(x) && x !== 'xdebug')) {
     const file = join(etcDir(version), 'conf.d', `20-${e}.ini`);
+    // Written by an earlier DevCatz with the bare name: given the .so, switched on or off as it was.
+    for (const f of [file, `${file}.disabled`])
+      if (existsSync(f)) {
+        const text = readFileSync(f, 'utf8');
+        if (text.startsWith('; Part of PHP') && text.includes(`\nextension=${e}\n`)) writeFileSync(f, text.replace(`\nextension=${e}\n`, `\nextension=${e}.so\n`));
+      }
     if (existsSync(file) || existsSync(`${file}.disabled`)) continue;
     // ffi stays off, as in the packages' own default.
-    writeFileSync(e === 'ffi' ? `${file}.disabled` : file, `; Part of PHP ${version} (${e}.so), on by default in DevCatz\nextension=${e}\n`);
+    writeFileSync(e === 'ffi' ? `${file}.disabled` : file, `; Part of PHP ${version} (${e}.so), on by default in DevCatz\nextension=${e}.so\n`);
   }
 }
 

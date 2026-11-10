@@ -3581,9 +3581,10 @@ export class Herd extends EventEmitter {
     } catch (e) {
       console.warn('PHP leftovers:', (e as Error).message);
     }
-    // Windows: php.ini written before extensions moved to conf.d/20-<name>.ini still loads them itself: rewrite it once.
+    // Windows: php.ini written before extensions moved to conf.d/20-<name>.ini still loads them itself; Linux: a deb
+    // PHP's php.ini / conf.d named extensions without .so (PHP 5.6 – 7.1 loaded none): rewrite them once.
     for (const p of this.installedPhps) {
-      if (isWin && p.source === 'mrcatz' && phps.iniNeedsUpgrade(p.version)) {
+      if ((isWin || isLinux) && p.source === 'mrcatz' && phps.iniNeedsUpgrade(p.version)) {
         await phps.writeIni(p.php, p.version, phps.readIni(p.version)).catch((e) => console.error(`php.ini ${p.version}:`, e));
         this.fpm.reload(p.version);
       }

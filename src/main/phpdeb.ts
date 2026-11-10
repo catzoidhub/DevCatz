@@ -289,8 +289,8 @@ export async function installDebPhp(phpDir: string, minor: string, progress: (p:
       for (const so of exts) {
         const name = so.slice(0, -3);
         const kind = name === 'opcache' || name === 'xdebug' ? 'zend_extension' : 'extension';
-        const dep = DEB_CORE_EXTENSIONS.filter((c) => c !== 'opcache' && c !== name && exts.includes(`${c}.so`)).flatMap((c) => ['-d', `extension=${c}`]);
-        const e = await run(join(tmp, 'bin', 'php'), ['-n', '-d', `extension_dir=${join(tmp, 'usr', 'lib', 'php', api)}`, ...dep, '-d', `${kind}=${name}`, '-r', 'echo 1;'], { timeout: 15_000 });
+        const dep = DEB_CORE_EXTENSIONS.filter((c) => c !== 'opcache' && c !== name && exts.includes(`${c}.so`)).flatMap((c) => ['-d', `extension=${c}.so`]);
+        const e = await run(join(tmp, 'bin', 'php'), ['-n', '-d', `extension_dir=${join(tmp, 'usr', 'lib', 'php', api)}`, ...dep, '-d', `${kind}=${so}`, '-r', 'echo 1;'], { timeout: 15_000 });
         // Only a library this system lacks counts (an extension needing another one first, xmlreader → dom, is fine).
         const lib = `${e.stdout}${e.stderr}`.match(/(lib[\w.+-]+\.so[\w.]*): cannot open shared object file/);
         if (lib) throw new Error(`PHP ${minor}'s ${name} extension needs ${lib[1]}, which is missing here`);
