@@ -51,9 +51,15 @@ async function uninstallMcatzp() {
   const r = await attempt(() => herd.mcatzpUninstall());
   if (!r) return;
   const label = (id: McatzpTarget['id']) => targets.value.find((t) => t.id === id)?.label ?? id;
-  // A Homebrew / npm copy goes away the way it came (MCatzP 1.0.3).
-  const how = r.keptPath?.includes('/homebrew/') || r.keptPath?.startsWith('/usr/local/') ? 'brew uninstall mcatzp' : 'npm uninstall -g mcatzp';
-  notify('success', r.binary === 'kept' ? `MCatzP taken out of the assistants; your copy at ${r.keptPath} stays (remove it with ${how})` : 'MCatzP uninstalled');
+  // MCatzP 1.0.4 names how a kept copy goes (brew / npm / bun), and on Windows a copy an assistant still runs is moved aside.
+  notify(
+    'success',
+    r.binary === 'kept'
+      ? `MCatzP taken out of the assistants. Your copy at ${r.keptPath} stays${r.removeCommand ? `: remove it with ${r.removeCommand}` : ''}`
+      : r.movedAside
+        ? 'MCatzP uninstalled. An assistant still has it open: the file goes away once that assistant stops it'
+        : 'MCatzP uninstalled',
+  );
   if (r.failed.length) notify('error', `Not taken out of ${r.failed.map((f) => `${label(f.id)} (${f.error})`).join(', ')}: remove its MCatzP entry there by hand`);
   setup.value = (await attempt(() => herd.mcatzpSetup(false))) ?? setup.value;
   void loadTargets();
