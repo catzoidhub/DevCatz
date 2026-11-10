@@ -56,6 +56,17 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      # electron-builder writes x86_64 into an x64 AppImage's name (amd64 into the .deb's). The site's catalog and the
+      # apps' sibling installs look for <App>-<v>-x64.AppImage, as for the Mac and arm64 files: rename it, and the
+      # update feed with it (the checksum stays the same).
+      - name: Name the x64 AppImage as the site expects
+        if: matrix.arch == 'x64'
+        run: |
+          set -e
+          for f in dist/*-x86_64.AppImage; do mv "$f" "${f%-x86_64.AppImage}-x64.AppImage"; done
+          sed -i 's/-x86_64\.AppImage/-x64.AppImage/g' dist/${{ matrix.feed }}
+          ! grep -q x86_64 dist/${{ matrix.feed }}
+
       - name: Check the files
         run: |
           set -e
@@ -63,6 +74,7 @@ jobs:
           test -f dist/${{ matrix.feed }}
           ls dist/*.AppImage dist/*.deb
           grep -q "\.AppImage" dist/${{ matrix.feed }}
+          ls dist/*.AppImage | grep -E -- '-(x64|arm64)\.AppImage$'
           dpkg-deb -f dist/*.deb Package Version Architecture Depends
           dpkg-deb -c dist/*.deb | grep -q usr/share/metainfo/com.mrcatz.devcatz.metainfo.xml
 
