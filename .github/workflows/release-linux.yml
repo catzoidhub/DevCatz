@@ -1,28 +1,82 @@
+# Linux AppImage and .deb (TODO §18, Catzoid #57 / #93), started by hand:
+#   gh workflow run release-linux.yml -f tag=v1.1.0             (a workflow artifact only, to try in the VM)
+#   gh workflow run release-linux.yml -f tag=v1.1.0 -f upload=true   (onto the release)
+# x64 on GitHub's Ubuntu runner, arm64 on its Ubuntu ARM runner (no cross-building: the AppImage runtime and the
+# .deb are made for the runner's own architecture). Nothing is signed. Each architecture uploads its own files and
+# its own update feed (latest-linux.yml for x64, latest-linux-arm64.yml for arm64), so the two never overwrite each
+# other and the Mac / Windows assets stay as they are. The site's catalog matches the names
+# (DevCatz-<v>-x64.AppImage, -arm64.AppImage, the .deb next to each).
 name: Release Linux
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing v-prefixed release tag in main history
+        description: Release tag to build (e.g. v1.1.0)
         required: true
-        type: string
       upload:
-        description: Publish Linux packages and update metadata without replacing assets
+        description: Upload the AppImage, .deb and update feed to the release (off = a workflow artifact for VM tests)
         type: boolean
         default: false
 
-# The reusable workflow limits build/authorization jobs to read; only opt-in publication writes.
 permissions:
   contents: write
 
 jobs:
   linux:
-    if: github.ref == 'refs/heads/main'
-    # Allowlist this exact reusable workflow SHA in the runner group, never this wrapper.
-    uses: catzoidhub/DevCatz/.github/workflows/build-linux-release.yml@1c15830e964380fbf92647315475f6cac1e3ca97
-    with:
-      tag: ${{ inputs.tag }}
-      upload: ${{ inputs.upload }}
-    secrets:
-      DEVCATZ_MEMBERS_READ_TOKEN: ${{ secrets.DEVCATZ_MEMBERS_READ_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            feed: latest-linux.yml
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            feed: latest-linux-arm64.yml
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Package (AppImage and .deb, ${{ matrix.arch }})
+        run: npx electron-builder --linux AppImage deb --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Check the files
+        run: |
+          set -e
+          ls -la dist
+          test -f dist/${{ matrix.feed }}
+          ls dist/*.AppImage dist/*.deb
+          grep -q "\.AppImage" dist/${{ matrix.feed }}
+          dpkg-deb -f dist/*.deb Package Version Architecture Depends
+          dpkg-deb -c dist/*.deb | grep -q usr/share/metainfo/com.mrcatz.devcatz.metainfo.xml
+
+      - name: Keep the files
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/${{ matrix.feed }}
+
+      - name: Upload to the release
+        if: inputs.upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ inputs.tag }} dist/*.AppImage dist/*.deb dist/${{ matrix.feed }} --clobber -R ${{ github.repository }}

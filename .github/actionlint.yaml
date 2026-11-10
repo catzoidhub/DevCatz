@@ -1,5 +1,0 @@
-self-hosted-runner:
-  labels:
-    - devcatz
-    - devcatz-linux-x64
-    - devcatz-windows-x64
