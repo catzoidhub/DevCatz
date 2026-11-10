@@ -6,6 +6,8 @@ import ConfirmDialog from './ConfirmDialog.vue';
 import StatusDot from './StatusDot.vue';
 import { GIT_HOST_ICONS } from '../githosticons';
 import { attempt, cloneRequest, herd, notify, siteTabRequest, state } from '../store';
+import GitUpdate from './GitUpdate.vue';
+import InstallGitButton from './InstallGitButton.vue';
 import CatMood from './CatMood.vue';
 
 /**
@@ -193,8 +195,8 @@ const broken = reactive(new Set<string>());
         </li>
       </ul>
       <div class="border-t border-base-300/60 p-3 text-xs opacity-60">
-        <template v-if="state?.git.version">git {{ state.git.version }} · your own config and credentials</template>
-        <span v-else class="text-warning">git is missing: {{ words.installGit }}</span>
+        <div v-if="state?.git.version" class="space-y-1.5"><div>git {{ state.git.version }} · your own config and credentials</div><GitUpdate /></div>
+        <span v-else class="flex flex-wrap items-center gap-2 text-warning">git is missing <InstallGitButton /></span>
       </div>
     </aside>
 

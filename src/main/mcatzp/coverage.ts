@@ -120,6 +120,9 @@ export const MCATZP_COVERAGE = {
   // tool: git_ignore_save
   gitignoreSave: 'tool: git_ignore_save',
   // tool: git_init
+  gitInstall: 'never: installs software with the system prompt for a password or administrator rights',
+  gitUpdateCheck: 'never: part of Update Git, which installs software with the system prompt',
+  gitUpdate: 'never: installs software with the system prompt for a password or administrator rights',
   gitInit: 'tool: git_init',
   // tool: git_rebase
   gitOperation: 'tool: git_rebase',

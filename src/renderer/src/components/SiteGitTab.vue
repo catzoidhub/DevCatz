@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { confirmDiscard } from '../confirms';
-import { keyLabel, words } from '@shared/platform';
+import { keyLabel } from '@shared/platform';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { GitFile, GitStatus, GitSyncAction, ProjectState } from '@shared/types';
 import GitDiff from './GitDiff.vue';
@@ -14,6 +14,7 @@ import type { AiCommitAnswer } from '@shared/types';
 import ConfirmDialog from './ConfirmDialog.vue';
 import PopMenu, { type MenuItem } from './PopMenu.vue';
 import { attempt, herd, navRequest, notify, state } from '../store';
+import InstallGitButton from './InstallGitButton.vue';
 import CatMood from './CatMood.vue';
 import GitignoreDialog from './GitignoreDialog.vue';
 /** Template alias (vue-tsc reads an imported binding inside template arrow functions as a ref). */
@@ -200,7 +201,7 @@ function openGitPage() {
       <div class="text-lg font-semibold">Not a Git repository</div>
       <p class="text-sm opacity-70">Start tracking this site's history: DevCatz runs <code>git init -b main</code> in {{ p.path }}, then you can commit and connect a remote.</p>
       <button class="btn btn-primary btn-sm" @click="act(() => H.gitInit(p.id).then(() => true), 'Repository created')">Initialize repository</button>
-      <p v-if="state?.git.version === null" class="text-xs text-warning">git is not installed: {{ words.installGit }}.</p>
+      <p v-if="state?.git.version === null" class="flex items-center justify-center gap-2 text-xs text-warning">git is not installed <InstallGitButton /></p>
     </div>
 
     <template v-else>

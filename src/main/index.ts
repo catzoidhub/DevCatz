@@ -1,4 +1,5 @@
 import { aiSettings, migrateAiToShared, setAiKey, setAiSettings } from './ai/settings';
+import { checkGitUpdate, installGit, updateGit } from './gitinstall';
 import { readShared, siteBase, watchShared, writeShared } from './shared';
 // First: moves the MrCatz Herd data folder before store/herd read it.
 import './migrate';
@@ -523,6 +524,17 @@ function api(): HerdApi {
     waReplay: (deliveryId) => herd.whatsapp.replay(deliveryId),
     waEnv: async (engine, siteId) => herd.whatsapp.env(engine, siteId),
     gitStatus: (id) => herd.git.status(id),
+    gitInstall: async () => {
+      const r = await installGit();
+      await herd.git.refreshVersion();
+      return r;
+    },
+    gitUpdateCheck: (force) => checkGitUpdate(!!force),
+    gitUpdate: async () => {
+      const r = await updateGit();
+      await herd.git.refreshVersion();
+      return r;
+    },
     gitInit: (id) => herd.git.init(id),
     gitDiff: (id, file, staged) => herd.git.diff(id, file, staged),
     gitStage: (id, files) => herd.git.stage(id, files),

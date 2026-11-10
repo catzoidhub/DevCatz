@@ -43,6 +43,13 @@ export class GitService {
     setInterval(() => void this.pollAll(), 20_000);
   }
 
+  /** Asks `git --version` again (after Install Git). */
+  async refreshVersion(): Promise<string | null> {
+    this.version = await g.gitVersion();
+    this.h.changed();
+    return this.version;
+  }
+
   state(): GitState {
     return { version: this.version, accounts: hosts.listAccounts(), clone: this.clone, cloneDir: this.cloneDir() };
   }
