@@ -196,7 +196,7 @@ const broken = reactive(new Set<string>());
       </ul>
       <div class="border-t border-base-300/60 p-3 text-xs opacity-60">
         <div v-if="state?.git.version" class="space-y-1.5"><div>git {{ state.git.version }} · your own config and credentials</div><GitUpdate /></div>
-        <span v-else class="flex flex-wrap items-center gap-2 text-warning">git is missing <InstallGitButton /></span>
+        <span v-else-if="state?.git.checked" class="flex flex-wrap items-center gap-2 text-warning">git is missing <InstallGitButton /></span>
       </div>
     </aside>
 

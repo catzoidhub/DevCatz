@@ -29,6 +29,8 @@ const SHA = /^[0-9a-f]{4,40}$/i;
 export class GitService {
   readonly summaries = new Map<string, GitSummary | null>();
   version: string | null = null;
+  /** The first `git --version` has answered (before it, a null version means "not known yet", not "missing"). */
+  checked = false;
   private clone: GitCloneTask | null = null;
   private cloneAbort: AbortController | null = null;
   private aborts = new Map<string, AbortController>();
@@ -37,6 +39,7 @@ export class GitService {
   constructor(private h: GitHooks) {
     void g.gitVersion().then((v) => {
       this.version = v;
+      this.checked = true;
       this.h.changed();
     });
     setTimeout(() => void this.pollAll(), 3_000);
@@ -46,12 +49,13 @@ export class GitService {
   /** Asks `git --version` again (after Install Git). */
   async refreshVersion(): Promise<string | null> {
     this.version = await g.gitVersion();
+    this.checked = true;
     this.h.changed();
     return this.version;
   }
 
   state(): GitState {
-    return { version: this.version, accounts: hosts.listAccounts(), clone: this.clone, cloneDir: this.cloneDir() };
+    return { version: this.version, checked: this.checked, accounts: hosts.listAccounts(), clone: this.clone, cloneDir: this.cloneDir() };
   }
 
   /** The folder most sites live in (new clones go next to them), else ~/Sites. */
@@ -62,7 +66,8 @@ export class GitService {
   }
 
   private async pollAll(): Promise<void> {
-    if (this.polling) return;
+    // No git (yet): nothing to read, and on a Mac git would only reopen Apple's installer prompt.
+    if (this.polling || !this.version) return;
     this.polling = true;
     let changed = false;
     try {

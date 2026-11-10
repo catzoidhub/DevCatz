@@ -2464,6 +2464,8 @@ export interface GitCloneTask {
 export interface GitState {
   /** `git --version`, null when git is missing (Xcode Command Line Tools not installed). */
   version: string | null;
+  /** The first version check has answered: until then a null version is "not known yet". */
+  checked: boolean;
   accounts: GitAccount[];
   clone: GitCloneTask | null;
   /** Default folder new clones go into (the folder most sites live in). */

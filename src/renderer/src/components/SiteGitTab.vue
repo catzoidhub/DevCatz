@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { confirmDiscard } from '../confirms';
-import { keyLabel } from '@shared/platform';
+import { keyLabel, words } from '@shared/platform';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { GitFile, GitStatus, GitSyncAction, ProjectState } from '@shared/types';
 import GitDiff from './GitDiff.vue';
@@ -47,6 +47,8 @@ async function load() {
 void load();
 // The main process refreshes the summary after every operation and every 20 s: follow it.
 watch(() => JSON.stringify(p.value.git), () => void load());
+// Git installed (here or on the Git page): read the repository now.
+watch(() => state.value?.git.version, (now, before) => now && !before && void load());
 const onFocus = () => void load();
 onMounted(() => window.addEventListener('focus', onFocus));
 onBeforeUnmount(() => window.removeEventListener('focus', onFocus));
@@ -194,6 +196,13 @@ function openGitPage() {
   <section class="site-tab">
     <div v-if="!loaded" class="flex items-center gap-2 text-sm opacity-60"><span class="loading loading-spinner loading-sm" />Reading the repository…</div>
 
+    <!-- No git on this computer: not "not a repository" (git is what tells), and Initialize could not run -->
+    <div v-else-if="state?.git.checked && !state.git.version" class="mx-auto max-w-lg space-y-3 pt-8 text-center">
+      <div class="text-lg font-semibold">Git is not installed</div>
+      <p class="text-sm opacity-70">DevCatz uses the git on this {{ words.computer }} for this site's changes, commits and branches. Install it, and the tab shows the repository right away.</p>
+      <InstallGitButton @installed="load" />
+    </div>
+
     <div v-else-if="error" role="alert" class="alert alert-error alert-soft text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />{{ error }}</div>
 
     <!-- Not a repository -->
@@ -201,7 +210,6 @@ function openGitPage() {
       <div class="text-lg font-semibold">Not a Git repository</div>
       <p class="text-sm opacity-70">Start tracking this site's history: DevCatz runs <code>git init -b main</code> in {{ p.path }}, then you can commit and connect a remote.</p>
       <button class="btn btn-primary btn-sm" @click="act(() => H.gitInit(p.id).then(() => true), 'Repository created')">Initialize repository</button>
-      <p v-if="state?.git.version === null" class="flex items-center justify-center gap-2 text-xs text-warning">git is not installed <InstallGitButton /></p>
     </div>
 
     <template v-else>
