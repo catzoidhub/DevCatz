@@ -473,36 +473,46 @@ export class Herd extends EventEmitter {
   }
 
   async init(): Promise<void> {
-    const reaped =
+    // The window opens after init: a step that takes long is logged with its time (the Windows start took minutes).
+    const timed = async <T>(step: string, work: () => T | Promise<T>): Promise<T> => {
+      const t = Date.now();
+      try {
+        return await work();
+      } finally {
+        if (Date.now() - t > 2000) console.warn(`start: ${step} took ${((Date.now() - t) / 1000).toFixed(1)} s`);
+      }
+    };
+    const reaped = await timed('stopping leftovers', async () =>
       (await this.processes.reapOrphans()) + (await this.storage.processes.reapOrphans()) + (await this.ws.processes.reapOrphans()) +
       (await this.search.processes.reapOrphans()) +
       (await this.dbs.processes.reapOrphans()) +
       // Gateways (Stalwart …) and WhatsApp (GOWA) run their own binaries too; left over, they held their ports.
       (await this.gateways.processes.reapOrphans()) +
-      (await this.whatsapp.processes.reapOrphans());
+      (await this.whatsapp.processes.reapOrphans()),
+    );
     if (reaped) console.log(`Stopped ${reaped} dev server(s) left over from a previous run`);
-    this.rescan();
-    await this.proxy.listen(store.settings.httpsPort, store.settings.httpPort);
-    this.refreshNodes();
-    await this.refreshBuns();
-    await this.refreshGos();
-    await this.refreshRust();
-    await this.refreshPythons();
-    await this.refreshRubies();
+    await timed('sites', () => this.rescan());
+    await timed('proxy', () => this.proxy.listen(store.settings.httpsPort, store.settings.httpPort));
+    await timed('Node.js', () => this.refreshNodes());
+    await timed('Bun', () => this.refreshBuns());
+    await timed('Go', () => this.refreshGos());
+    await timed('Rust', () => this.refreshRust());
+    await timed('Python', () => this.refreshPythons());
+    await timed('Ruby', () => this.refreshRubies());
     // Windows (Catzoid #57): PHP runs as php-cgi workers (fpm.ts).
-    await this.refreshPhps();
-    await phps.writeCaBundle(this.certs.caPath).catch(() => undefined);
+    await timed('PHP', () => this.refreshPhps());
+    await timed('PHP CA bundle', () => phps.writeCaBundle(this.certs.caPath).catch(() => undefined));
     this.syncFpm();
-    this.systemNode = await nodes.systemNode();
+    this.systemNode = await timed('system Node.js', () => nodes.systemNode());
     // Windows: DevCatz's DNS (port 53) also answers .localhost, which only browsers resolve there; NRPT rules point at it.
-    await refreshNrpt();
-    await this.dns.start(tld());
-    await this.checkResolution();
-    this.caTrusted = await this.certs.isTrusted();
+    await timed('NRPT', () => refreshNrpt());
+    await timed('DNS', () => this.dns.start(tld()));
+    await timed('name resolution', () => this.checkResolution());
+    this.caTrusted = await timed('CA trust', () => this.certs.isTrusted());
     // Linux: browser profiles made after Trust (Firefox's first run) get the CA too.
     this.certs.watchBrowsersLinux();
-    this.cleanUrls = await cleanUrlsWorking();
-    this.cleanHttp = await cleanHttpWorking();
+    this.cleanUrls = await timed('clean URLs', () => cleanUrlsWorking());
+    this.cleanHttp = await timed('clean URLs (http)', () => cleanHttpWorking());
     this.ipv4Free = !(await isListening('127.0.0.1', 443)) || cleanUrlsCoverIpv4();
     // Shared domain settings (DoCatz #61): take the default domain DoCatz set while DevCatz was closed, then publish ours.
     const sharedTld = sharedDomains().tld;

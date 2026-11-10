@@ -473,12 +473,19 @@ ${detail ? `<code class="detail">${esc(detail)}</code>` : ''}
     // within ~2 s of DevCatz starting (DoCatz #62).
     const bindOnce = (server: Server, port: number, host: string) =>
       new Promise<NodeJS.ErrnoException | null>((resolve) => {
-        const onError = (err: NodeJS.ErrnoException) => resolve(err);
-        server.once('error', onError);
-        server.listen(port, host, () => {
+        // Both listeners go after either outcome: a callback passed to listen() stayed behind on every retry
+        // ("11 listening listeners added to [Server]").
+        const onListening = () => {
           server.off('error', onError);
           resolve(null);
-        });
+        };
+        const onError = (err: NodeJS.ErrnoException) => {
+          server.off('listening', onListening);
+          resolve(err);
+        };
+        server.once('error', onError);
+        server.once('listening', onListening);
+        server.listen(port, host);
       });
     const until = Date.now() + 8000; // one budget for all four listeners, not 8 s each
     const bind = async (server: Server, port: number, host: string) => {

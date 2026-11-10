@@ -1315,6 +1315,7 @@ app.whenReady().then(async () => {
   // Linux AppImage run from Downloads: the install window first (it restarts DevCatz from ~/Applications).
   if (await offerAppImageInstall(RESOURCES)) return;
   await loadShellEnv();
+  if (process.uptime() > 5) console.warn(`start: shell environment ready after ${process.uptime().toFixed(1)} s`);
   // Theme and AI connection are shared with the other Catzoid apps (shared.ts): theirs wins when set.
   const sharedTheme = readShared().theme;
   if (sharedTheme && sharedTheme !== store.settings.theme) store.updateSettings({ theme: sharedTheme });
@@ -1529,4 +1530,5 @@ app.whenReady().then(async () => {
   // Started by the login item: live quietly in the menu bar, like Laravel Herd.
   if (openedAtLogin()) app.dock?.hide();
   else createWindow();
+  console.log(`start: ready after ${process.uptime().toFixed(1)} s`);
 });
