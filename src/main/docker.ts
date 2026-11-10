@@ -82,7 +82,12 @@ export type GwContainer = 'docatz' | 'system';
  * is there (its bridge.json, ~/.config/DoCatz — DoCatz has no Linux build yet, DoCatz #101).
  */
 export const docatzAvailable = (): boolean => isWin || isMac || (isLinux && docatzEngine() !== null);
-export const containerOf = (c?: { container?: GwContainer } | null): GwContainer => c?.container ?? (isWin ? 'docatz' : 'system');
+export const containerOf = (c?: { container?: GwContainer } | null): GwContainer => {
+  // Linux: DoCatz's engine is the system's Docker Engine (DoCatz #101). A gateway installed while DoCatz was there runs
+  // on that same daemon once DoCatz is gone, instead of asking to install DoCatz (VM, 2026-11-10).
+  if (isLinux && c?.container === 'docatz' && !docatzAvailable()) return 'system';
+  return c?.container ?? (isWin ? 'docatz' : 'system');
+};
 export const defaultContainer = (): GwContainer => (docatzAvailable() ? 'docatz' : 'system');
 
 /** The other container engine a gateway could run on (the first one installed), for the "Run in" choice. */
