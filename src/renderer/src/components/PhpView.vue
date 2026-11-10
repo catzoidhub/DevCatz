@@ -323,6 +323,10 @@ const tab = ref<Tab>('installed');
           PHP 7.x and 5.6 are not built by static-php.dev; <b>Install</b> runs <code>brew install shivammathur/php/php@7.x</code> (needs Homebrew) and
           DevCatz then uses Homebrew's PHP and PHP-FPM like its own.
         </p>
+        <p v-if="isLinux && !loadingRemote && remote.length && !remote.some((r) => r.via === 'deb')" class="text-xs opacity-60">
+          PHP 8.0, 7.x and 5.6 come from <code>ppa:ondrej/php</code> (Ubuntu) or <code>packages.sury.org/php</code> (Debian), which have no packages
+          for this release of your distribution yet (or could not be reached): they show here once they do. Use PHP 8.1 or newer meanwhile.
+        </p>
         <p v-if="remote.some((r) => r.upstream)" class="text-xs text-warning">
           php.net has newer releases than {{ SOURCE }} {{ isWin ? 'have' : 'has' }} built so far. DevCatz installs PHP from {{ SOURCE }} only; the newer
           versions show here, and as updates under Installed, once they are built.
