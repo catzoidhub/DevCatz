@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { writeFileAtomic } from './atomicfile';
 import { getShellEnv, run } from './env';
 import { isWin, killTree, shellCommand } from './platform';
 import { dataDir } from './store';
@@ -229,7 +230,7 @@ export class ProcessManager extends EventEmitter {
   private savePids(): void {
     const pids = [...this.procs.values()].flatMap((m) => m.children.filter((c) => !c.exited).map((c) => c.child.pid)).filter(Boolean);
     try {
-      writeFileSync(this.pidFile, JSON.stringify(pids));
+      writeFileAtomic(this.pidFile, JSON.stringify(pids));
     } catch {
       /* not fatal */
     }

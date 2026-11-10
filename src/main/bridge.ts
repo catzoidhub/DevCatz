@@ -1,6 +1,7 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { app } from 'electron';
+import { writeFileAtomic } from './atomicfile';
 import type { BridgeEntry } from '@catzoid/mcatzp-host';
 import type { AppInfo, ProjectConfig, SiteOpenApi, StackInfo } from '@shared/types';
 
@@ -63,10 +64,8 @@ function writeFile(): void {
     const file = bridgeFile();
     const dir = join(file, '..');
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const tmp = `${file}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify({ schema: 1, app: 'DevCatz', written: new Date().toISOString(), ...written, ...(mcatzp ? { mcatzp } : {}) }, null, 2)}\n`, { mode: 0o600 });
-    chmodSync(tmp, 0o600);
-    renameSync(tmp, file);
+    writeFileAtomic(file, `${JSON.stringify({ schema: 1, app: 'DevCatz', written: new Date().toISOString(), ...written, ...(mcatzp ? { mcatzp } : {}) }, null, 2)}\n`, 0o600);
+    chmodSync(file, 0o600);
   } catch (e) {
     console.warn('bridge.json could not be written:', (e as Error).message);
   }

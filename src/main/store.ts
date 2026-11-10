@@ -1,5 +1,6 @@
 import { app } from 'electron';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { writeFileAtomic } from './atomicfile';
 import { join } from 'node:path';
 import type { DbBinary, DbServiceConfig, ProjectConfig, SearchConfig, SearchKind, Settings, StorageConfig, StorageKind, WsConfig, WsKind } from '@shared/types';
 
@@ -245,9 +246,7 @@ class Store {
   }
 
   private save(): void {
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(this.data, null, 2));
-    renameSync(tmp, this.file);
+    writeFileAtomic(this.file, JSON.stringify(this.data, null, 2));
   }
 }
 

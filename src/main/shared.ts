@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { app } from 'electron';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, watch, type FSWatcher } from 'node:fs';
+import { writeFileAtomic } from './atomicfile';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AiProvider, GitAccount, ThemeMode } from '@shared/types';
@@ -140,9 +141,7 @@ export function writeShared(patch: Partial<Omit<Shared, 'version' | 'ai' | 'git'
   };
   mkdirSync(SHARED_DIR, { recursive: true, mode: 0o700 });
   chmodSync(SHARED_DIR, 0o700);
-  const tmp = `${FILE}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
-  renameSync(tmp, FILE);
+  writeFileAtomic(FILE, `${JSON.stringify(next, null, 2)}\n`, 0o600);
   cache = next;
   lastOwnWrite = next.updatedAt!;
   return next;
