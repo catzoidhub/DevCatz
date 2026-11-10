@@ -33,6 +33,7 @@ import { openAtLogin, openedAtLogin, setOpenAtLogin } from './loginitem';
 import { offerAppImageInstall } from './appimage';
 import { LINUX_EDITORS, launchDesktop, linuxEditorFile, openLinuxTerminal } from './linuxapps';
 import { openWeb, refreshBrowsers, refreshEditorIcons, validBrowser } from './browsers';
+import { openDialog, saveDialog } from './dialogs';
 import { isSvcKind } from './svcdocker';
 import { words } from '@shared/platform';
 
@@ -374,7 +375,7 @@ async function openTerminal(path: string): Promise<void> {
 async function locateMissing(id: string): Promise<{ path: string; applied: boolean; name: string } | null> {
   const site = herd.missingSites().find((m) => m.id === id);
   if (!site) throw new Error('That site is not missing');
-  const r = await dialog.showOpenDialog(win!, { title: `Where is ${site.name} now?`, message: `Where is ${site.name} now? (it was ${site.path})`, properties: ['openDirectory'] });
+  const r = await openDialog(win, { title: `Where is ${site.name} now?`, message: `Where is ${site.name} now? (it was ${site.path})`, properties: ['openDirectory'] });
   if (r.canceled || !r.filePaths[0]) return null;
   const path = r.filePaths[0];
   const look = herd.looksLikeMissing(id, path);
@@ -394,7 +395,7 @@ function api(): HerdApi {
     getLogs: async (id) => managerOf(id).getLogs(id),
     clearLogs: async (id) => managerOf(id).clearLogs(id),
     pickFile: async (title) => {
-      const r = await dialog.showOpenDialog(win!, { title, properties: ['openFile', 'treatPackageAsDirectory'] });
+      const r = await openDialog(win, { title, properties: ['openFile', 'treatPackageAsDirectory'] });
       return r.canceled ? null : r.filePaths[0];
     },
     searchInstall: (kind, config) => herd.search.install(kind, config),
@@ -419,7 +420,7 @@ function api(): HerdApi {
     searchQuery: (kind, query) => herd.search.search(kind, query),
     searchUpsert: (kind, index, text) => herd.search.upsert(kind, index, SearchManager.parseDocs(text)),
     searchImportFile: async (kind, index) => {
-      const r = await dialog.showOpenDialog(win!, { title: `Import into ${index}`, properties: ['openFile'], filters: [{ name: 'JSON, NDJSON or CSV', extensions: ['json', 'ndjson', 'jsonl', 'csv'] }] });
+      const r = await openDialog(win, { title: `Import into ${index}`, properties: ['openFile'], filters: [{ name: 'JSON, NDJSON or CSV', extensions: ['json', 'ndjson', 'jsonl', 'csv'] }] });
       if (r.canceled || !r.filePaths[0]) return null;
       return herd.search.upsert(kind, index, herd.search.readDocsFile(r.filePaths[0]));
     },
@@ -435,7 +436,7 @@ function api(): HerdApi {
     searchExport: async (kind, index, format) => {
       const docs = await herd.search.exportDocs(kind, index);
       const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
-      const r = await dialog.showSaveDialog(win!, {
+      const r = await saveDialog(win, {
         title: `Export ${index} (${docs.length} documents)`,
         defaultPath: join(app.getPath('downloads'), `${index}-${stamp}.${format}`),
         filters: [format === 'json' ? { name: 'JSON', extensions: ['json'] } : { name: 'NDJSON', extensions: ['ndjson', 'jsonl'] }],
@@ -455,7 +456,7 @@ function api(): HerdApi {
     mailDeleteAll: async () => herd.mail.deleteAll(),
     mailSaveAttachment: async (id, attachmentId) => {
       const a = herd.mail.attachment(id, attachmentId);
-      const r = await dialog.showSaveDialog(win!, { defaultPath: join(app.getPath('downloads'), a.filename) });
+      const r = await saveDialog(win, { defaultPath: join(app.getPath('downloads'), a.filename) });
       if (r.canceled || !r.filePath) return null;
       writeFileSync(r.filePath, a.data);
       return r.filePath;
@@ -721,7 +722,7 @@ function api(): HerdApi {
     monitorHistory: async (range) => herd.monitor.rangeHistory(range),
     monitorExport: async (range) => {
       const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
-      const r = await dialog.showSaveDialog(win!, {
+      const r = await saveDialog(win, {
         defaultPath: join(app.getPath('downloads'), `devcatz-monitor-${range}-${stamp}.csv`),
         filters: [{ name: 'CSV', extensions: ['csv'] }],
       });
@@ -742,7 +743,7 @@ function api(): HerdApi {
       if (uploads.has(kind)) throw new Error('An upload is already running');
       const t = herd.s3Target(kind);
       if (!paths) {
-        const r = await dialog.showOpenDialog(win!, { title: `Upload to ${bucket}/${prefix}`, properties: ['openFile', 'openDirectory', 'multiSelections'] });
+        const r = await openDialog(win, { title: `Upload to ${bucket}/${prefix}`, properties: ['openFile', 'openDirectory', 'multiSelections'] });
         if (r.canceled) return 0;
         paths = r.filePaths;
       }
@@ -779,7 +780,7 @@ function api(): HerdApi {
     s3CancelUpload: async (kind) => uploads.get(kind)?.abort(),
     s3Download: async (kind, bucket, key) => {
       const t = herd.s3Target(kind);
-      const r = await dialog.showSaveDialog(win!, { defaultPath: join(app.getPath('downloads'), basename(key)) });
+      const r = await saveDialog(win, { defaultPath: join(app.getPath('downloads'), basename(key)) });
       if (r.canceled || !r.filePath) return null;
       await s3.download(t, bucket, key, r.filePath);
       return r.filePath;
@@ -787,7 +788,7 @@ function api(): HerdApi {
     s3Delete: (kind, bucket, key) => s3.remove(herd.s3Target(kind), bucket, key),
     s3MkDir: (kind, bucket, prefix) => s3.mkdir(herd.s3Target(kind), bucket, prefix),
     pickFolder: async () => {
-      const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] });
+      const r = await openDialog(win, { properties: ['openDirectory', 'createDirectory'] });
       return r.canceled ? null : r.filePaths[0];
     },
     inspectFolder: async (path) => herd.inspect(path),
