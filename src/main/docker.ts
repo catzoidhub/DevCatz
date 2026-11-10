@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { basename, dirname, isAbsolute, join, posix, relative } from 'node:path';
@@ -159,7 +159,7 @@ export async function gatewayEngineReady(where: GwContainer, report: (detail: st
     await startEngine('docatz').catch(() => undefined);
     throw new Error("DoCatz's engine is not set up on this PC yet (it runs in WSL 2): start it in DoCatz (Engine), then try again");
   }
-  report('Opening DoCatz and waiting for its engine');
+  report('Starting DoCatz’s engine');
   await startEngine('docatz');
   for (const end = Date.now() + 180_000; Date.now() < end; ) {
     await new Promise((r) => setTimeout(r, 3000));
@@ -284,6 +284,10 @@ export async function startEngine(id: DockerEngineId): Promise<void> {
   const e = ENGINES.find((x) => x.id === id);
   if (!e) throw new Error(`Unknown engine ${id}`);
   if (engineAppInstalled(e)) {
+    // docatz://engine?action=start (DoCatz 77c77ae) also starts a stopped engine in a DoCatz that is already open —
+    // opening the app again did nothing then (a gateway install waited 3 minutes for nothing); an older DoCatz just
+    // opens its window. Not on Linux: DoCatz's engine is the system's Docker Engine there (linuxDockerEngine).
+    if (id === 'docatz' && !isLinux && (await shell.openExternal('docatz://engine?action=start').then(() => true, () => false))) return;
     if (isLinux) {
       // Docker Desktop runs as a user service; Rancher Desktop is an app.
       if (id === 'docker-desktop') {
