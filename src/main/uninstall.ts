@@ -8,7 +8,7 @@ import { removeSystemLeftovers, systemLeftovers } from './cleanurls';
 import { isLinux, isWin } from './platform';
 import { runAsRootLinux } from './linuxadmin';
 import { setOpenAtLogin } from './loginitem';
-import { appImageIconFile } from './appimage';
+import { appImageDesktopFile, appImageIconFile } from './appimage';
 import { setUserPath, userPathHas } from './env';
 import { shimDir } from './node';
 import { run } from './env';
@@ -243,6 +243,10 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
   } else if (plan.app && (!isLinux || process.env.APPIMAGE)) {
     // (Linux: a folder that is no package's, e.g. an unpacked build, is root's and stays; the user removes it.)
     await shell.trashItem(plan.app);
+    // The AppImage's menu entry and icon belong to the app, not to its data: they went only with "remove data" and
+    // the entry stayed in the menu pointing at nothing, hiding a .deb's own entry (VM, 2026-11-10).
+    if (isLinux && process.env.APPIMAGE)
+      for (const p of [appImageDesktopFile(), appImageIconFile()]) if (existsSync(p)) rmSync(p, { force: true });
   }
   set({ step: 5, done: true, detail: '' });
 }
