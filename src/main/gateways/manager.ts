@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
@@ -542,15 +542,18 @@ export class GatewayManager {
         writeFileSync(join(cfg, 'signing.key'), privateKey.export({ type: 'pkcs1', format: 'pem' }));
       }
       const web = host(c.domain);
-      writeFileSync(
-        join(cfg, 'postal.yml'),
-        `version: 2
+      // Postal looks its relay up with DNS A / AAAA queries to Docker's resolver (127.0.0.11), which knows the compose
+      // services but not /etc/hosts (host.docker.internal from extra_hosts) nor an IP literal: every message soft-failed
+      // with "No hosts to try" (Windows, DoCatz's engine, 2026-11-10). So the relay is the service `catcher`, a few lines
+      // of Ruby in Postal's own image that pass each connection on to DevCatz's mail catcher.
+      writeFileSync(join(cfg, 'devcatz-relay.rb'), POSTAL_RELAY);
+      const postalYml = `version: 2
 postal:
   web_hostname: ${web}
   web_protocol: https
   smtp_hostname: ${web}
   smtp_relays:
-    - smtp://host.docker.internal:${this.h.mailPort()}
+    - smtp://catcher:2525
 main_db:
   host: mariadb
   username: root
@@ -575,26 +578,40 @@ web_server:
   default_port: 5000
 logging:
   rails_log_enabled: false
-`,
-      );
+`;
+      writeFileSync(join(cfg, 'postal.yml'), postalYml);
       writeFileSync(join(cfg, 'devcatz-setup.rb'), POSTAL_SETUP);
+      // Postal reads postal.yml once, at its start: the file's digest in each service's environment makes compose
+      // recreate them when it changed (they kept the old relay after a DevCatz that ended without stopping them).
+      const digest = createHash('sha256').update(postalYml).update(POSTAL_RELAY).digest('hex').slice(0, 16);
       const svc = (cmd: string, ports: string) => `    image: ${img}
     platform: linux/amd64
     command: ${cmd}
+    environment: { DEVCATZ_CONFIG: "${digest}" }
     volumes: [ ${JSON.stringify(`${cfg}:/config`)} ]${ports}
     extra_hosts: [ "host.docker.internal:host-gateway" ]
     depends_on: { mariadb: { condition: service_healthy } }
 `;
+      // Windows: a folder of the PC reaches DoCatz's engine through WSL's /mnt/<drive>, where every file is world-writable:
+      // MariaDB then ignores its healthcheck's .my-healthcheck.cnf (access denied, "unhealthy" for ever) and is slow on it.
+      // Its data lives in a volume of the engine instead (removed with the data on Uninstall).
       y = `services:
   mariadb:
     image: mariadb:11.4
     environment: { MARIADB_ROOT_PASSWORD: ${yamlStr(s.dbPassword)}, MARIADB_DATABASE: postal }
-    volumes: [ ${JSON.stringify(`${join(c.dataDir, 'mysql')}:/var/lib/mysql`)} ]
+    volumes: [ ${isWin ? '"mysql:/var/lib/mysql"' : JSON.stringify(`${join(c.dataDir, 'mysql')}:/var/lib/mysql`)} ]
     healthcheck: { test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"], interval: 3s, timeout: 5s, retries: 60 }
   web:
 ${svc('postal web-server', `\n    ports: [ "127.0.0.1:${c.port}:5000" ]`)}  smtp:
 ${svc('postal smtp-server', `\n    ports: [ "127.0.0.1:${c.ports.smtp}:25" ]`)}  worker:
-${svc('postal worker', '')}`;
+${svc('postal worker', '')}  catcher:
+    image: ${img}
+    platform: linux/amd64
+    command: [ "ruby", "/config/devcatz-relay.rb", "host.docker.internal", "${this.h.mailPort()}" ]
+    environment: { DEVCATZ_CONFIG: "${digest}" }
+    volumes: [ ${JSON.stringify(`${cfg}:/config`)} ]
+    extra_hosts: [ "host.docker.internal:host-gateway" ]
+${isWin ? 'volumes:\n  mysql: {}\n' : ''}`;
     }
     mkdirSync(join(this.dir, kind), { recursive: true });
     writeFileSync(this.composeFile(kind), `# Written by DevCatz; rewritten on every start.\nname: ${project(kind)}\n${y}`);
@@ -730,7 +747,8 @@ ${svc('postal worker', '')}`;
       await this.stop(kind);
       t.report({ step: 1 });
       if (e.docker) {
-        if (existsSync(this.composeFile(kind))) await this.compose(kind, ['down', '--remove-orphans'], 120_000);
+        // -v with the data: Postal's database is a volume of the engine on Windows.
+        if (existsSync(this.composeFile(kind))) await this.compose(kind, ['down', '--remove-orphans', ...(deleteData ? ['-v'] : [])], 120_000);
         await run(gatewayDocker(this.where(kind))[0], [...gatewayDocker(this.where(kind)).slice(1), 'rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
         rmSync(this.composeFile(kind), { force: true });
       } else rmSync(this.binDir(kind), { recursive: true, force: true });
@@ -1278,6 +1296,37 @@ ${svc('postal worker', '')}`;
 function telegramSecrets(s: Record<string, string> | undefined): Record<string, string> {
   return { apiId: (s?.apiId ?? '').trim(), apiHash: (s?.apiHash ?? '').trim(), botToken: (s?.botToken ?? '').trim() };
 }
+
+/** Postal's relay (service `catcher`): listens on 2525 and passes each connection on to DevCatz's mail catcher. */
+const POSTAL_RELAY = `# Written by DevCatz: Postal's SMTP relay, passed on to DevCatz's mail catcher (host, port as arguments).
+require 'socket'
+host, port = ARGV[0], Integer(ARGV[1])
+server = TCPServer.new('0.0.0.0', 2525)
+$stdout.sync = true
+puts "relay: 2525 -> #{host}:#{port}"
+loop do
+  Thread.new(server.accept) do |client|
+    upstream = nil
+    begin
+      upstream = TCPSocket.new(host, port)
+      up = Thread.new do
+        IO.copy_stream(client, upstream)
+      rescue StandardError
+        nil
+      ensure
+        upstream.close_write rescue nil
+      end
+      IO.copy_stream(upstream, client)
+      up.join
+    rescue StandardError => e
+      warn "relay: #{e.message}"
+    ensure
+      client.close rescue nil
+      upstream&.close rescue nil
+    end
+  end
+end
+`;
 
 /** Ruby run inside Postal (rails runner): admin user, organisation, server, credentials and verified domains; idempotent. */
 const POSTAL_SETUP = `# Written by DevCatz.
