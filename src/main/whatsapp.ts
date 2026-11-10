@@ -63,7 +63,7 @@ const ENGINES: Record<WaEngine, EngineDef> = {
   },
   waha: {
     name: 'WAHA',
-    description: 'WhatsApp HTTP API (Core): a Docker image with a REST API, dashboard, Swagger docs and webhooks.',
+    description: 'WhatsApp HTTP API (Core, GOWS engine): a Docker image with a REST API, dashboard, Swagger docs and webhooks.',
     docker: true,
     port: 3020,
     label: 'waha',
@@ -593,6 +593,10 @@ export class WaManager {
         WHATSAPP_SWAGGER_USERNAME: userOf(c),
         WHATSAPP_SWAGGER_PASSWORD: c.apiKey,
         WAHA_PRINT_QR: 'False',
+        // GOWS (Go, no browser) instead of the default WEBJS: whatsapp-web.js timed out injecting into WhatsApp Web
+        // ("Waiting failed: 30000ms exceeded", WAHA 2026.10.1 in DoCatz, 2026-11-10) and needs a whole Chromium; GOWS
+        // reached the QR at once. Sessions live per engine (sessions/gows), so one paired under WEBJS is paired again.
+        WHATSAPP_DEFAULT_ENGINE: 'GOWS',
       };
       const args = ['run', '--rm', '--name', 'devcatz-waha', '-p', `127.0.0.1:${c.port}:3000`, '--add-host=host.docker.internal:host-gateway', '-v', `${sessions}:/app/.sessions`, '-v', `${media}:/app/.media`, ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), `${WAHA_IMAGE}:${wahaTag(c.version)}`];
       this.processes.startMany(waId(engine), [{ label: '', cwd: c.dataDir, command: [...gatewayDocker(this.where()), ...args].map(q).join(' '), env: {} }]);
