@@ -1550,6 +1550,8 @@ export interface McatzpSetup {
   error: string | null;
   /** The site was asked; until then latest and noBuild say nothing. */
   checked: boolean;
+  /** After Install / Update on Windows: the copy AI assistants were running was moved aside; they keep it until they restart (MCatzP #29). */
+  movedAside?: boolean;
 }
 /** An AI assistant MCatzP can be added to. */
 export interface McatzpTarget {

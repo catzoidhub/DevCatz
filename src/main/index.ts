@@ -881,9 +881,10 @@ function api(): HerdApi {
         herd.mcatzpInstalling = p;
         herd.emit('change');
       };
+      let movedAside = false;
       try {
         report({ phase: 'download', received: 0, total: 0 });
-        await mcatzpSetup.install(report, mcatzpInstalling.signal);
+        movedAside = await mcatzpSetup.install(report, mcatzpInstalling.signal);
       } catch (e) {
         // Cancel is an answer, not a failure.
         if (!mcatzpInstalling?.signal.aborted) throw e;
@@ -892,7 +893,7 @@ function api(): HerdApi {
         report(null);
       }
       void checkMcatzpUpdate();
-      return mcatzpSetup.setupState();
+      return { ...(await mcatzpSetup.setupState()), movedAside };
     },
     mcatzpUninstall: async () => {
       if (mcatzpInstalling) throw new Error('MCatzP is being installed');
