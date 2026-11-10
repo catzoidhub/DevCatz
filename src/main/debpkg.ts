@@ -54,6 +54,8 @@ export interface DebEntry {
   hash: string;
   /** The Depends field as written. */
   depends?: string;
+  /** Virtual packages it provides (`libssl3` for libssl3t64), names only. */
+  provides?: string[];
 }
 
 /** Every package of a Packages index. */
@@ -66,6 +68,10 @@ export function parsePackages(index: string): DebEntry[] {
       file: (st.match(/^Filename: (.+)$/m)?.[1] ?? '').replace(/\/\.\//g, '/'),
       hash: st.match(/^SHA256: (.+)$/m)?.[1] ?? '',
       depends: [...st.matchAll(/^(?:Pre-)?Depends: (.+)$/gm)].map((m) => m[1]).join(', '),
+      provides: (st.match(/^Provides: (.+)$/m)?.[1] ?? '')
+        .split(',')
+        .map((p) => p.trim().split(/[\s(:]/)[0])
+        .filter(Boolean),
     }))
     .filter((p) => p.name && p.file && /^[a-f0-9]{64}$/.test(p.hash) && /^\d+(\.\d+)*$/.test(p.version));
 }
