@@ -29,3 +29,19 @@ export async function runAsRootLinux(script: string): Promise<{ ok: boolean; can
 
 /** Single quotes for a value in a root script. */
 export const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * Hands files in `dir` that are not the user's back to the user (one password, only when there are any): containers
+ * write root-owned files into folders bind-mounted from DevCatz's data (ntfy's attachments), which the user can then
+ * neither move to the Trash nor delete. True when nothing is left that the user does not own.
+ */
+export async function giveBackToUser(dir: string): Promise<boolean> {
+  const uid = process.getuid?.();
+  const gid = process.getgid?.();
+  if (uid === undefined || gid === undefined) return true;
+  const found = await run('find', [dir, '!', '-user', String(uid), '-print', '-quit'], { timeout: 60_000 });
+  if (!found.stdout.trim()) return true;
+  const r = await runAsRootLinux(`chown -R ${uid}:${gid} ${shq(dir)}\n`);
+  if (!r.ok) console.warn(`${dir}: files written by containers stay root's:`, r.message);
+  return r.ok;
+}

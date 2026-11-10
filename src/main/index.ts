@@ -1213,10 +1213,18 @@ async function runUninstall(opts: { removeData: boolean; removeShared: boolean }
   herd.uninstallTask = { kind: 'uninstall', title: 'Uninstalling DevCatz', steps: UNINSTALL_STEPS, step: 0 } as TaskProgress;
   herd.emit('change');
   try {
-    await uninstall(opts, { stopAll: () => herd.shutdown(), untrustCa: async () => void (await herd.untrustCa()) }, set);
+    const notTrashed = await uninstall(opts, { stopAll: () => herd.shutdown(), untrustCa: async () => void (await herd.untrustCa()) }, set);
     console.log('uninstalled: quitting');
     quitting = true;
-    setTimeout(() => app.exit(0), 1500);
+    const dataGone = opts.removeData && !isWin && !notTrashed.includes(app.getPath('userData'));
+    setTimeout(() => {
+      // macOS / Linux: Chromium writes Session Storage and Network Persistent State into a fresh data folder while it
+      // exits, after the old one went to the Trash (VM, 2026-11-10). A small process removes that folder once DevCatz
+      // has gone — only when the data itself is in the Trash.
+      if (dataGone)
+        spawn('/bin/sh', ['-c', `sleep 3; rm -rf '${app.getPath('userData').replace(/'/g, `'\\''`)}'`], { detached: true, stdio: 'ignore' }).unref();
+      app.exit(0);
+    }, 1500);
   } catch (e) {
     set({ error: (e as Error).message });
   }

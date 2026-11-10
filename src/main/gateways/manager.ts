@@ -19,6 +19,7 @@ import { jcli } from './jcli';
 import { SmppCatcher } from './smpp';
 import { exe, isLinux, isWin } from '../platform';
 import { firewallWords, forwardFromWsl, wslReaches } from '../wslhost';
+import { giveBackToUser } from '../linuxadmin';
 import { words } from '@shared/platform';
 
 /**
@@ -754,6 +755,8 @@ ${isWin ? 'volumes:\n  mysql: {}\n' : ''}`;
       } else rmSync(this.binDir(kind), { recursive: true, force: true });
       if (deleteData) {
         t.report({ step: 2, detail: c.dataDir });
+        // Linux: the container wrote root-owned files there (ntfy's attachments): handed back first, or rm stops at them.
+        if (isLinux && existsSync(c.dataDir)) await giveBackToUser(c.dataDir);
         rmSync(c.dataDir, { recursive: true, force: true });
       }
       this.saveConfig(kind, null);

@@ -6,7 +6,7 @@ import type { AiProvider, TaskProgress, UninstallPlan } from '@shared/types';
 import { spawn } from 'node:child_process';
 import { removeSystemLeftovers, systemLeftovers } from './cleanurls';
 import { isLinux, isWin } from './platform';
-import { runAsRootLinux } from './linuxadmin';
+import { giveBackToUser, runAsRootLinux } from './linuxadmin';
 import { setOpenAtLogin } from './loginitem';
 import { appImageDesktopFile, appImageIconFile } from './appimage';
 import { setUserPath, userPathHas } from './env';
@@ -185,7 +185,7 @@ export interface UninstallHooks {
 }
 
 /** Runs the uninstall; `set` reports progress. Quits DevCatz at the end (unless it fails before the app step). */
-export async function uninstall(opts: { removeData: boolean; removeShared: boolean }, hooks: UninstallHooks, set: (p: Partial<TaskProgress>) => void): Promise<void> {
+export async function uninstall(opts: { removeData: boolean; removeShared: boolean }, hooks: UninstallHooks, set: (p: Partial<TaskProgress>) => void): Promise<string[]> {
   const plan = uninstallPlan();
   const removeShared = opts.removeShared;
   set({ step: 0, detail: 'Sites, databases, storage, mail and the other services' });
@@ -219,11 +219,21 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
     set({ step: 4, detail: plan.app ?? 'A development build: the app stays' });
     await afterQuitWin(plan.app, plan.dataDir, folders);
     set({ step: 5, done: true, detail: '' });
-    return;
+    return [];
   }
+  // What could not go to the Trash stays where it is: never deleted for good instead (VM, 2026-11-10: the Trash refused a
+  // data folder with a root-owned folder inside, the fallback rm deleted 8 GB for good and stopped at that folder).
+  const notTrashed: string[] = [];
   if (opts.removeData) {
     if (!isLinux) await run('/usr/bin/security', ['delete-generic-password', '-s', 'DevCatz Safe Storage'], { timeout: 15_000 }).catch(() => undefined);
-    for (const p of [...smallLeftovers(), plan.dataDir]) await shell.trashItem(p).catch(() => rmSync(p, { recursive: true, force: true }));
+    // Linux: containers write root-owned files into the folders bind-mounted from here (ntfy's attachments); the Trash
+    // cannot take a folder it cannot read, so they are handed back first (one password, only when there are any).
+    if (isLinux && existsSync(plan.dataDir)) await giveBackToUser(plan.dataDir);
+    for (const p of [...smallLeftovers(), plan.dataDir])
+      await shell.trashItem(p).catch((e: Error) => {
+        console.warn(`uninstall: ${p} stays: ${e.message}`);
+        notTrashed.push(p);
+      });
   }
   if (removeShared) {
     for (const k of plan.sharedKeys) await setSharedKey(k as AiProvider, '').catch(() => undefined);
@@ -248,7 +258,8 @@ export async function uninstall(opts: { removeData: boolean; removeShared: boole
     if (isLinux && process.env.APPIMAGE)
       for (const p of [appImageDesktopFile(), appImageIconFile()]) if (existsSync(p)) rmSync(p, { force: true });
   }
-  set({ step: 5, done: true, detail: '' });
+  set({ step: 5, done: true, detail: notTrashed.length ? `Kept, the Trash would not take it: ${notTrashed.join(', ')}` : '' });
+  return notTrashed;
 }
 
 export const UNINSTALL_STEPS = isWin
