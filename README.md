@@ -9,15 +9,15 @@
   <a href="https://catzoid.com/community">Community</a>
 </p>
 
-A local development environment for macOS. Drop a project folder in and DevCatz works out its stack, runs it, and serves every site on its own `https://<name>.localhost` with a certificate your browser trusts — next to every runtime, database, storage, search engine, mail catcher, WebSocket server, tunnel and Docker setup it needs. One app instead of a Dock full of them.
+A local development environment for macOS, Windows and Linux. Drop a project folder in and DevCatz works out its stack, runs it, and serves every site on its own `https://<name>.localhost` with a certificate your browser trusts — next to every runtime, database, storage, search engine, mail catcher, WebSocket server, tunnel and Docker setup it needs. One app instead of a Dock full of them.
 
 Part of [Catzoid](https://catzoid.com) — free, open-source developer tools with nine lives. All cats, no catch: no
 account, no Pro tier, nothing locked behind a payment.
 
 ## What it does
 
-- **Sites** — PHP, Node.js / Bun, Python and Go projects detected with their framework (Laravel, Next.js, Django, Gin …), each on `https://*.localhost`, monorepos and Git worktrees included.
-- **Runtimes** — any PHP, Node.js, Bun, Python or Go version per site, installed for you.
+- **Sites** — PHP, Node.js / Bun, Python, Ruby, Go and Rust projects detected with their framework (Laravel, Next.js, Django, Rails, Gin …), each on `https://*.localhost`, monorepos and Git worktrees included.
+- **Runtimes** — any PHP, Node.js, Bun, Python, Ruby, Go or Rust version per site, installed for you.
 - **Services** — MySQL, MariaDB, PostgreSQL, Redis, Valkey, MongoDB, Elasticsearch; S3-compatible storage; search engines; WebSocket servers; a mail catcher; gateways; tunnels to share a site.
 - **Per site** — logs, `.env` editing, database links and migrations, the site’s API, Git with AI-written commit messages, Docker files generated from the stack.
 - **AI, optional** — bring your own provider (Claude, OpenAI, Gemini, Ollama …); off until you switch it on.
@@ -35,9 +35,13 @@ brew install --cask devcatz
 ```
 
 The macOS app is signed and notarized by Apple and updates itself (Settings → About → Check for Updates).
-Windows x64 NSIS and Linux x64 AppImage/`.deb` packages are available from
-[GitHub Releases](https://github.com/catzoidhub/DevCatz/releases/latest). Linux installation,
-startup and updater behavior have not yet been verified; see [release evidence](docs/self-hosted-host-evidence.md).
+
+Windows 10 / 11 (x64): `DevCatz-Setup-<version>.exe` from the same page or the
+[latest release](https://github.com/catzoidhub/DevCatz/releases/latest). It is not code-signed yet (see Code signing below).
+
+Linux (x64): `DevCatz-<version>-x64.AppImage` or `DevCatz-<version>-amd64.deb` from the same page or the
+[latest release](https://github.com/catzoidhub/DevCatz/releases/latest). The AppImage offers to install itself into
+`~/Applications` with a menu entry on its first run; the `.deb` suits Ubuntu and Debian. Neither is signed yet.
 
 ## Build from source
 
@@ -56,7 +60,7 @@ Windows: the installer is built by GitHub Actions from this repository but is **
 SmartScreen warns when you open it (*More info → Run anyway*). Signing is free for open-source projects through the
 [SignPath Foundation](https://signpath.org), which asks for a project with more public use first — stars, forks,
 issues, pull requests and write-ups all help us get there. macOS builds are signed with a Developer ID and notarized
-by Apple. Full policy: [catzoid.com/legal/code-signing](https://catzoid.com/legal/code-signing).
+by Apple. Linux packages are built by GitHub Actions from this repository too, and are not signed either. Full policy: [catzoid.com/legal/code-signing](https://catzoid.com/legal/code-signing).
 
 ## How it is made
 
