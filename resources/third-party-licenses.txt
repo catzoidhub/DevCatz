@@ -239,7 +239,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ------------------------------------------------------------------------------
 
-@catzoid/mcatzp-host 1.0.3 — Apache-2.0
+@catzoid/mcatzp-host 1.0.4 — Apache-2.0
 https://github.com/catzoidhub/MCatzP
 
 Apache License
@@ -446,7 +446,7 @@ Apache License
 
 ------------------------------------------------------------------------------
 
-@catzoid/mcatzp-protocol 1.0.3 — Apache-2.0
+@catzoid/mcatzp-protocol 1.0.4 — Apache-2.0
 https://github.com/catzoidhub/MCatzP
 
 Apache License
