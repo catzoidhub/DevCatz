@@ -76,6 +76,9 @@ export interface Shared {
   git?: { accounts?: GitAccount[] };
   /** The Catzoid site address the apps build their links from (Catzoid TODO #50); DEFAULT_SITE when unset. */
   site?: string;
+  /** Open with → Browser, shared with DoCatz: the installed browser's .app (macOS) / .exe (Windows) / .desktop file
+   *  (Linux) on this computer; '' = the system default; absent = not chosen yet (each app keeps its own value then). */
+  browser?: string;
   updatedBy?: string;
   updatedAt?: string;
 }

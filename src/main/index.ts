@@ -32,7 +32,7 @@ import { isLinux, isMac, isWin } from './platform';
 import { openAtLogin, openedAtLogin, setOpenAtLogin } from './loginitem';
 import { offerAppImageInstall } from './appimage';
 import { LINUX_EDITORS, launchDesktop, linuxEditorFile, openLinuxTerminal } from './linuxapps';
-import { openWeb, refreshBrowsers, refreshEditorIcons } from './browsers';
+import { openWeb, refreshBrowsers, refreshEditorIcons, validBrowser } from './browsers';
 import { isSvcKind } from './svcdocker';
 import { words } from '@shared/platform';
 
@@ -75,6 +75,11 @@ let tray: HerdTray | null = null;
 let quitting = false;
 
 /** Windows: where each editor's installer puts its program — per user (AppData\Local\Programs) or for everyone. */
+/** Takes Open with → Browser from shared.json (another Catzoid app's choice) when that browser is installed here. */
+function followSharedBrowser(browser: string): void {
+  if (browser !== store.settings.browser && validBrowser(browser)) store.updateSettings({ browser });
+}
+
 function winEditorCandidates(e: string): string[] {
   const local = join(process.env.LOCALAPPDATA ?? join(app.getPath('home'), 'AppData', 'Local'), 'Programs');
   const pf = [process.env.ProgramFiles ?? 'C:\\Program Files', process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'];
@@ -1315,6 +1320,11 @@ app.whenReady().then(async () => {
   if (sharedTheme && sharedTheme !== store.settings.theme) store.updateSettings({ theme: sharedTheme });
   else if (!sharedTheme) writeShared({ theme: store.settings.theme });
   nativeTheme.themeSource = store.settings.theme;
+  // Open with → Browser too: the shared choice wins when it names a browser installed here; DevCatz's own choice
+  // goes to shared.json once, so DoCatz starts from it.
+  const sharedBrowser = readShared().browser;
+  if (typeof sharedBrowser === 'string') followSharedBrowser(sharedBrowser);
+  else if (store.settings.browser) writeShared({ browser: store.settings.browser });
   setStatusPageIcon(join(RESOURCES, 'icon-192.png'));
   setGithubToken(githubToken);
   herd = new Herd();
@@ -1336,6 +1346,7 @@ app.whenReady().then(async () => {
       store.updateSettings({ theme: sh.theme });
       nativeTheme.themeSource = sh.theme;
     }
+    if (typeof sh.browser === 'string') followSharedBrowser(sh.browser);
     herd.emit('change');
   });
   // macOS needs the standard menus for ⌘C / ⌘V and the app menu. About DevCatz opens Settings → About (Catzoid #62);

@@ -570,6 +570,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           </div>
 
           <span class="text-sm opacity-70" :title="`Sites and service pages: Open in Browser, the ${words.tray}, links in DevCatz`">Browser</span>
+          <div class="flex flex-wrap items-center gap-2">
           <div class="dropdown">
             <button type="button" tabindex="0" class="select select-sm flex w-64 items-center gap-2 text-left">
               <img v-if="chosenBrowser?.icon" :src="chosenBrowser.icon" alt="" class="size-4 shrink-0" draggable="false" />
@@ -590,6 +591,8 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
                 </button>
               </li>
             </ul>
+          </div>
+          <span class="badge badge-ghost badge-sm" title="Change it here or in another Catzoid app and the others follow">Shared with Catzoid apps</span>
           </div>
         </div>
         <p v-if="s.settings.browser && !chosenBrowser" class="text-xs text-warning">The chosen browser is no longer installed; links open in the system default.</p>

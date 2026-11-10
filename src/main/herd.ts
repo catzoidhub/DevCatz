@@ -4345,6 +4345,8 @@ export class Herd extends EventEmitter {
       (patch.httpsPort && patch.httpsPort !== store.settings.httpsPort) ||
       (patch.httpPort && patch.httpPort !== store.settings.httpPort);
     store.updateSettings(patch);
+    // Open with → Browser is shared with the Catzoid apps (shared.json `browser`).
+    if (patch.browser !== undefined) writeShared({ browser: patch.browser });
     if (mailRestart) {
       this.updateRoutes();
       if (this.mail.state().running) await this.mail.restart();
