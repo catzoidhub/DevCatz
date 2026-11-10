@@ -7,7 +7,7 @@ import { request as httpsRequest } from 'node:https';
 import { basename, extname, join } from 'node:path';
 import type { ProcessStatus, ProjectConfig, StorageAction, TaskProgress, WaConfig, WaContact, WaDelivery, WaEngine, WaHook, WaMessage, WaSendInput, WaSendResult, WaSession, WaState } from '@shared/types';
 import { readEnvFiles } from './detect';
-import { containerOf, defaultContainer, docatzAvailable, gatewayDocker, gatewayEngineReady, otherEngineName, type GwContainer } from './docker';
+import { containerOf, defaultContainer, docatzAvailable, gatewayDocker, gatewayEngineReady, hostGateway, otherEngineName, type GwContainer } from './docker';
 import { getShellEnv, run } from './env';
 import { ProcessManager } from './processes';
 import type { Route } from './proxy';
@@ -598,7 +598,7 @@ export class WaManager {
         // reached the QR at once. Sessions live per engine (sessions/gows), so one paired under WEBJS is paired again.
         WHATSAPP_DEFAULT_ENGINE: 'GOWS',
       };
-      const args = ['run', '--rm', '--name', 'devcatz-waha', '-p', `127.0.0.1:${c.port}:3000`, '--add-host=host.docker.internal:host-gateway', '-v', `${sessions}:/app/.sessions`, '-v', `${media}:/app/.media`, ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), `${WAHA_IMAGE}:${wahaTag(c.version)}`];
+      const args = ['run', '--rm', '--name', 'devcatz-waha', '-p', `127.0.0.1:${c.port}:3000`, ...(hostGateway(this.where()) ? ['--add-host=host.docker.internal:host-gateway'] : []), '-v', `${sessions}:/app/.sessions`, '-v', `${media}:/app/.media`, ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), `${WAHA_IMAGE}:${wahaTag(c.version)}`];
       this.processes.startMany(waId(engine), [{ label: '', cwd: c.dataDir, command: [...gatewayDocker(this.where()), ...args].map(q).join(' '), env: {} }]);
     }
     this.h.changed();

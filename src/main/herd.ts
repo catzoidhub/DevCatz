@@ -289,6 +289,7 @@ export class Herd extends EventEmitter {
     takenPorts: () => this.whatsapp.state().flatMap((w) => (w.config ? [w.config.port] : [])),
     urlOf: (h) => `https://${h}${this.portSuffix(true)}`,
     mailPort: () => store.settings.mailPort,
+    startMail: () => this.mail.start(),
     changed: () => {
       this.updateRoutes();
       this.changed();

@@ -7,7 +7,7 @@ import { connect as netConnect } from 'node:net';
 import { join } from 'node:path';
 import type { CaughtSms, GwCategory, GwConfig, GwKind, GwSendInput, GwSendResult, GwState, ProjectConfig, StorageAction, TaskProgress } from '@shared/types';
 import { readEnvFiles } from '../detect';
-import { containerOf, defaultContainer, docatzAvailable, gatewayCompose, gatewayDocker, gatewayEngineReady, otherEngineName, type GwContainer } from '../docker';
+import { containerOf, defaultContainer, docatzAvailable, gatewayCompose, gatewayDocker, gatewayEngineReady, hostGateway, otherEngineName, type GwContainer } from '../docker';
 import { getShellEnv, run } from '../env';
 import { sendMail } from '../mail/smtp';
 import { ProcessManager } from '../processes';
@@ -43,6 +43,8 @@ interface Hooks {
   /** https://<host> with the proxy's port suffix. */
   urlOf(host: string): string;
   mailPort(): number;
+  /** Starts DevCatz's mail catcher when it is off (Postal and Stalwart relay every message to it). */
+  startMail(): Promise<void>;
   changed(): void;
   notify(title: string, body: string): void;
 }
@@ -472,6 +474,7 @@ export class GatewayManager {
     mkdirSync(c.dataDir, { recursive: true });
     const img = `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`;
     let y = '';
+    const xh = hostGateway(this.where(kind)) ? '    extra_hosts: [ "host.docker.internal:host-gateway" ]\n' : '';
     if (kind === 'ntfy') {
       mkdirSync(join(c.dataDir, 'ntfy'), { recursive: true });
       y = `services:
@@ -511,8 +514,7 @@ export class GatewayManager {
       TELEGRAM_LOCAL: "1"
     volumes: [ ${JSON.stringify(`${join(c.dataDir, 'bot-api')}:/var/lib/telegram-bot-api`)} ]
     ports: [ "127.0.0.1:${c.port}:8081" ]
-    extra_hosts: [ "host.docker.internal:host-gateway" ]
-`;
+${xh}`;
     } else if (kind === 'jasmin') {
       mkdirSync(join(c.dataDir, 'store'), { recursive: true });
       y = `services:
@@ -528,8 +530,7 @@ export class GatewayManager {
     environment: { REDIS_CLIENT_HOST: redis, AMQP_BROKER_HOST: rabbitmq }
     volumes: [ ${JSON.stringify(`${join(c.dataDir, 'store')}:/etc/jasmin/store`)} ]
     ports: [ "127.0.0.1:${c.port}:1401", "127.0.0.1:${c.ports.jcli}:8990" ]
-    extra_hosts: [ "host.docker.internal:host-gateway" ]
-    depends_on: { redis: { condition: service_healthy }, rabbitmq: { condition: service_healthy } }
+${xh}    depends_on: { redis: { condition: service_healthy }, rabbitmq: { condition: service_healthy } }
 `;
     } else if (kind === 'postal') {
       const cfg = join(c.dataDir, 'config');
@@ -590,17 +591,19 @@ logging:
     command: ${cmd}
     environment: { DEVCATZ_CONFIG: "${digest}" }
     volumes: [ ${JSON.stringify(`${cfg}:/config`)} ]${ports}
-    extra_hosts: [ "host.docker.internal:host-gateway" ]
-    depends_on: { mariadb: { condition: service_healthy } }
+${xh}    depends_on: { mariadb: { condition: service_healthy } }
 `;
       // Windows: a folder of the PC reaches DoCatz's engine through WSL's /mnt/<drive>, where every file is world-writable:
       // MariaDB then ignores its healthcheck's .my-healthcheck.cnf (access denied, "unhealthy" for ever) and is slow on it.
+      // macOS: DoCatz's engine runs in a VM that sees the Mac's folders through a share where MariaDB's first start dies
+      // renaming its system tables ("Error on rename of './sys/…frm~'", Errcode 13; 2026-11-10).
       // Its data lives in a volume of the engine instead (removed with the data on Uninstall).
+      const dbVolume = isWin || (!isLinux && this.where(kind) === 'docatz');
       y = `services:
   mariadb:
     image: mariadb:11.4
     environment: { MARIADB_ROOT_PASSWORD: ${yamlStr(s.dbPassword)}, MARIADB_DATABASE: postal }
-    volumes: [ ${isWin ? '"mysql:/var/lib/mysql"' : JSON.stringify(`${join(c.dataDir, 'mysql')}:/var/lib/mysql`)} ]
+    volumes: [ ${dbVolume ? '"mysql:/var/lib/mysql"' : JSON.stringify(`${join(c.dataDir, 'mysql')}:/var/lib/mysql`)} ]
     healthcheck: { test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"], interval: 3s, timeout: 5s, retries: 60 }
   web:
 ${svc('postal web-server', `\n    ports: [ "127.0.0.1:${c.port}:5000" ]`)}  smtp:
@@ -611,8 +614,7 @@ ${svc('postal worker', '')}  catcher:
     command: [ "ruby", "/config/devcatz-relay.rb", "host.docker.internal", "${this.h.mailPort()}" ]
     environment: { DEVCATZ_CONFIG: "${digest}" }
     volumes: [ ${JSON.stringify(`${cfg}:/config`)} ]
-    extra_hosts: [ "host.docker.internal:host-gateway" ]
-${isWin ? 'volumes:\n  mysql: {}\n' : ''}`;
+${xh}${dbVolume ? 'volumes:\n  mysql: {}\n' : ''}`;
     }
     mkdirSync(join(this.dir, kind), { recursive: true });
     writeFileSync(this.composeFile(kind), `# Written by DevCatz; rewritten on every start.\nname: ${project(kind)}\n${y}`);
@@ -748,7 +750,7 @@ ${isWin ? 'volumes:\n  mysql: {}\n' : ''}`;
       await this.stop(kind);
       t.report({ step: 1 });
       if (e.docker) {
-        // -v with the data: Postal's database is a volume of the engine on Windows.
+        // -v with the data: Postal's database is a volume of the engine on Windows and in DoCatz on macOS.
         if (existsSync(this.composeFile(kind))) await this.compose(kind, ['down', '--remove-orphans', ...(deleteData ? ['-v'] : [])], 120_000);
         await run(gatewayDocker(this.where(kind))[0], [...gatewayDocker(this.where(kind)).slice(1), 'rmi', `${IMAGE[kind as Exclude<GwKind, 'stalwart'>]}:${tagOf(kind, c.version)}`], { timeout: 120_000 });
         rmSync(this.composeFile(kind), { force: true });
@@ -835,7 +837,20 @@ ${isWin ? 'volumes:\n  mysql: {}\n' : ''}`;
 
   // ---------------------------------------------------------------- run
 
-  async start(kind: GwKind): Promise<void> {
+  /**
+   * A start already on its way is joined, not run twice: Postal's first start (database, schema, setup) takes minutes
+   * before its process counts as active, and a second Start then raced it (compose: "container name … already in use").
+   */
+  private starting = new Map<GwKind, Promise<void>>();
+  start(kind: GwKind): Promise<void> {
+    const running = this.starting.get(kind);
+    if (running) return running;
+    const p = this.startOnce(kind).finally(() => this.starting.delete(kind));
+    this.starting.set(kind, p);
+    return p;
+  }
+
+  private async startOnce(kind: GwKind): Promise<void> {
     const c = this.config(kind);
     if (!c) throw new Error(`${ENGINES[kind].name} is not installed`);
     if (this.isActive(kind)) return;
@@ -843,6 +858,8 @@ ${isWin ? 'volumes:\n  mysql: {}\n' : ''}`;
     mkdirSync(c.dataDir, { recursive: true });
     const id = gwId(kind);
     try {
+      // Postal / Stalwart deliver into the mail catcher: off, every message waited in their queue (Mac, 2026-11-10).
+      if (kind === 'postal' || kind === 'stalwart') await this.h.startMail();
       if (kind === 'stalwart') await this.startStalwart(c);
       else {
         await gatewayEngineReady(this.where(kind), (detail) => this.processes.log(id, 'sys', detail));

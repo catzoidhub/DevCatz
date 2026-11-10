@@ -89,6 +89,13 @@ export const containerOf = (c?: { container?: GwContainer } | null): GwContainer
   return c?.container ?? (isWin ? 'docatz' : 'system');
 };
 export const defaultContainer = (): GwContainer => (docatzAvailable() ? 'docatz' : 'system');
+/**
+ * Whether a gateway's container gets `host.docker.internal:host-gateway` to reach DevCatz on this computer. Not in
+ * DoCatz's engine on macOS: host-gateway is the Lima VM's own docker0 there (172.17.0.1, connection refused), while
+ * Lima's DNS already answers host.docker.internal with the Mac (host.lima.internal) — Postal's relay to the mail
+ * catcher never arrived (2026-11-10).
+ */
+export const hostGateway = (where: GwContainer): boolean => !(isMac && where === 'docatz');
 
 /** The other container engine a gateway could run on (the first one installed), for the "Run in" choice. */
 /** The engine behind the system's docker context, as the last dockerStatus() found it (not DoCatz's). */
