@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { app, shell } from 'electron';
-import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { TaskProgress } from '@shared/types';
@@ -55,11 +55,25 @@ export async function findCatzoidApp(name: string, scheme: string, bundleId: str
   return r.stdout.split('\n').map((l) => l.trim()).find(usable) ?? null;
 }
 
+/**
+ * Linux, DevCatz itself running as an AppImage: its runtime's APPDIR / APPIMAGE / ARGV0 / OWD and the PATH entries into
+ * its mount must not reach another app (another AppImage would look for its files in DevCatz's mount).
+ */
+function cleanAppImageEnv(): NodeJS.ProcessEnv {
+  const mount = process.env.APPDIR;
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v === undefined || ['APPDIR', 'APPIMAGE', 'ARGV0', 'OWD', 'CHROME_DESKTOP', 'GDK_BACKEND'].includes(k)) continue;
+    env[k] = mount && v.includes(mount) ? v.split(':').filter((x) => !x.startsWith(mount)).join(':') : v;
+  }
+  return env;
+}
+
 /** Opens a Catzoid app at a link: `open -a` on a Mac (that very copy), the .exe with the link on Windows. */
 export async function openCatzoidApp(path: string, link: string): Promise<void> {
   if (isWin || isLinux) {
     const ok = await new Promise<boolean>((resolve) => {
-      const child = spawn(path, [link], { detached: true, stdio: 'ignore' });
+      const child = spawn(path, [link], { detached: true, stdio: 'ignore', ...(isLinux ? { env: cleanAppImageEnv(), cwd: homedir() } : {}) });
       child.once('error', () => resolve(false));
       child.once('spawn', () => (child.unref(), resolve(true)));
     });
@@ -122,7 +136,7 @@ export async function installCatzoidApp(
       rmSync(target, { force: true });
       renameSync(file, target);
       chmodSync(target, 0o755);
-      writeDesktopEntry(name, target);
+      await writeDesktopEntry(name, target, tmp);
       set({ step: 4, detail: '' });
       await openCatzoidApp(target, link);
       return;
@@ -153,18 +167,57 @@ export async function installCatzoidApp(
   }
 }
 
-/** A menu entry for an AppImage, registered for the app's `scheme://` links (xdg-mime), like a .deb would. */
-function writeDesktopEntry(name: string, exe: string): void {
+/**
+ * A menu entry for an AppImage, registered for the app's `scheme://` links (xdg-mime), like a .deb would: the app's own
+ * .desktop file and icon taken out of the AppImage (--appimage-extract, no FUSE needed), with Exec pointing at the
+ * installed file. The app writes its entry itself only when there is none, so this one must carry the icon.
+ */
+async function writeDesktopEntry(name: string, exe: string, tmp: string): Promise<void> {
   const scheme = name.toLowerCase();
-  const dir = join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'applications');
+  const data = process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share');
+  const dir = join(data, 'applications');
   mkdirSync(dir, { recursive: true });
+  const out = join(tmp, 'extract');
+  mkdirSync(out, { recursive: true });
+  for (const part of [`${scheme}.desktop`, `${scheme}.png`, '.DirIcon'])
+    await run(exe, ['--appimage-extract', part], { cwd: out, timeout: 60_000, env: { APPDIR: '', APPIMAGE: '', ARGV0: '' } }).catch(() => undefined);
+  const root = join(out, 'squashfs-root');
+  // Its own entry (name, comment, keywords, StartupWMClass), else a plain one.
+  let lines: string[] = [];
+  try {
+    lines = readFileSync(join(root, `${scheme}.desktop`), 'utf8').split('\n').filter((l) => l.trim() && !/^(Exec|X-AppImage-[\w-]+)=/.test(l));
+  } catch {
+    lines = ['[Desktop Entry]', 'Type=Application', `Name=${name}`, 'Terminal=false', 'Categories=Development;', `StartupWMClass=${scheme}`];
+  }
+  if (!lines.some((l) => l.startsWith('MimeType='))) lines.push(`MimeType=x-scheme-handler/${scheme};`);
+  lines = lines.filter((l) => !l.startsWith('Icon=')).concat(`Icon=${scheme}`);
+  const head = lines.indexOf('[Desktop Entry]');
+  lines.splice(head < 0 ? 0 : head + 1, 0, `Exec="${exe}" %U`);
+  if (head < 0) lines.unshift('[Desktop Entry]');
   const id = `${scheme}.desktop`;
-  writeFileSync(
-    join(dir, id),
-    ['[Desktop Entry]', 'Type=Application', `Name=${name}`, `Exec="${exe}" %U`, `Icon=${scheme}`, 'Terminal=false', 'Categories=Development;', `MimeType=x-scheme-handler/${scheme};`, ''].join('\n'),
-  );
-  void run('xdg-mime', ['default', id, `x-scheme-handler/${scheme}`], { timeout: 10_000 }).catch(() => undefined);
-  void run('update-desktop-database', [dir], { timeout: 10_000 }).catch(() => undefined);
+  writeFileSync(join(dir, id), `${lines.join('\n')}\n`);
+  // <scheme>.png and .DirIcon are links to usr/share/icons/hicolor/<size>/apps/<scheme>.png: take that file out too.
+  let size = '512x512';
+  for (const f of [`${scheme}.png`, '.DirIcon']) {
+    try {
+      const to = readlinkSync(join(root, f));
+      size = /hicolor\/(\d+x\d+)\//.exec(to)?.[1] ?? size;
+      if (!to.startsWith('/') && !to.includes('..')) await run(exe, ['--appimage-extract', to], { cwd: out, timeout: 60_000, env: { APPDIR: '', APPIMAGE: '', ARGV0: '' } }).catch(() => undefined);
+      break;
+    } catch {
+      /* a plain file, or not there */
+    }
+  }
+  // The icon in the user's icon theme, so the menu and the dock show it.
+  const icon = [join(root, `${scheme}.png`), join(root, '.DirIcon')].find((f) => existsSync(f));
+  if (icon) {
+    const target = join(data, 'icons', 'hicolor', size, 'apps', `${scheme}.png`);
+    mkdirSync(join(target, '..'), { recursive: true });
+    copyFileSync(icon, target);
+    await run('gtk-update-icon-cache', ['-q', '-t', join(data, 'icons', 'hicolor')], { timeout: 10_000 }).catch(() => undefined);
+  }
+  await run('xdg-mime', ['default', id, `x-scheme-handler/${scheme}`], { timeout: 10_000 }).catch(() => undefined);
+  await run('update-desktop-database', [dir], { timeout: 10_000 }).catch(() => undefined);
 }
 
 /** The steps every Catzoid app install shows. */
