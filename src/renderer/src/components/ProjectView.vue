@@ -299,9 +299,9 @@ const desktopApp = computed(() => isDesktopSite(p.value));
 const desktopMark = computed(() => frameworkTag(p.value.stack.apps[0]?.framework ?? 'node', p.value.stack.apps[0]?.library).icon);
 const openItems = computed<MenuItem[]>(() => [
   ...p.value.stack.apps.filter((app) => !isDesktopApp(app)).map((app) => ({ label: app.domain, hint: 'Open in browser', icon: ICONS.globe, action: () => void herd.openUrl(url(app.domain)) })),
-  { label: 'Editor', icon: ICONS.code, action: () => void herd.openEditor(p.value.id) },
+  { label: 'Editor', icon: ICONS.code, action: () => void attempt(() => herd.openEditor(p.value.id)).then((note) => note && notify('info', note)) },
   { label: words.fileManager, icon: ICONS.folder, action: () => void herd.openFolder(p.value.id) },
-  { label: 'Terminal', icon: ICONS.terminal, action: () => void herd.openTerminal(p.value.id) },
+  { label: 'Terminal', icon: ICONS.terminal, action: () => void attempt(() => herd.openTerminal(p.value.id)).then((note) => note && notify('info', note)) },
 ]);
 
 async function repairElectron() {
@@ -809,8 +809,8 @@ async function generateKey() {
                 <span class="inline-flex items-center gap-1.5">
                   <StackMark :icon="frameworkTag(app.framework, app.library).icon" class="size-3.5 shrink-0" />
                   {{ app.framework === 'mix' ? 'Laravel Mix' : app.kind === 'assets' && app.framework.startsWith('vite') ? 'Vite' : frameworkTag(app.framework, app.library).label }}
+                  <span class="opacity-50">({{ app.kind }})</span>
                 </span>
-                <span class="opacity-50">({{ app.kind }})</span>
               </td>
               <td><code class="text-xs whitespace-nowrap">{{ appCommand(p, app) }}</code></td>
               <td v-if="app.docroot !== undefined" class="text-xs opacity-60">— <span class="opacity-70">(FastCGI)</span></td>

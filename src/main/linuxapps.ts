@@ -20,6 +20,8 @@ export interface DesktopApp {
   icon: string;
   mime: string[];
   categories: string[];
+  /** Terminal=true: a console program (vim, nano) that needs a terminal around it. */
+  terminal: boolean;
 }
 
 const home = homedir();
@@ -56,7 +58,7 @@ function parse(file: string, hidden = false): DesktopApp | null {
   }
   if (entry.Type !== 'Application' || entry.Hidden === 'true' || (entry.NoDisplay === 'true' && !hidden) || !entry.Exec || !entry.Name) return null;
   const list = (v?: string) => (v ?? '').split(';').map((s) => s.trim()).filter(Boolean);
-  return { file, id: basename(file), name: entry.Name, exec: entry.Exec, icon: entry.Icon ?? '', mime: list(entry.MimeType), categories: list(entry.Categories) };
+  return { file, id: basename(file), name: entry.Name, exec: entry.Exec, icon: entry.Icon ?? '', mime: list(entry.MimeType), categories: list(entry.Categories), terminal: entry.Terminal === 'true' };
 }
 
 let cache: { at: number; apps: DesktopApp[] } | null = null;
@@ -125,25 +127,86 @@ async function defaultBrowserId(): Promise<string | null> {
 /** Known editors by display name → the .desktop ids their packages install (deb / rpm, snap, flatpak, Toolbox). */
 const EDITOR_IDS: Record<string, string[]> = {
   'Visual Studio Code': ['code.desktop', 'code_code.desktop', 'com.visualstudio.code.desktop'],
+  'Visual Studio Code - Insiders': ['code-insiders.desktop', 'code-insiders_code-insiders.desktop', 'com.visualstudio.code.insiders.desktop'],
+  VSCodium: ['codium.desktop', 'codium_codium.desktop', 'com.vscodium.codium.desktop'],
   Cursor: ['cursor.desktop', 'cursor_cursor.desktop', 'co.anysphere.cursor.desktop'],
   Windsurf: ['windsurf.desktop'],
   Zed: ['dev.zed.Zed.desktop', 'zed.desktop'],
   WebStorm: ['jetbrains-webstorm.desktop', 'webstorm_webstorm.desktop', 'com.jetbrains.WebStorm.desktop'],
   PhpStorm: ['jetbrains-phpstorm.desktop', 'phpstorm_phpstorm.desktop', 'com.jetbrains.PhpStorm.desktop'],
+  'IntelliJ IDEA': [
+    'jetbrains-idea.desktop',
+    'jetbrains-idea-ce.desktop',
+    'intellij-idea-ultimate_intellij-idea-ultimate.desktop',
+    'intellij-idea-community_intellij-idea-community.desktop',
+    'com.jetbrains.IntelliJ-IDEA-Ultimate.desktop',
+    'com.jetbrains.IntelliJ-IDEA-Community.desktop',
+  ],
+  Fleet: ['jetbrains-fleet.desktop', 'fleet.desktop'],
+  Lapce: ['dev.lapce.lapce.desktop', 'lapce.desktop'],
   'Sublime Text': ['sublime_text.desktop', 'sublime-text_subl.desktop', 'com.sublimetext.three.desktop'],
   Kate: ['org.kde.kate.desktop'],
   // GNOME's own (Ubuntu's default), so there is always something to open a file with.
   'Text Editor': ['org.gnome.TextEditor.desktop', 'org.gnome.gedit.desktop'],
 };
-export const LINUX_EDITORS = Object.keys(EDITOR_IDS);
+/** Editors that open single files only: a folder sent to them fails ("is a directory"). */
+const FILE_ONLY_IDS = ['org.gnome.TextEditor.desktop', 'org.gnome.gedit.desktop', 'org.xfce.mousepad.desktop', 'mousepad.desktop', 'org.kde.kwrite.desktop', 'pluma.desktop', 'xed.desktop'];
 
-/** The editor's .desktop file, when it is installed (JetBrains Toolbox names its files jetbrains-<product>-<hash>). */
-export function linuxEditorFile(name: string): string | null {
-  const ids = EDITOR_IDS[name];
-  if (!ids) return null;
+export interface LinuxEditor {
+  name: string;
+  /** The .desktop file. */
+  file: string;
+  /** It takes a folder (opens it as a project). */
+  folders: boolean;
+}
+
+/** Whether the app behind a .desktop file opens folders: not a known file-only editor, and it says so (inode/directory) or is a known IDE. */
+export function desktopOpensFolders(a: DesktopApp): boolean {
+  if (FILE_ONLY_IDS.includes(a.id)) return false;
+  if (a.mime.includes('inode/directory')) return true;
+  return Object.entries(EDITOR_IDS).some(([name, ids]) => name !== 'Text Editor' && ids.some((id) => a.id === id || (id.startsWith('jetbrains-') && a.id.startsWith(id.replace(/\.desktop$/, '-')))));
+}
+
+/**
+ * The editors installed: the known ones first (in this order), then any other app the desktop files call a text editor
+ * or IDE (Geany, Mousepad, Fleet's own…), so a Linux desktop with an editor DevCatz does not know still lists it.
+ */
+export function linuxEditors(): LinuxEditor[] {
   const apps = desktopApps();
-  const hit = apps.find((a) => ids.includes(a.id)) ?? apps.find((a) => ids.some((id) => id.startsWith('jetbrains-') && a.id.startsWith(id.replace(/\.desktop$/, '-'))));
-  return hit?.file ?? null;
+  const out: LinuxEditor[] = [];
+  const taken = new Set<string>();
+  for (const [name, ids] of Object.entries(EDITOR_IDS)) {
+    const hit = apps.find((a) => ids.includes(a.id)) ?? apps.find((a) => ids.some((id) => id.startsWith('jetbrains-') && a.id.startsWith(id.replace(/\.desktop$/, '-'))));
+    if (!hit || taken.has(hit.file)) continue;
+    taken.add(hit.file);
+    out.push({ name, file: hit.file, folders: desktopOpensFolders(hit) });
+  }
+  for (const a of apps) {
+    if (taken.has(a.file) || out.some((e) => e.name === a.name)) continue;
+    if (!a.categories.some((c) => c === 'TextEditor' || c === 'IDE')) continue;
+    // Console editors (vim, nano, Neovim's own entry) need a terminal around them: not for Open with.
+    if (a.terminal) continue;
+    taken.add(a.file);
+    out.push({ name: a.name, file: a.file, folders: desktopOpensFolders(a) });
+  }
+  return out;
+}
+
+/** The .desktop file a path names, parsed (also NoDisplay ones: a user may pick any). */
+export function desktopApp(file: string): DesktopApp | null {
+  return parse(file, true);
+}
+
+/** Starts a program (an editor picked by path) with one argument, detached. */
+export function launchProgram(program: string, arg: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(program, [arg], { detached: true, stdio: 'ignore' });
+    child.once('error', () => resolve(false));
+    child.once('spawn', () => {
+      child.unref();
+      resolve(true);
+    });
+  });
 }
 
 // ---- icons
@@ -242,35 +305,6 @@ export function launchDesktop(file: string, arg: string | null): Promise<boolean
       resolve(true);
     });
   });
-}
-
-/** A terminal in a folder: the desktop's own first (GNOME Console / Terminal, Ptyxis, Konsole …), then the Debian alternative. */
-export async function openLinuxTerminal(dir: string): Promise<boolean> {
-  const tries: [string, string[]][] = [
-    ['ptyxis', ['--new-window', '--working-directory', dir]],
-    ['gnome-terminal', [`--working-directory=${dir}`]],
-    ['kgx', [`--working-directory=${dir}`]],
-    ['konsole', ['--workdir', dir]],
-    ['xfce4-terminal', [`--working-directory=${dir}`]],
-    ['tilix', [`--working-directory=${dir}`]],
-    ['alacritty', ['--working-directory', dir]],
-    ['kitty', ['--directory', dir]],
-    ['wezterm', ['start', '--cwd', dir]],
-    ['x-terminal-emulator', []],
-  ];
-  for (const [cmd, args] of tries) {
-    if ((await run('which', [cmd], { timeout: 3000 })).code !== 0) continue;
-    const ok = await new Promise<boolean>((resolve) => {
-      const child = spawn(cmd, args, { detached: true, stdio: 'ignore', cwd: dir });
-      child.once('error', () => resolve(false));
-      child.once('spawn', () => {
-        child.unref();
-        resolve(true);
-      });
-    });
-    if (ok) return true;
-  }
-  return false;
 }
 
 /** Unpacks a .zip on Linux: `unzip` when there, else Python's zipfile (one of the two is on nearly every system). */

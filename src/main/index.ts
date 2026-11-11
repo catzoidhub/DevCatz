@@ -26,12 +26,13 @@ import * as mcatzpSetup from './mcatzp/install';
 import { MCATZP_TARGETS } from '@catzoid/mcatzp-host';
 import { setGithubToken } from './github';
 import { githubToken } from './githosts';
-import { API_METHODS, type HerdApi, type LogLine, type ReportKind, type S3UploadProgress, type Settings, type TaskProgress, type GwKind, type SearchKind, type StorageKind, type WaEngine, type WsKind } from '@shared/types';
+import { API_METHODS, type AppState, type HerdApi, type LogLine, type ReportKind, type S3UploadProgress, type Settings, type TaskProgress, type GwKind, type SearchKind, type StorageKind, type WaEngine, type WsKind } from '@shared/types';
 import { uninstall, uninstallPlan, UNINSTALL_STEPS } from './uninstall';
 import { isLinux, isMac, isWin } from './platform';
 import { openAtLogin, openedAtLogin, setOpenAtLogin } from './loginitem';
 import { offerAppImageInstall } from './appimage';
-import { LINUX_EDITORS, launchDesktop, linuxEditorFile, openLinuxTerminal } from './linuxapps';
+import { openTerminal } from './terminal';
+import { chosenEditorName, customEditor, editors, isEditorPath, openInEditor, pickEditor, refreshEditors, startDetached } from './editors';
 import { openWeb, refreshBrowsers, refreshEditorIcons, validBrowser } from './browsers';
 import { openDialog, saveDialog } from './dialogs';
 import { isSvcKind } from './svcdocker';
@@ -49,12 +50,6 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 const RESOURCES = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources');
-const EDITORS = isWin
-  ? ['Visual Studio Code', 'Cursor', 'Windsurf', 'Zed', 'WebStorm', 'PhpStorm', 'Sublime Text', 'Notepad++']
-  : isLinux
-    ? LINUX_EDITORS
-    : ['Visual Studio Code', 'Cursor', 'Zed', 'WebStorm', 'PhpStorm', 'Sublime Text', 'Nova'];
-
 let herd: Herd;
 let mcatzp: Mcatzp;
 let mcatzpInstalling: AbortController | null = null;
@@ -75,65 +70,18 @@ let win: BrowserWindow | null = null;
 let tray: HerdTray | null = null;
 let quitting = false;
 
-/** Windows: where each editor's installer puts its program — per user (AppData\Local\Programs) or for everyone. */
 /** Takes Open with → Browser from shared.json (another Catzoid app's choice) when that browser is installed here. */
 function followSharedBrowser(browser: string): void {
   if (browser !== store.settings.browser && validBrowser(browser)) store.updateSettings({ browser });
 }
 
-function winEditorCandidates(e: string): string[] {
-  const local = join(process.env.LOCALAPPDATA ?? join(app.getPath('home'), 'AppData', 'Local'), 'Programs');
-  const pf = [process.env.ProgramFiles ?? 'C:\\Program Files', process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'];
-  // JetBrains: a versioned folder per install (Program Files\JetBrains\WebStorm 2026.2), or the Toolbox's.
-  const jetbrains = (product: string, exe: string) => [
-    join(local, product, 'bin', exe),
-    ...pf.flatMap((root) => {
-      try {
-        return readdirSync(join(root, 'JetBrains'))
-          .filter((d) => d.startsWith(product))
-          .sort()
-          .reverse()
-          .map((d) => join(root, 'JetBrains', d, 'bin', exe));
-      } catch {
-        return [];
-      }
-    }),
-  ];
-  switch (e) {
-    case 'Visual Studio Code':
-      return [join(local, 'Microsoft VS Code', 'Code.exe'), ...pf.map((r) => join(r, 'Microsoft VS Code', 'Code.exe'))];
-    case 'Cursor':
-      return [join(local, 'cursor', 'Cursor.exe'), ...pf.map((r) => join(r, 'Cursor', 'Cursor.exe'))];
-    case 'Windsurf':
-      return [join(local, 'Windsurf', 'Windsurf.exe'), ...pf.map((r) => join(r, 'Windsurf', 'Windsurf.exe'))];
-    case 'Zed':
-      return [join(local, 'Zed', 'Zed.exe'), ...pf.map((r) => join(r, 'Zed', 'Zed.exe'))];
-    case 'WebStorm':
-      return jetbrains('WebStorm', 'webstorm64.exe');
-    case 'PhpStorm':
-      return jetbrains('PhpStorm', 'phpstorm64.exe');
-    case 'Sublime Text':
-      return pf.map((r) => join(r, 'Sublime Text', 'sublime_text.exe'));
-    case 'Notepad++':
-      return pf.map((r) => join(r, 'Notepad++', 'notepad++.exe'));
-    default:
-      return [];
-  }
-}
-/** The editor's app (macOS), program (Windows) or .desktop file (Linux), when it is installed. */
-function editorPath(e: string): string | null {
-  if (isLinux) return linuxEditorFile(e);
-  const candidates = isWin ? winEditorCandidates(e) : [`/Applications/${e}.app`, `${app.getPath('home')}/Applications/${e}.app`];
-  return candidates.find((p) => existsSync(p)) ?? null;
-}
-function installedEditors(): string[] {
-  return EDITORS.filter((e) => editorPath(e) !== null);
-}
 /** Browsers, the system default and the editors' icons (Settings → Open with); true when anything changed. */
 async function refreshApps(): Promise<boolean> {
   const a = await refreshBrowsers();
-  const b = await refreshEditorIcons(installedEditors().map((name) => ({ name, path: editorPath(name)! })));
-  return a || b;
+  const c = await refreshEditors();
+  const custom = store.settings.editor && isEditorPath(store.settings.editor) ? customEditor(store.settings.editor) : null;
+  const b = await refreshEditorIcons([...editors(), ...(custom ? [{ ...custom, name: custom.path }] : [])].map((e) => ({ name: e.name, path: e.path })));
+  return a || b || c;
 }
 
 /**
@@ -316,57 +264,11 @@ function broadcast(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
-/** Windows: starts a command line detached (an editor's CLI, Windows Terminal); false when it could not start. */
-function startDetached(command: string, args: string[]): Promise<boolean> {
-  return new Promise((resolve) => {
-    // One command line (the caller quotes paths): Node warns about separate args with shell (DEP0190).
-    const child = spawn([command, ...args].join(' '), { detached: true, stdio: 'ignore', windowsHide: false, shell: true });
-    child.once('error', () => resolve(false));
-    child.once('spawn', () => {
-      child.unref();
-      resolve(true);
-    });
-  });
+/** The window's state: herd's snapshot plus what only this file knows (editors, login item). */
+function appState(): AppState {
+  return { ...herd.snapshot(editors().map((e) => e.name), loginState()), customEditor: chosenEditorName() };
 }
 
-async function openEditor(path: string): Promise<void> {
-  if (isWin) {
-    // The chosen editor's program with the folder / file, else VS Code's `code` on the Path, else File Explorer.
-    const exe = editorPath(store.settings.editor || installedEditors()[0] || '');
-    if (exe && (await startDetached(`"${exe}"`, [`"${path}"`]))) return;
-    const where = await run('where', ['code']);
-    if (where.code === 0 && (await startDetached('code', [`"${path}"`]))) return;
-    await shell.openPath(path);
-    return;
-  }
-  if (isLinux) {
-    const file = editorPath(store.settings.editor || installedEditors()[0] || '');
-    if (file && (await launchDesktop(file, path))) return;
-    await shell.openPath(path);
-    return;
-  }
-  const editor = store.settings.editor || installedEditors()[0];
-  if (editor) {
-    const { code } = await run('open', ['-a', editor, path]);
-    if (code === 0) return;
-  }
-  await shell.openPath(path);
-}
-
-async function openTerminal(path: string): Promise<void> {
-  if (isWin) {
-    // Windows Terminal when it is there, else a plain Command Prompt in the folder.
-    if ((await run('where', ['wt'])).code === 0 && (await startDetached('wt', ['-d', `"${path}"`]))) return;
-    await startDetached('start', ['""', 'cmd', '/K', `cd /d "${path}"`]);
-    return;
-  }
-  if (isLinux) {
-    if (!(await openLinuxTerminal(path))) await shell.openPath(path);
-    return;
-  }
-  const apps = ['Warp', 'iTerm', 'Ghostty'].filter((t) => existsSync(`/Applications/${t}.app`));
-  await run('open', ['-a', apps[0] ?? 'Terminal', path]);
-}
 
 /**
  * Locate… for a site whose folder is gone: the folder picker, then the folder is used at once when it looks like the
@@ -390,7 +292,7 @@ function api(): HerdApi {
     return p;
   };
   return {
-    getState: async () => herd.snapshot(installedEditors(), loginState()),
+    getState: async () => appState(),
     // `storage:<kind>` ids belong to the object storage services' own process manager.
     getLogs: async (id) => managerOf(id).getLogs(id),
     clearLogs: async (id) => managerOf(id).clearLogs(id),
@@ -967,8 +869,17 @@ function api(): HerdApi {
       else await openWeb(url);
     },
     openFolder: async (id) => void (await shell.openPath(project(id).path)),
-    openEditor: (id) => openEditor(project(id).path),
-    openTerminal: (id) => openTerminal(project(id).path),
+    openEditor: (id) => openInEditor(project(id).path),
+    siteRun: (id, command) => herd.siteRun(String(id), String(command)),
+    pickEditor: async () => {
+      const path = await pickEditor(win);
+      if (!path) return null;
+      store.updateSettings({ editor: path });
+      await refreshApps();
+      herd.emit('change');
+      return path;
+    },
+    openTerminal: (id) => openTerminal(project(id).path, herd.terminalSetup(id), id),
     db: (id, action, arg) => herd.db(id, action, arg),
     updateSettings: async (patch) => {
       await herd.updateSettings(patch);
@@ -1039,6 +950,12 @@ function api(): HerdApi {
     phpInstall: (version) => herd.withCancel('php', () => herd.phpInstall(version)),
     // Confirmed in the window (DevCatz's own dialog).
     phpUninstall: (version) => herd.phpUninstall(version),
+    phpAddFolder: async () => {
+      const r = await openDialog(win, { title: 'Choose a PHP folder', message: isWin ? 'The folder with php.exe and php-cgi.exe' : 'The folder with php and php-fpm (or its bin folder)', properties: ['openDirectory'] });
+      if (r.canceled || !r.filePaths[0]) return null;
+      return herd.phpAddFolder(r.filePaths[0]);
+    },
+    phpRemoveFolder: (version) => herd.phpRemoveFolder(String(version)),
     phpSetDefault: (version) => herd.phpSetDefault(version),
     phpGetIni: (version) => herd.phpGetIni(version),
     phpSetIni: (version, settings) => herd.phpSetIni(version, settings),
@@ -1048,7 +965,7 @@ function api(): HerdApi {
     phpExtSetEnabled: async (version, module, on) => herd.phpExtSetEnabled(version, module, on),
     phpExtRemove: async (version, module) => herd.phpExtRemove(version, module),
     phpExtDismiss: async () => herd.phpExtDismiss(),
-    phpOpenIni: (version) => openEditor(etcDir(version)),
+    phpOpenIni: (version) => openInEditor(etcDir(version), join(etcDir(version), 'php.ini')),
     goDbInfo: async (id) => herd.goDbInfo(id),
     goDbTask: (id, dir, taskId, name) => herd.goDbTask(id, dir, taskId, name),
     stackTask: (id, taskId, name) => herd.stackTask(id, taskId, name),
@@ -1478,7 +1395,10 @@ app.whenReady().then(async () => {
   // Dev-only handle for poking the tray from a main-process inspector (`--inspect`).
   if (!app.isPackaged) (globalThis as Record<string, unknown>).__mrcatzHerd = { tray: () => tray, herd: () => herd };
   const RUNTIME_NAMES = { node: 'Node.js', bun: 'Bun', go: 'Go', php: 'PHP' } as const;
-  herd.openFileHook = (path) => openEditor(path);
+  herd.openFileHook = async (path) => {
+    const note = await openInEditor(path);
+    if (note) throw new Error(note);
+  };
   herd.notifyHook = (title, body) => {
     if (Notification.isSupported()) new Notification({ title, body }).show();
   };
@@ -1523,7 +1443,7 @@ app.whenReady().then(async () => {
     n.show();
   };
   herd.on('change', () => {
-    const state = herd.snapshot(installedEditors(), loginState());
+    const state = appState();
     tray?.update(state);
     broadcast('herd:state', state);
   });

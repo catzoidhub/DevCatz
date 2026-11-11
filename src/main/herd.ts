@@ -35,6 +35,7 @@ import * as rusts from './rust';
 import * as tools from './tools';
 import { cancellable } from './cancel';
 import * as phps from './php';
+import { phpInFolder, phpVersion } from './phpsystem';
 import * as phpext from './phpext';
 import { detectRealtime } from './realtime';
 import * as bcast from './broadcasting';
@@ -753,6 +754,26 @@ export class Herd extends EventEmitter {
   nodeVersions(): string[] {
     return this.installedNodes.map((n) => n.version);
   }
+  /**
+   * For the AI (TODO §39): the runtimes on this computer with their real folders, and how a terminal gets them — so
+   * answers about the PATH name paths that exist instead of guessed ones.
+   */
+  runtimeFolders(): string[] {
+    const home = homedir();
+    const tilde = (d: string) => (d.startsWith(home) ? `${isWin ? '%USERPROFILE%' : '~'}${d.slice(home.length)}` : d);
+    const list = <T extends { version: string; binDir: string; source: string }>(name: string, xs: T[], def?: string | null) =>
+      xs.length ? [`${name}: ${xs.map((x) => `${x.version}${x.version === def ? ' (default)' : ''} in ${tilde(x.binDir)}${x.source === 'mrcatz' ? '' : ` (from ${(x as { label?: string }).label ?? x.source})`}`).join('; ')}`] : [];
+    return [
+      ...list('PHP', this.installedPhps, store.settings.phpDefault),
+      ...list('Node', this.installedNodes, store.settings.nodeDefault),
+      ...list('Bun', this.installedBuns, store.settings.bunDefault),
+      ...list('Go', this.installedGos, store.settings.goDefault),
+      ...list('Ruby', this.installedRubies, store.settings.rubyDefault),
+      `DevCatz's command folder (php, composer, node, npm, bun, go, python … of the default versions): ${tilde(nodes.shimDir())} — ${nodes.shimOnPath() ? 'already on the user\'s PATH' : 'not on the user\'s PATH yet'}.`,
+      "How to use DevCatz's runtimes in a terminal: on the site, Open ▾ → Terminal opens one with the site's own versions first on the PATH; the Run box at the bottom of the site's Logs tab runs one command (php artisan …, composer …) the same way; for every terminal, the Terminal card on the Runtimes → PHP or Node.js page has Add to my PATH.",
+    ];
+  }
+
   phpVersions(): string[] {
     return this.installedPhps.map((p) => p.version);
   }
@@ -2860,6 +2881,50 @@ export class Herd extends EventEmitter {
     return { ...env, ...pythons.uvEnv(env) };
   }
 
+  /**
+   * Logs → Run (TODO §39): one command in the site's folder with the site's runtimes first on the PATH (`php artisan
+   * migrate`, `composer require …`, `npm run lint`), output in the log as [run]. No input: an interactive command
+   * (tinker, a prompt) is ended by Stop. Cancel with installCancel(`run:<id>`).
+   */
+  async siteRun(id: string, command: string): Promise<number> {
+    const p = this.find(id);
+    if (!p) throw new Error('Unknown site');
+    const cmd = command.trim();
+    if (!cmd) throw new Error('Type a command to run');
+    if (cmd.length > 2000) throw new Error('That command is too long');
+    if (this.dbTasks.has(id)) throw new Error(`Busy: ${this.dbTasks.get(id)}`);
+    this.dbTasks.set(id, `running ${cmd.split(/\s+/).slice(0, 3).join(' ')}`);
+    this.changed();
+    try {
+      return await this.withCancel(`run:${id}`, () => stream(p.path, cmd, (t) => this.processes.log(id, 'sys', t.replace(/^(?=.)/gm, '[run] ')), this.runtimeEnv(p)));
+    } finally {
+      this.dbTasks.delete(id);
+      this.changed();
+    }
+  }
+
+  /**
+   * A terminal for the site (Open ▾ → Terminal, TODO §39): the folders its runtimes come from (they go first on the
+   * terminal's PATH, after the user's own startup files ran) and a line naming them.
+   */
+  terminalSetup(id: string): { dirs: string[]; label: string; venv: string | null } {
+    const p = this.find(id);
+    if (!p) throw new Error('Unknown site');
+    const env = this.runtimeEnv(p);
+    const key = pathKey(getShellEnv());
+    const shellDirs = new Set(splitPath(getShellEnv()[key]));
+    const dirs = splitPath(env[key]).filter((d) => !shellDirs.has(d));
+    const st = this.state(p);
+    const names = [
+      st.php?.version && (st.stack.runtime === 'php' || st.stack.subRuntimes?.includes('php')) ? `PHP ${st.php.version}` : '',
+      st.node?.version && st.node.reason !== 'system' ? `Node ${st.node.version}` : '',
+      st.go?.version && this.hasGo(p) ? `Go ${st.go.version}` : '',
+      st.stack.packageManager === 'bun' && st.bun?.version ? `Bun ${st.bun.version}` : '',
+      st.python?.version && st.stack.runtime === 'python' ? `Python ${st.python.version}` : '',
+    ].filter(Boolean);
+    return { dirs, label: names.length ? names.join(', ') : "the site's runtimes", venv: env.VIRTUAL_ENV ?? null };
+  }
+
   private runtimeEnv(p: ProjectConfig): Record<string, string> {
     const dirs: string[] = [];
     const node = this.nodeChoice(p);
@@ -3836,6 +3901,33 @@ export class Herd extends EventEmitter {
     }
   }
 
+  /** Runtimes → PHP → Add a PHP folder… (TODO §39): a PHP installed elsewhere, used read-only like a system one. */
+  async phpAddFolder(dir: string): Promise<string> {
+    const found = phpInFolder(dir);
+    if (!found) throw new Error(isWin ? 'That folder has no php.exe with php-cgi.exe beside it' : 'That folder has no php with php-fpm (in it, its bin folder or ../sbin)');
+    const version = await phpVersion(found.php);
+    if (!version) throw new Error(`${found.php} did not run (php -v failed)`);
+    const have = this.installedPhps.find((i) => i.version === version);
+    if (have) throw new Error(`PHP ${version} is already here (${have.source === 'mrcatz' ? "DevCatz's" : (have.label ?? have.source)}); DevCatz uses one PHP per version`);
+    store.updateSettings({ phpFolders: [...(store.settings.phpFolders ?? []).filter((d) => d !== dir), dir] });
+    await this.refreshPhps();
+    this.syncFpm();
+    this.changed();
+    return version;
+  }
+
+  /** Forgets a PHP folder added by hand (the PHP itself stays where it is). */
+  async phpRemoveFolder(version: string): Promise<void> {
+    const inst = this.installedPhps.find((i) => i.version === version && i.source === 'system');
+    if (!inst) throw new Error(`PHP ${version} was not added by hand`);
+    const keep = (store.settings.phpFolders ?? []).filter((d) => phpInFolder(d)?.php !== inst.php);
+    store.updateSettings({ phpFolders: keep });
+    this.fpm.stop(version);
+    await this.refreshPhps();
+    this.syncFpm();
+    this.changed();
+  }
+
   async phpUninstall(version: string): Promise<void> {
     this.fpm.stop(version);
     phps.uninstall(version);
@@ -4765,9 +4857,13 @@ export class Herd extends EventEmitter {
     const cmd = [...args[action], ...(service ? [service] : [])];
     this.processes.log(id, 'sys', `$ docker compose -f ${file}${project ? ` -p ${project}` : ''} ${cmd.join(' ')}`);
     const missing = new Set<string>();
+    let busyPort: number | null = null;
     const log = (stream: 'out' | 'err', text: string) => {
       const m = /network (\S+) declared as external, but could not be found/.exec(text);
       if (m) missing.add(m[1]);
+      // "failed to bind host port 0.0.0.0:8443/tcp: address already in use", "Bind for 0.0.0.0:8443 failed: port is already allocated"
+      const b = /(?:bind host port|Bind for) [^\s]*:(\d+)(?:\/\w+)?(?::| failed)[^\n]*(?:address already in use|already allocated)/i.exec(text);
+      if (b) busyPort = Number(b[1]);
       this.processes.log(id, stream === 'err' ? 'err' : 'docker', text);
     };
     // A worktree (feat-login.shop.localhost) runs beside its main site: its own container names, no fixed ports.
@@ -4792,7 +4888,27 @@ export class Herd extends EventEmitter {
       throw new Error('Cancelled');
     }
     this.processes.log(id, 'sys', code === 0 ? `Docker: ${action} done` : `Docker: ${action} failed (exit ${code})`);
+    if (code !== 0 && busyPort) {
+      const msg = this.busyPortWords(busyPort, file);
+      this.processes.log(id, 'sys', msg);
+      throw new Error(msg);
+    }
     if (code !== 0) throw new Error(`docker compose ${action} failed (exit ${code}); see Logs`);
+  }
+
+  /** Up failed on a host port in use: who holds it when it is a Catzoid app's own port, and what to change. */
+  private busyPortWords(port: number, file: string): string {
+    const holder =
+      port === store.settings.httpsPort
+        ? { who: "DevCatz's HTTPS proxy", own: 'or DevCatz\'s HTTPS port (Settings → Project → Proxy)' }
+        : port === store.settings.httpPort
+          ? { who: "DevCatz's HTTP proxy", own: 'or DevCatz\'s HTTP port (Settings → Project → Proxy)' }
+          : port === docatzHttpsPort() || port === docatzProxyPort()
+            ? { who: "DoCatz's proxy", own: "or DoCatz's port in DoCatz's settings" }
+            : null;
+    return holder
+      ? `Port ${port} is ${holder.who}: change the host port this project publishes in ${file} ${holder.own}`
+      : `Port ${port} is already in use on this computer: stop what uses it, or change the host port this project publishes in ${file}`;
   }
 
   // ------------------------------------------------- development services (compose)
@@ -4857,13 +4973,9 @@ export class Herd extends EventEmitter {
       const inside = docker.DEV_SERVICES.find((d) => d.kind === kind)!.port;
       const port = s.ports.find((x) => x.container === inside)?.host;
       if (!port) continue;
-    let busyPort: number | null = null;
       const e = s.environment;
       if ((kind === 'postgres' || kind === 'mysql' || kind === 'mariadb') && !dbDone) {
         dbDone = true;
-      // "failed to bind host port 0.0.0.0:8443/tcp: address already in use", "Bind for 0.0.0.0:8443 failed: port is already allocated"
-      const b = /(?:bind host port|Bind for) [^\s]*:(\d+)(?:\/\w+)?(?::| failed)[^\n]*(?:address already in use|already allocated)/i.exec(text);
-      if (b) busyPort = Number(b[1]);
         const P = kind === 'mariadb' ? 'MARIADB' : 'MYSQL';
         const user = kind === 'postgres' ? e.POSTGRES_USER || 'postgres' : e[`${P}_USER`] || e.MYSQL_USER || 'root';
         const pass = kind === 'postgres' ? e.POSTGRES_PASSWORD || '' : user === 'root' ? e[`${P}_ROOT_PASSWORD`] || e.MYSQL_ROOT_PASSWORD || '' : e[`${P}_PASSWORD`] || e.MYSQL_PASSWORD || '';
@@ -4888,29 +5000,9 @@ export class Herd extends EventEmitter {
       } else if (kind === 'meilisearch') {
         entries.MEILISEARCH_HOST = `http://127.0.0.1:${port}`;
         if (e.MEILI_MASTER_KEY) entries.MEILISEARCH_KEY = e.MEILI_MASTER_KEY;
-    if (code !== 0 && busyPort) {
-      const msg = this.busyPortWords(busyPort, file);
-      this.processes.log(id, 'sys', msg);
-      throw new Error(msg);
-    }
       } else continue;
       sources.push({ service: s.service, kind, port });
     }
-  /** Up failed on a host port in use: who holds it when it is a Catzoid app's own port, and what to change. */
-  private busyPortWords(port: number, file: string): string {
-    const holder =
-      port === store.settings.httpsPort
-        ? { who: "DevCatz's HTTPS proxy", own: 'or DevCatz\'s HTTPS port (Settings → Project → Proxy)' }
-        : port === store.settings.httpPort
-          ? { who: "DevCatz's HTTP proxy", own: 'or DevCatz\'s HTTP port (Settings → Project → Proxy)' }
-          : port === docatzHttpsPort() || port === docatzProxyPort()
-            ? { who: "DoCatz's proxy", own: "or DoCatz's port in DoCatz's settings" }
-            : null;
-    return holder
-      ? `Port ${port} is ${holder.who}: change the host port this project publishes in ${file} ${holder.own}`
-      : `Port ${port} is already in use on this computer: stop what uses it, or change the host port this project publishes in ${file}`;
-  }
-
     if (!sources.length) throw new Error(`No database, Redis, MongoDB, mail or search service with a published port in ${file}`);
     const plan = this.envMerge(id, '.env', entries, `Docker services from ${file} (DevCatz)`, apply);
     const mask = (v: string) => v.replace(/(\/\/[^:/@]*:)[^@]*@/, '$1•••@');
@@ -5355,6 +5447,7 @@ export class Herd extends EventEmitter {
       },
       proxy: { https: this.proxy.httpsUp, http: this.proxy.httpUp, error: this.proxy.error },
       editors,
+      customEditor: null,
       browsers: browsersState(),
       editorIcons: editorIcons(),
       ...login,

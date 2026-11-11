@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { checksumFor, downloadVerified } from './download';
 import type { InstalledNode, NodeInstallProgress, RemoteNode } from '@shared/types';
-import { getShellEnv, run, userPathHas } from './env';
+import { getShellEnv, rcHasPath, run, userPathHas } from './env';
 import { exe, isLinux, isWin, moveDir, pathKey, removeTemp, splitPath, TAR } from './platform';
 import { dataDir } from './store';
 import { runAsRootLinux } from './linuxadmin';
@@ -228,6 +228,7 @@ export function writeShims(defaultVersion: string | null): void {
 export function shimOnPath(): boolean {
   // Windows: in the user's own Path (a Node installed for all users in Program Files still comes first in new terminals).
   if (isWin) return userPathHas(shimDir());
+  if (rcHasPath(shimDir())) return true;
   const path = getShellEnv().PATH ?? '';
   const first = path.split(':').find((p) => existsSync(join(p, 'node')));
   return first !== undefined && first.replace(/\/$/, '') === shimDir();

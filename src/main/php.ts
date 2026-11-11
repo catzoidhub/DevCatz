@@ -9,7 +9,8 @@ import { spawn } from 'node:child_process';
 import { getShellEnv, run } from './env';
 import { compare, shimDir } from './node';
 import { isLinux, isWin, moveDir, removeTemp, TAR } from './platform';
-import { dataDir } from './store';
+import { dataDir, store } from './store';
+import { systemPhps } from './phpsystem';
 import { DEB_CORE_EXTENSIONS, debExtensions, debInfo, debLegacyVersions, installDebPhp, LINUX_LEGACY_MINORS } from './phpdeb';
 
 /**
@@ -169,7 +170,7 @@ export async function listInstalled(): Promise<InstalledPhp[]> {
     } catch {
       /* none yet */
     }
-    return out.sort((a, b) => compare(b.version, a.version));
+    return withSystem(out);
   }
   try {
     for (const v of readdirSync(phpDir())) {
@@ -215,6 +216,24 @@ export async function listInstalled(): Promise<InstalledPhp[]> {
         out.push({ version, source: 'homebrew', php, fpm, binDir: bin });
       }
     }
+  }
+  return withSystem(out);
+}
+
+/** Each `system` PHP's own folder of extension .ini files, by version (iniEnv scans it before DevCatz's conf.d). */
+const systemConfD = new Map<string, string>();
+
+/** Adds the PHPs found elsewhere on this computer (phpsystem.ts); a version DevCatz already has keeps DevCatz's. */
+async function withSystem(out: InstalledPhp[]): Promise<InstalledPhp[]> {
+  systemConfD.clear();
+  const found = await systemPhps(store.settings.phpFolders ?? []).catch((e) => {
+    console.warn('PHP elsewhere:', (e as Error).message);
+    return [];
+  });
+  for (const f of found) {
+    if (out.some((o) => o.version === f.version)) continue;
+    out.push({ version: f.version, source: 'system', label: f.label, php: f.php, fpm: f.fpm, binDir: f.binDir });
+    if (f.confD) systemConfD.set(f.version, f.confD);
   }
   return out.sort((a, b) => compare(b.version, a.version));
 }
@@ -534,7 +553,10 @@ export async function writeIni(phpBin: string, version: string, settings: PhpIni
 /** Env for any php process: our php.ini + conf.d instead of the binary's compiled-in paths. */
 export function iniEnv(version: string): Record<string, string> {
   const dir = etcDir(version);
-  return { PHPRC: dir, PHP_INI_SCAN_DIR: join(dir, 'conf.d') };
+  // A system PHP (apt, Remi, MacPorts): its own extension .ini files first (pdo_mysql, mbstring … are separate .so
+  // files there), then DevCatz's settings, which win.
+  const own = systemConfD.get(version);
+  return { PHPRC: dir, PHP_INI_SCAN_DIR: own ? [own, join(dir, 'conf.d')].join(isWin ? ';' : ':') : join(dir, 'conf.d') };
 }
 
 /** Effective values (`php -i`), so the page shows what is really active. */

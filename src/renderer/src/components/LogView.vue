@@ -191,6 +191,40 @@ async function copy() {
   notify('success', picked ? 'Selection copied' : `${n} line${n === 1 ? '' : 's'} copied`);
 }
 
+/** Run bar (TODO §39): a command in the site's folder with its runtimes (php artisan …, composer …, npm …). */
+const runCmd = ref('');
+const running = ref(false);
+const history: string[] = [];
+let historyAt = -1;
+async function runCommand() {
+  const cmd = runCmd.value.trim();
+  if (!cmd || running.value) return;
+  running.value = true;
+  source.value = 'dev';
+  follow.value = true;
+  if (history[0] !== cmd) history.unshift(cmd);
+  history.splice(30);
+  historyAt = -1;
+  runCmd.value = '';
+  try {
+    const code = await herd.siteRun(props.projectId, cmd);
+    if (code !== 0) notify('warning', `${cmd.split(/\s+/).slice(0, 3).join(' ')} ended with exit ${code}; see the log`);
+  } catch (e) {
+    const msg = String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+    if (msg !== 'Cancelled') notify('error', msg);
+  } finally {
+    running.value = false;
+  }
+}
+function stopRun() {
+  void herd.installCancel(`run:${props.projectId}`);
+}
+function runHistory(step: 1 | -1) {
+  if (!history.length) return;
+  historyAt = Math.max(-1, Math.min(history.length - 1, historyAt + step));
+  runCmd.value = historyAt < 0 ? '' : history[historyAt];
+}
+
 async function clear() {
   await herd.clearLogs(props.projectId);
   logs.set(props.projectId, []);
@@ -242,5 +276,20 @@ async function clear() {
       @scroll="onScroll"
       v-html="html"
     />
+    <form class="flex shrink-0 items-center gap-2 border-t border-base-300/60 px-4 py-2" @submit.prevent="runCommand">
+      <span class="font-mono text-xs opacity-50" title="Runs in the site's folder with the site's PHP, Composer, Node … first on the PATH">$</span>
+      <input
+        v-model="runCmd"
+        class="input input-xs flex-1 font-mono"
+        placeholder="Run in this site: php artisan migrate, composer install, npm run build…"
+        :disabled="running"
+        spellcheck="false"
+        autocomplete="off"
+        @keydown.up.prevent="runHistory(1)"
+        @keydown.down.prevent="runHistory(-1)"
+      />
+      <button v-if="running" type="button" class="btn btn-xs" @click="stopRun">Stop</button>
+      <button v-else type="submit" class="btn btn-xs" :disabled="!runCmd.trim()">Run</button>
+    </form>
   </section>
 </template>

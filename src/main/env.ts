@@ -1,7 +1,10 @@
 import { execFile, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { connect } from 'node:net';
 import { killOnCancel } from './cancel';
-import { isWin, joinPath, pathKey, splitPath } from './platform';
+import { isLinux, isWin, joinPath, pathKey, splitPath } from './platform';
 
 /**
  * Apps launched from Finder get a bare PATH (/usr/bin:/bin:…), so `bun`,
@@ -113,8 +116,83 @@ export async function userPath(): Promise<string[]> {
 }
 export const userPathHas = (dir: string): boolean => !!userPathDirs?.includes(dir.replace(/[\\/]+$/, '').toLowerCase());
 
+// ---- macOS / Linux: the shell startup files (TODO §39, "Add to Path" on every platform)
+
+const RC_BEGIN = '# >>> DevCatz: its runtimes first on the PATH (Remove from PATH in DevCatz → Runtimes takes it out) >>>';
+const RC_END = '# <<< DevCatz <<<';
+
+/** The startup files DevCatz writes the PATH line to: the user's shell's, plus the other common ones that exist. */
+function rcFiles(): { file: string; fish: boolean }[] {
+  const home = homedir();
+  const shell = (process.env.SHELL ?? '').split('/').pop() ?? '';
+  const want = new Set<string>();
+  // zsh: macOS's default shell; bash: most Linux distributions'. .profile: the login environment (apps started from
+  // the desktop menu, VS Code's terminal on Linux).
+  if (shell === 'zsh' || !isLinux) want.add('.zshrc');
+  if (shell === 'bash' || isLinux) want.add('.bashrc');
+  if (isLinux) want.add('.profile');
+  for (const f of ['.zshrc', '.bashrc', '.bash_profile', '.zprofile']) if (existsSync(join(home, f))) want.add(f);
+  const out = [...want].map((f) => ({ file: join(home, f), fish: false }));
+  if (shell === 'fish' || existsSync(join(home, '.config', 'fish'))) out.push({ file: join(home, '.config', 'fish', 'conf.d', 'devcatz.fish'), fish: true });
+  return out;
+}
+
+/** The PATH block for one startup file. */
+const rcBlock = (dir: string, fish: boolean): string => `${RC_BEGIN}\n${fish ? `fish_add_path --global --prepend "${dir}"` : `export PATH="${dir}:$PATH"`}\n${RC_END}\n`;
+
+/** A startup file without DevCatz's block. */
+function withoutBlock(text: string): string {
+  const a = text.indexOf(RC_BEGIN);
+  if (a < 0) return text;
+  const b = text.indexOf(RC_END, a);
+  const end = b < 0 ? text.length : b + RC_END.length + (text[b + RC_END.length] === '\n' ? 1 : 0);
+  return (text.slice(0, a).replace(/\n+$/, '\n') + text.slice(end)).replace(/^\n+$/, '');
+}
+
+/** macOS / Linux: DevCatz's PATH line is in the user's shell startup files. */
+export function rcHasPath(dir: string): boolean {
+  if (isWin) return false;
+  return rcFiles().some(({ file }) => {
+    try {
+      const text = readFileSync(file, 'utf8');
+      return text.includes(RC_BEGIN) && text.includes(dir);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** macOS / Linux: adds (at the end, so it comes before nvm's / Homebrew's / apt's) or removes the PATH block. */
+function setRcPath(dir: string, on: boolean): void {
+  for (const { file, fish } of rcFiles()) {
+    let text = '';
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch {
+      /* not there yet */
+    }
+    if (fish) {
+      if (on) {
+        mkdirSync(join(file, '..'), { recursive: true });
+        writeFileSync(file, rcBlock(dir, true));
+      } else rmSync(file, { force: true });
+      continue;
+    }
+    const rest = withoutBlock(text);
+    if (!on && rest === text) continue;
+    if (!on && !existsSync(file)) continue;
+    writeFileSync(file, on ? `${rest}${rest && !rest.endsWith('\n') ? '\n' : ''}${rest ? '\n' : ''}${rcBlock(dir, false)}` : rest);
+  }
+}
+
 export async function setUserPath(dir: string, on: boolean): Promise<void> {
-  if (!isWin) throw new Error('Only on Windows');
+  if (!isWin) {
+    setRcPath(dir, on);
+    const env = getShellEnv();
+    const rest = splitPath(env.PATH).filter((p) => p.replace(/\/+$/, '') !== dir.replace(/\/+$/, ''));
+    env.PATH = joinPath(on ? [dir, ...rest] : rest);
+    return;
+  }
   const script = [
     "$d = $env:DEVCATZ_DIR.TrimEnd('\\')",
     "$cur = [Environment]::GetEnvironmentVariable('Path', 'User')",

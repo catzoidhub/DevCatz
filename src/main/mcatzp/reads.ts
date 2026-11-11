@@ -159,7 +159,7 @@ export function moreReads(api: HerdApi, scopes: Scopes): ActionDef[] {
         }),
         read('php_extensions', 'PHP extensions', 'The extensions of a PHP version: enabled, available, what can be installed.', OBJECT({ version: S('A PHP version from list_runtimes.', 40) }, ['version']), async (a) => plain(await api.phpExtensions(String(a.version)))),
         read('php_ini', 'PHP settings', 'The php.ini settings of a PHP version.', OBJECT({ version: S('A PHP version from list_runtimes.', 40) }, ['version']), async (a) => masked(await api.phpGetIni(String(a.version)))),
-        read('list_external_databases', 'Databases from other apps', 'Database servers running outside DevCatz (DBngin, Laravel Herd, Docker, Homebrew …).', OBJECT(), async () => plain(await api.dbDetect())),
+        read('list_external_databases', 'Databases from other apps', 'Database servers running outside DevCatz (DBngin, Laravel Herd, Docker, a package manager …).', OBJECT(), async () => plain(await api.dbDetect())),
         { ...(read('list_herd_sites', 'Laravel Herd sites', 'The sites Laravel Herd has, for importing.', OBJECT(), async () => plain(await api.herdSites()))), platforms: ['darwin', 'win32'] as Platform[] },
         read('list_updates', 'List updates', 'Updates DevCatz knows of for runtimes, tools and services.', OBJECT(), async () => {
           const s = await state();

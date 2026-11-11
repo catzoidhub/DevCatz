@@ -92,9 +92,15 @@ const setBrowser = (browser: string) => attempt(() => herd.updateSettings({ brow
 const chosenBrowser = computed(() => (state.value?.settings.browser ? (state.value.browsers.list.find((b) => b.path === state.value!.settings.browser) ?? null) : (state.value?.browsers.systemDefault ?? null)));
 /** The editor links open with: the chosen one, or the first installed (Auto). */
 const chosenEditor = computed(() => state.value?.settings.editor || state.value?.editors[0] || null);
+/** The setting is a path: an editor picked with Other… */
+const editorIsPath = computed(() => /[\\/]/.test(state.value?.settings.editor ?? ''));
 function pickEditor(name: string) {
   void setEditor(name);
   (document.activeElement as HTMLElement | null)?.blur();
+}
+async function otherEditor() {
+  (document.activeElement as HTMLElement | null)?.blur();
+  await attempt(() => herd.pickEditor());
 }
 function pickBrowser(path: string) {
   void setBrowser(path);
@@ -550,7 +556,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <div class="dropdown">
             <button type="button" tabindex="0" class="select select-sm flex w-64 items-center gap-2 text-left">
               <img v-if="s.editorIcons[chosenEditor ?? '']" :src="s.editorIcons[chosenEditor ?? '']" alt="" class="size-4 shrink-0" draggable="false" />
-              <span class="min-w-0 flex-1 truncate">{{ s.settings.editor ? s.settings.editor : `Auto (${s.editors[0] ?? words.fileManager})` }}</span>
+              <span class="min-w-0 flex-1 truncate">{{ editorIsPath ? (s.customEditor ?? 'Not installed') : s.settings.editor ? s.settings.editor : `Auto (${s.editors[0] ?? words.fileManager})` }}</span>
             </button>
             <ul tabindex="0" class="dropdown-content menu z-30 mt-1 w-64 rounded-box border border-base-300/70 bg-base-100 p-1.5 shadow-xl">
               <li>
@@ -564,6 +570,18 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
                 <button type="button" class="flex items-center gap-2" :class="{ 'menu-active': s.settings.editor === e }" @click="pickEditor(e)">
                   <img v-if="s.editorIcons[e]" :src="s.editorIcons[e]" alt="" class="size-4 shrink-0" draggable="false" />
                   <span class="flex-1 truncate">{{ e }}</span>
+                </button>
+              </li>
+              <li v-if="editorIsPath && s.customEditor">
+                <button type="button" class="flex items-center gap-2 menu-active" :title="s.settings.editor">
+                  <img v-if="s.editorIcons[s.settings.editor]" :src="s.editorIcons[s.settings.editor]" alt="" class="size-4 shrink-0" draggable="false" />
+                  <span class="flex-1 truncate">{{ s.customEditor }}</span>
+                </button>
+              </li>
+              <li class="mt-1 border-t border-base-300/60 pt-1">
+                <button type="button" class="flex items-center gap-2" title="Pick any installed editor" @click="otherEditor">
+                  <span class="size-4 shrink-0" />
+                  <span class="flex-1 truncate">Other…</span>
                 </button>
               </li>
             </ul>
@@ -595,6 +613,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           <span class="badge badge-ghost badge-sm" title="Change it here or in another Catzoid app and the others follow">Shared with Catzoid apps</span>
           </div>
         </div>
+        <p v-if="editorIsPath && !s.customEditor" class="text-xs text-warning">The chosen editor is no longer there; pick another one.</p>
         <p v-if="s.settings.browser && !chosenBrowser" class="text-xs text-warning">The chosen browser is no longer installed; links open in the system default.</p>
       </div>
     </div>

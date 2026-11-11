@@ -27,6 +27,7 @@ import type {
 import type { Herd } from '../herd';
 import { git, repoRoot } from '../git';
 import { AiClient } from './client';
+import { isLinux, isWin } from '../platform';
 import { needFeature } from './settings';
 
 /**
@@ -147,6 +148,31 @@ const ASK_SCHEMA = {
   additionalProperties: false,
 };
 
+/** The Linux distribution's name (/etc/os-release PRETTY_NAME). */
+function distro(): string {
+  try {
+    return /^PRETTY_NAME="?([^"\n]+)"?/m.exec(readFileSync('/etc/os-release', 'utf8'))?.[1] ?? 'Linux';
+  } catch {
+    return 'Linux';
+  }
+}
+
+/**
+ * The computer DevCatz runs on, for every prompt (TODO §39): the AI answered a Linux user with macOS paths and words
+ * when the prompts said "for macOS" everywhere.
+ */
+export function computerLine(): string {
+  const v = typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : '';
+  const os = isWin ? `Windows ${v}` : isLinux ? distro() : `macOS ${v}`;
+  const shell = isWin ? 'cmd or PowerShell in Windows Terminal' : (process.env.SHELL ?? '').split('/').pop() || 'sh';
+  const words = isWin
+    ? 'Windows only: PowerShell / cmd syntax, %APPDATA% and C:\\ paths, Ctrl shortcuts, File Explorer; never Homebrew, ~/.zshrc, Finder or ⌘'
+    : isLinux
+      ? 'Linux only: this distribution\'s package manager (apt, dnf …), ~/.bashrc / ~/.profile, Ctrl shortcuts, the file manager; never Homebrew, /Applications, Finder or ⌘'
+      : 'macOS only: Homebrew, ~/.zshrc, ⌘ shortcuts, Finder';
+  return `The user's computer: ${os.trim()} (${process.arch}), shell ${shell}. Commands, paths and key names must be for this system — ${words}. Never invent paths: use the folders listed below.`;
+}
+
 const LANG = '- Write explanations in the language the user wrote in (the log or the request); default to English.';
 
 /** What each action kind takes, for the prompts. */
@@ -193,6 +219,8 @@ export class DevCatzAi {
     const tasks = (s.tasks ?? []).map((t) => `${t.id} (${t.tool} ${t.label})`).join(', ');
     const services = this.herd.dbs.state().filter((d) => !d.pending).map((d) => `db:${d.id}: ${d.name} ${d.engine} ${d.version} on 127.0.0.1:${d.port} (${d.status})`);
     return [
+      computerLine(),
+      `Runtimes on this computer:\n${this.herd.runtimeFolders().map((l) => `  ${l}`).join('\n')}`,
       `Site "${p.name}" (id ${p.id}) at ${p.domain}, folder ${p.path.replace(homedir(), '~')}, status ${p.status}.`,
       `Runtime: ${s.runtime}. Apps: ${apps || 'none detected'}.`,
       rt.length ? `Versions: ${rt.join('; ')}.` : '',
@@ -210,7 +238,7 @@ export class DevCatzAi {
     const p = this.site(req.siteId);
     const lines = (req.lines?.length ? req.lines : this.herd.processes.getLogs(p.id).slice(-150).map((l) => `${l.stream === 'err' ? '! ' : ''}${l.text}`)).slice(-200);
     const system = [
-      `You help a developer with a site running in DevCatz, a local development environment for macOS (sites on *.localhost with HTTPS, PHP-FPM, Node, Bun, Python, Go, local database services). Explain the ${req.source === 'docker' ? 'Docker / compose output' : req.source === 'crash' ? 'crash of the dev server' : 'log lines'} below and say how to fix it.`,
+      `You help a developer with a site running in DevCatz, a local development environment (sites on *.localhost with HTTPS, PHP-FPM, Node, Bun, Python, Go, local database services). Explain the ${req.source === 'docker' ? 'Docker / compose output' : req.source === 'crash' ? 'crash of the dev server' : 'log lines'} below and say how to fix it.`,
       LANG,
       '- summary: one or two sentences, what happened. cause: why, in plain words. steps: what to do that DevCatz cannot do (code changes, commands); short, concrete; empty when an action covers it.',
       ...ACTION_HELP,
@@ -452,6 +480,7 @@ export class DevCatzAi {
       .join('\n');
     const system = [
       'You look at an HTTP request that reached a local site through a public tunnel (DevCatz Expose) — usually a webhook — and help handle it.',
+      computerLine(),
       '- explanation: who sent it (Stripe, GitHub, Midtrans, Xendit, WhatsApp gateway, Telegram …) and which event, what the important fields mean, and how to verify it (signature header and secret name) if the sender signs requests.',
       `- code: a handler for this site's framework (${p.stack.apps.map((a) => a.library ?? a.framework).join(', ')}) that verifies the request when it can, parses it, and handles this event; idiomatic, with the route. language: php, ts, js, py or go. where: which files it goes in.`,
       '- Read secrets from environment variables; never put real values in code.',
@@ -513,7 +542,7 @@ export class DevCatzAi {
     });
     const shares = this.shareLines();
     const system = [
-      'You are the command line of DevCatz, a local development environment for macOS. The user says in plain words what they want; you answer with DevCatz actions that do it (the user confirms each), or just answer when it is a question.',
+      'You are the command line of DevCatz, a local development environment. The user says in plain words what they want; you answer with DevCatz actions that do it (the user confirms each), or just answer when it is a question.',
       'DevCatz pages: Projects (sites: dev servers, .env, database, Git, Docker, logs), Runtimes (PHP, Python, Node.js, Bun, Go versions and PHP extensions), Database (MySQL, MariaDB, PostgreSQL, Redis … services), Storage (S3: RustFS, MinIO, SeaweedFS), WebSocket (Reverb, Sockudo, Centrifugo, Mercure, NATS), Search (Meilisearch, Typesense, OpenSearch, Manticore, ZincSearch, Sonic), Git (accounts, repositories, SSH keys), Mail (catches every mail sites send), Gateways (WhatsApp GOWA / WAHA, Stalwart, Postal, ntfy, Gotify, Jasmin SMS, Telegram), Expose (public URLs), Monitoring, Settings.',
       '- Removing things (uninstall a service, delete data) only ever goes through service-uninstall, which opens a confirmation dialog; never say something was removed.',
       '- Use the site ids and service refs below; set "site" on every site action. Order actions as they should run (start a service before the site that needs it).',
@@ -525,7 +554,8 @@ export class DevCatzAi {
       `Sites:\n${sites.join('\n') || '(none)'}`,
       `Services:\n${this.serviceLines().join('\n')}`,
       `Public shares (Expose):\n${shares.join('\n') || '(none)'}`,
-      `Installed: Node ${this.herd.nodeVersions().join(', ') || '-'}; PHP ${this.herd.phpVersions().join(', ') || '-'}.`,
+      computerLine(),
+      `Runtimes on this computer:\n${this.herd.runtimeFolders().map((l) => `  ${l}`).join('\n')}`,
     ].join('\n');
     return { system, turns: [...(req.history ?? []).slice(-8), { role: 'user', text: req.prompt.trim() }] };
   }

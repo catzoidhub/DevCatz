@@ -259,6 +259,10 @@ export const MCATZP_COVERAGE = {
   // tool: open_site
   openFolder: 'tool: open_site',
   openEditor: 'tool: open_site',
+  pickEditor: 'not a tool',
+  siteRun: 'not a tool',
+  phpAddFolder: 'not a tool',
+  phpRemoveFolder: 'not a tool',
   openTerminal: 'tool: open_site',
   // tool: open_site_file
   openapiReveal: 'tool: open_site_file',

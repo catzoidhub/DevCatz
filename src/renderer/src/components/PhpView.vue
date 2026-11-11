@@ -90,7 +90,19 @@ const pickIni = (v: string) => {
   iniVersion.value = v;
   pinnedIni = v !== php.value.defaultVersion;
 };
-const openIni = () => attempt(() => herd.phpOpenIni(iniVersion.value));
+const pathBusy = ref(false);
+async function setShimPath(on: boolean) {
+  pathBusy.value = true;
+  const p = isWin ? 'Path' : 'PATH';
+  if (await attempt(() => herd.shimPathSet(on).then(() => true))) notify('success', on ? `Added to your ${p}. Open a new terminal to use it.` : `Removed from your ${p}.`);
+  pathBusy.value = false;
+}
+async function addFolder() {
+  const v = await attempt(() => herd.phpAddFolder());
+  if (v) notify('success', `PHP ${v} added`);
+}
+const removeFolder = (version: string) => attempt(() => herd.phpRemoveFolder(version), `PHP ${version} is no longer used`);
+const openIni = () => attempt(() => herd.phpOpenIni(iniVersion.value)).then((note) => note && notify('info', note));
 const ini = ref<PhpIniSettings | null>(null);
 const effective = ref<Record<string, string>>({});
 async function loadIni() {
@@ -139,11 +151,11 @@ const tab = ref<Tab>('installed');
     <p class="text-xs opacity-60">
       <template v-if="isWin">
         Official PHP builds from php.net's Windows downloads (NTS x64, Laravel's usual extensions turned on). PHP sites are served by a few
-        php-cgi workers per version (FastCGI), always on.
+        php-cgi workers per version (FastCGI), always on; PHP from XAMPP, Laragon, WampServer or Scoop is usable too.
       </template>
       <template v-else>
         Static PHP builds from static-php.dev (CLI + FPM, Laravel's usual extensions). PHP sites are served by one PHP-FPM pool per
-        version, always on; PHP installed by other tools such as {{ isLinux ? 'your distribution' : 'Homebrew' }} is usable too.
+        version, always on; PHP installed by other tools such as {{ isLinux ? 'your distribution' : 'Homebrew, MacPorts or MAMP' }} is usable too.
       </template>
     </p>
     <div class="no-drag mt-3 flex flex-wrap items-center gap-3">
@@ -158,7 +170,7 @@ const tab = ref<Tab>('installed');
       <label v-if="(tab === 'ini' || tab === 'extensions') && php.installed.length" class="flex items-center gap-2 rounded-box border border-primary/40 bg-primary/10 py-1 pr-1 pl-3">
         <span class="label-caps text-primary">PHP version</span>
         <select :value="iniVersion" class="select select-sm select-primary w-40 font-mono" @change="pickIni(($event.target as HTMLSelectElement).value)">
-          <option v-for="v in php.installed" :key="v.version" :value="v.version">{{ v.version }}{{ v.source === 'herd' ? ' · Herd' : v.source === 'homebrew' ? ' · Homebrew' : '' }}</option>
+          <option v-for="v in php.installed" :key="v.version" :value="v.version">{{ v.version }}{{ v.source === 'herd' ? ' · Herd' : v.source === 'homebrew' ? ' · Homebrew' : v.source === 'system' ? ` · ${v.label}` : '' }}</option>
         </select>
       </label>
     </div>
@@ -182,7 +194,10 @@ const tab = ref<Tab>('installed');
     <!-- Installed -->
     <div class="card">
       <div class="card-body">
-        <h2 class="font-semibold">Installed</h2>
+        <div class="flex items-center gap-2">
+          <h2 class="flex-1 font-semibold">Installed</h2>
+          <button class="btn btn-ghost btn-xs" :title="`Use a PHP installed elsewhere on this ${words.computer} (a folder with ${isWin ? 'php.exe and php-cgi.exe' : 'php and php-fpm'})`" @click="addFolder">Add a PHP folder…</button>
+        </div>
         <div class="overflow-x-auto rounded-box border border-base-300/60">
           <table class="table table-sm">
             <thead>
@@ -202,6 +217,7 @@ const tab = ref<Tab>('installed');
                   <span v-if="php.defaultVersion === v.version" class="badge badge-primary badge-soft badge-sm whitespace-nowrap">default</span>
                   <span v-if="v.source === 'herd'" class="badge badge-ghost badge-sm whitespace-nowrap">Laravel Herd</span>
                   <span v-if="v.source === 'homebrew'" class="badge badge-ghost badge-sm whitespace-nowrap" title="Installed with Homebrew; update or remove it with brew">Homebrew</span>
+                  <span v-if="v.source === 'system'" class="badge badge-ghost badge-sm whitespace-nowrap" :title="`Installed outside DevCatz (${v.binDir}); DevCatz serves it with its own ${words.phpServer} and php.ini, and updates or removes nothing`">{{ v.label === 'apt' || v.label === 'system' ? 'from the system' : v.label }}</span>
                   </div>
                 </td>
                 <td>
@@ -215,6 +231,7 @@ const tab = ref<Tab>('installed');
                   <UpdateButton runtime="php" :version="v.version" />
                   <button v-if="php.defaultVersion !== v.version" class="btn btn-xs btn-ghost" @click="setDefault(v.version)">Make default</button>
                   <button v-if="v.source === 'mrcatz'" class="btn btn-xs btn-ghost text-error" @click="uninstall(v.version)">Uninstall</button>
+                  <button v-if="v.source === 'system' && v.label === 'added by you'" class="btn btn-xs btn-ghost" title="DevCatz stops using it; the PHP itself stays where it is" @click="removeFolder(v.version)">Remove</button>
                 </td>
               </tr>
               <tr v-if="!php.installed.length">
@@ -250,6 +267,28 @@ const tab = ref<Tab>('installed');
     <div v-else-if="php.installing?.phase === 'error'" class="alert alert-error text-sm"><CatMood mood="error" class="size-7 shrink-0 -my-0.5" />
       Installing {{ php.installing.version }} failed: {{ php.installing.error }}
       <GitConnectButton :text="php.installing.error" />
+    </div>
+
+    <!-- PHP and Composer in a terminal (TODO §39) -->
+    <div v-if="tab === 'installed' && php.installed.some((i) => i.source === 'mrcatz')" class="card">
+      <div class="card-body gap-2">
+        <h2 class="font-semibold">
+          PHP and Composer in your terminal
+          <span class="badge badge-sm ml-1" :class="s.node.shimOnPath ? 'badge-success' : 'badge-ghost'">{{ s.node.shimOnPath ? 'on your PATH' : 'not on your PATH' }}</span>
+        </h2>
+        <p class="text-xs opacity-70">
+          A site's own PHP is already used by Open ▾ → Terminal on the site and by the Run box in its Logs (<code>php artisan …</code>,
+          <code>composer …</code>). For every other terminal, add DevCatz's folder of <code>php</code> / <code>composer</code> (the default version,
+          with DevCatz's php.ini) to your {{ isWin ? 'Path' : 'PATH' }}.
+        </p>
+        <p class="text-xs opacity-60"><code class="selectable">{{ s.node.shimDir }}</code></p>
+        <div class="flex gap-2">
+          <button v-if="!s.node.shimOnPath" class="btn btn-sm btn-primary" :disabled="pathBusy" @click="setShimPath(true)">
+            <span v-if="pathBusy" class="loading loading-spinner loading-xs" />Add to my {{ isWin ? 'Path' : 'PATH' }}
+          </button>
+          <button v-else class="btn btn-sm btn-outline" :disabled="pathBusy" @click="setShimPath(false)">Remove from my {{ isWin ? 'Path' : 'PATH' }}</button>
+        </div>
+      </div>
     </div>
 
     <template v-if="tab === 'ini'">

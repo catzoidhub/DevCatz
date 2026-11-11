@@ -52,11 +52,11 @@ async function uninstall(version: string) {
 
 const pathLine = computed(() => `export PATH="${n.value.shimDir}:$PATH"`);
 /** The shell's startup file: zsh is macOS's default shell, bash most Linux distributions'. */
-const rcFile = isLinux ? '~/.bashrc' : '~/.zshrc';
+const rcFile = isLinux ? '~/.bashrc, ~/.profile' : '~/.zshrc';
 const pathBusy = ref(false);
 async function setShimPath(on: boolean) {
   pathBusy.value = true;
-  if (await attempt(() => herd.shimPathSet(on).then(() => true))) notify('success', on ? 'Added to your Path. Open a new terminal to use it.' : 'Removed from your Path.');
+  if (await attempt(() => herd.shimPathSet(on).then(() => true))) notify('success', on ? 'Added to your PATH. Open a new terminal to use it.' : 'Removed from your PATH.');
   pathBusy.value = false;
 }
 async function copyPath() {
@@ -212,15 +212,25 @@ watch(runtimeTabRequest, (t) => {
             <button v-else class="btn btn-sm btn-outline" :disabled="pathBusy" @click="setShimPath(false)">Remove from my Path</button>
           </div>
         </template>
-        <p v-if="!isWin" class="text-xs opacity-70">
-          DevCatz keeps <code>node</code>, <code>npm</code>, <code>npx</code> and <code>corepack</code> shims for the default version (and <code>bun</code>,
-          <code>go</code>, <code>php</code>, <code>composer</code>, <code>python</code>, <code>pip</code>, <code>uv</code> for theirs). To use them in
-          your terminal, add this line to the <b>end</b> of <code>{{ rcFile }}</code>. It then takes precedence over a node from another tool (nvm, {{ isLinux ? 'apt' : 'Homebrew' }} …).
-        </p>
-        <div v-if="!isWin" class="join">
-          <code class="selectable join-item flex-1 truncate rounded-l-box bg-base-200 px-3 py-1.5 text-xs">{{ pathLine }}</code>
-          <button class="btn btn-sm join-item" @click="copyPath">Copy</button>
-        </div>
+        <template v-else>
+          <p class="text-xs opacity-70">
+            DevCatz keeps <code>node</code>, <code>npm</code>, <code>npx</code> and <code>corepack</code> shims for the default version (and <code>bun</code>,
+            <code>go</code>, <code>php</code>, <code>composer</code>, <code>python</code>, <code>pip</code>, <code>uv</code> for theirs) in one folder.
+            <b>Add to my PATH</b> puts it at the end of your shell's startup files ({{ rcFile }}), so new terminals use them before a node from
+            another tool (nvm, {{ isLinux ? 'apt' : 'Homebrew' }} …). Remove takes the line out again.
+          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <button v-if="!n.shimOnPath" class="btn btn-sm btn-primary" :disabled="pathBusy" @click="setShimPath(true)">
+              <span v-if="pathBusy" class="loading loading-spinner loading-xs" />Add to my PATH
+            </button>
+            <button v-else class="btn btn-sm btn-outline" :disabled="pathBusy" @click="setShimPath(false)">Remove from my PATH</button>
+          </div>
+          <p class="text-xs opacity-60">Or add this line yourself:</p>
+          <div class="join">
+            <code class="selectable join-item flex-1 truncate rounded-l-box bg-base-200 px-3 py-1.5 text-xs">{{ pathLine }}</code>
+            <button class="btn btn-sm join-item" @click="copyPath">Copy</button>
+          </div>
+        </template>
       </div>
     </div>
     </template>
