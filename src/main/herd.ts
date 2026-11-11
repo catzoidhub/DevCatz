@@ -448,10 +448,13 @@ export class Herd extends EventEmitter {
     void this.dbcatz.locate();
     this.dialcatz.onChange = () => this.changed();
     // DoCatz's names go through DevCatz's proxy on :443 when names without a port are on (docatzRoute), else to DoCatz's own port.
-    // The name DoCatz gives the container (users may rename it there), else <service>.<project>.docatz.<tld>.
+    // The name DoCatz gives the container (users may rename it there), else <service>.<project>.docatz.<tld> with each
+    // part made a DNS label the way DoCatz does (domains.ts label()): a raw work_app gave a name with an underscore,
+    // which no certificate can carry (ERR_SSL_SERVER_CERT_BAD_FORMAT) and DoCatz never routes (work-app is its name).
+    const docatzLabel = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63) || 'x';
     docker.setDocatzUrl((service, project) => {
       const listed = docatzContainerUrl(project, service);
-      const host = listed ? new URL(listed).hostname : `${service}.${project}.docatz.${tld()}`;
+      const host = listed ? new URL(listed).hostname : `${docatzLabel(service)}.${docatzLabel(project)}.docatz.${tld()}`;
       return `https://${host}${this.cleanUrls ? '' : `:${docatzHttpsPort()}`}`;
     });
     this.docatz.onChange = () => {
@@ -4854,9 +4857,13 @@ export class Herd extends EventEmitter {
       const inside = docker.DEV_SERVICES.find((d) => d.kind === kind)!.port;
       const port = s.ports.find((x) => x.container === inside)?.host;
       if (!port) continue;
+    let busyPort: number | null = null;
       const e = s.environment;
       if ((kind === 'postgres' || kind === 'mysql' || kind === 'mariadb') && !dbDone) {
         dbDone = true;
+      // "failed to bind host port 0.0.0.0:8443/tcp: address already in use", "Bind for 0.0.0.0:8443 failed: port is already allocated"
+      const b = /(?:bind host port|Bind for) [^\s]*:(\d+)(?:\/\w+)?(?::| failed)[^\n]*(?:address already in use|already allocated)/i.exec(text);
+      if (b) busyPort = Number(b[1]);
         const P = kind === 'mariadb' ? 'MARIADB' : 'MYSQL';
         const user = kind === 'postgres' ? e.POSTGRES_USER || 'postgres' : e[`${P}_USER`] || e.MYSQL_USER || 'root';
         const pass = kind === 'postgres' ? e.POSTGRES_PASSWORD || '' : user === 'root' ? e[`${P}_ROOT_PASSWORD`] || e.MYSQL_ROOT_PASSWORD || '' : e[`${P}_PASSWORD`] || e.MYSQL_PASSWORD || '';
@@ -4881,9 +4888,29 @@ export class Herd extends EventEmitter {
       } else if (kind === 'meilisearch') {
         entries.MEILISEARCH_HOST = `http://127.0.0.1:${port}`;
         if (e.MEILI_MASTER_KEY) entries.MEILISEARCH_KEY = e.MEILI_MASTER_KEY;
+    if (code !== 0 && busyPort) {
+      const msg = this.busyPortWords(busyPort, file);
+      this.processes.log(id, 'sys', msg);
+      throw new Error(msg);
+    }
       } else continue;
       sources.push({ service: s.service, kind, port });
     }
+  /** Up failed on a host port in use: who holds it when it is a Catzoid app's own port, and what to change. */
+  private busyPortWords(port: number, file: string): string {
+    const holder =
+      port === store.settings.httpsPort
+        ? { who: "DevCatz's HTTPS proxy", own: 'or DevCatz\'s HTTPS port (Settings → Project → Proxy)' }
+        : port === store.settings.httpPort
+          ? { who: "DevCatz's HTTP proxy", own: 'or DevCatz\'s HTTP port (Settings → Project → Proxy)' }
+          : port === docatzHttpsPort() || port === docatzProxyPort()
+            ? { who: "DoCatz's proxy", own: "or DoCatz's port in DoCatz's settings" }
+            : null;
+    return holder
+      ? `Port ${port} is ${holder.who}: change the host port this project publishes in ${file} ${holder.own}`
+      : `Port ${port} is already in use on this computer: stop what uses it, or change the host port this project publishes in ${file}`;
+  }
+
     if (!sources.length) throw new Error(`No database, Redis, MongoDB, mail or search service with a published port in ${file}`);
     const plan = this.envMerge(id, '.env', entries, `Docker services from ${file} (DevCatz)`, apply);
     const mask = (v: string) => v.replace(/(\/\/[^:/@]*:)[^@]*@/, '$1•••@');
