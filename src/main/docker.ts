@@ -254,6 +254,7 @@ export async function dockerStatus(): Promise<DockerStatus> {
   for (const [bin, id] of [['podman', 'podman'], ['finch', 'finch']] as const) {
     if (!(await onPath(bin))) continue;
     if ((await run(bin, ['info'], { timeout: 8000 })).code === 0) {
+      if (id === 'podman' && isLinux) await podmanSocket();
       cli = { bin, compose: ['compose'] };
       orbLocal = false;
       onDocatzEngine = false;
@@ -290,6 +291,18 @@ command -v setfacl >/dev/null 2>&1 && setfacl -m u:${user}:rw /var/run/docker.so
   if (!r.ok) throw new Error(r.cancelled ? 'Cancelled at the password prompt' : `Docker Engine: ${r.message.split('\n').pop()}`);
 }
 
+/**
+ * Linux, rootless Podman: `podman compose` hands over to docker-compose, which talks to Podman's API socket
+ * (/run/user/<uid>/podman/podman.sock); the user's podman.socket unit is off by default, so `up` failed with "failed to
+ * connect to the docker API". Started (and enabled) for this user — no password.
+ */
+async function podmanSocket(): Promise<void> {
+  const sock = join(process.env.XDG_RUNTIME_DIR || `/run/user/${userInfo().uid}`, 'podman', 'podman.sock');
+  if (existsSync(sock)) return;
+  const r = await run('systemctl', ['--user', 'enable', '--now', 'podman.socket'], { timeout: 30_000 });
+  if (r.code !== 0) console.warn('podman.socket:', (r.stderr || r.stdout).trim().split('\n').pop());
+}
+
 /** Starts an installed engine: opens its app, or `colima start` / `podman machine start` / `finch vm start`. */
 export async function startEngine(id: DockerEngineId): Promise<void> {
   if (isLinux && id === 'docker-engine') return linuxDockerEngine();
@@ -312,8 +325,8 @@ export async function startEngine(id: DockerEngineId): Promise<void> {
     else await run('open', ['-a', e.app!.replace(/\.app$/, '')]);
     return;
   }
-  // Podman on Linux runs without a VM: there is nothing to start.
-  if (isLinux && id === 'podman') return;
+  // Podman on Linux runs without a VM: only its API socket, for compose.
+  if (isLinux && id === 'podman') return podmanSocket();
   const cmd: Record<string, string[]> = { colima: ['colima', 'start'], podman: ['podman', 'machine', 'start'], finch: ['finch', 'vm', 'start'] };
   const c = cmd[id];
   if (!c) throw new Error(`${e.name} is not installed`);

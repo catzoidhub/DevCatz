@@ -100,12 +100,25 @@ async function linuxTerminal(dir: string, cmd: string[] | null): Promise<boolean
 }
 
 /**
- * macOS: Terminal and iTerm run a script that starts the shell with the site's PATH. Warp and Ghostty get the folder only
- * (Warp's warp://launch links did not find a launch configuration written while it runs; TODO §39 left).
+ * macOS: Terminal and iTerm run a script that starts the shell with the site's PATH; Warp opens a launch configuration
+ * whose command adds it in the user's own shell; Ghostty gets the folder only.
  */
-async function macTerminal(dir: string, cmd: string[] | null, name: string): Promise<string | null> {
+async function macTerminal(dir: string, cmd: string[] | null, name: string, t: TerminalSetup | null): Promise<string | null> {
   const apps = ['Warp', 'iTerm', 'Ghostty'].filter((a) => existsSync(`/Applications/${a}.app`));
   const app = apps[0] ?? 'Terminal';
+  if (t && app === 'Warp') {
+    // ~/.warp/launch_configurations/<id>.yaml, opened by its name: warp://launch/<name> (a file name or a path in the
+    // link is not found; a configuration written while Warp runs is). The command runs in the user's own shell.
+    const id = `devcatz-${name.replace(/[^\w.-]+/g, '-')}`;
+    const confDir = join(homedir(), '.warp', 'launch_configurations');
+    mkdirSync(confDir, { recursive: true });
+    const exec = `export PATH=${q(t.dirs.join(':'))}":$PATH"${t.venv ? `; export VIRTUAL_ENV=${q(t.venv)}` : ''}; echo ${q(`DevCatz: ${t.label} first on the PATH in this terminal.`)}`;
+    writeFileSync(
+      join(confDir, `${id}.yaml`),
+      ['---', `name: ${id}`, 'windows:', '  - tabs:', `      - title: ${JSON.stringify(dir.split('/').pop() ?? id)}`, '        layout:', `          cwd: ${JSON.stringify(dir)}`, '          commands:', `            - exec: ${JSON.stringify(exec)}`, ''].join('\n'),
+    );
+    if ((await run('open', [`warp://launch/${id}`])).code === 0) return null;
+  }
   if (cmd && (app === 'Terminal' || app === 'iTerm')) {
     const script = join(dataDir('terminal'), `${name.replace(/[^\w.-]+/g, '-')}.command`);
     writeFileSync(script, `#!/bin/sh\ncd ${q(dir)} || exit 1\nexec ${cmd.map(q).join(' ')}\n`);
@@ -118,7 +131,7 @@ async function macTerminal(dir: string, cmd: string[] | null, name: string): Pro
     }
   }
   await run('open', ['-a', app, dir]);
-  return cmd ? `${app} opened in the folder with your usual PATH: the site's own versions are not set there. Use the Run box in the site's Logs, or Add to my PATH on the PHP / Node.js page.` : null;
+  return cmd && app !== 'Warp' ? `${app} opened in the folder with your usual PATH: the site's own versions are not set there. Use the Run box in the site's Logs, or Add to my PATH on the PHP / Node.js page.` : null;
 }
 
 /** Windows: Windows Terminal (else a Command Prompt) running a small .cmd that puts the folders first. */
@@ -150,5 +163,5 @@ export async function openTerminal(dir: string, t: TerminalSetup | null = null, 
     await shell.openPath(dir);
     return 'No terminal app was found, so the folder opened in the file manager.';
   }
-  return macTerminal(dir, cmd, name);
+  return macTerminal(dir, cmd, name, setup);
 }

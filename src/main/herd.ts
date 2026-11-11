@@ -4855,7 +4855,7 @@ export class Herd extends EventEmitter {
       logs: ['logs', '--tail', '200', '--no-color', '--timestamps'],
     };
     const cmd = [...args[action], ...(service ? [service] : [])];
-    this.processes.log(id, 'sys', `$ docker compose -f ${file}${project ? ` -p ${project}` : ''} ${cmd.join(' ')}`);
+    this.processes.log(id, 'sys', `$ ${docker.dockerCompose().join(' ')} -f ${file}${project ? ` -p ${project}` : ''} ${cmd.join(' ')}`);
     const missing = new Set<string>();
     let busyPort: number | null = null;
     const log = (stream: 'out' | 'err', text: string) => {
