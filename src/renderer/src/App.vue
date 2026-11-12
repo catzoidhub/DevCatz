@@ -8,6 +8,7 @@ import ReportDialog from './components/ReportDialog.vue';
 import UninstallDialog from './components/UninstallDialog.vue';
 import WelcomeDialog from './components/WelcomeDialog.vue';
 import SupportNudge from './components/SupportNudge.vue';
+import CatHeart from './components/CatHeart.vue';
 import McatzpPairDialog from './components/McatzpPairDialog.vue';
 import ProjectView from './components/ProjectView.vue';
 import askMark from './assets/logos/ask-catzoid.svg';
@@ -655,7 +656,7 @@ async function park() {
       <div class="mb-2 h-px w-12 shrink-0 bg-base-content/15" />
       <!-- Support Catzoid (Catzoid #94): small and quiet, always there; no badge, no animation. -->
       <button class="support-heart mb-1 grid size-8 shrink-0 place-items-center rounded-[10px]" title="Support Catzoid" @click="navigate('support')">
-        <svg class="size-4" viewBox="0 0 20 20" fill="currentColor"><path :d="ICONS.heart" /></svg>
+        <CatHeart class="size-5" />
       </button>
       <button class="rail-item relative shrink-0" :class="{ 'is-active': section === 'settings' }" style="--rail-c: var(--c-settings)" :title="`Settings (${keyLabel('mod+,')})`" @click="section = 'settings'">
         <span class="rail-icon"><svg class="size-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS.cog" /></svg></span>

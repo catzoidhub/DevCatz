@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ICONS } from '../icons';
+import CatHeart from './CatHeart.vue';
 import { SUPPORT_TEXT, openCommunity, openDonate } from '../support';
 
 /** Settings → About: Support Catzoid (Catzoid #94), always there; the heart in the rail and the corner card lead here. */
@@ -9,7 +9,7 @@ import { SUPPORT_TEXT, openCommunity, openDonate } from '../support';
   <div id="support-catzoid" class="card scroll-mt-4">
     <div class="card-body flex-row flex-wrap items-center gap-4">
       <span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary/12 text-[var(--primary-ink,var(--color-primary))]">
-        <svg class="size-5" viewBox="0 0 20 20" fill="currentColor"><path :d="ICONS.heart" /></svg>
+        <CatHeart class="size-6" />
       </span>
       <div class="min-w-0 flex-1 space-y-0.5">
         <h2 class="font-semibold">Support Catzoid</h2>
