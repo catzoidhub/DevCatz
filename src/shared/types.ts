@@ -898,6 +898,15 @@ export interface Settings {
   crashAsked: boolean;
   /** The first-run welcome (Catzoid #29) was closed; it shows only on a first launch with no sites. */
   welcomeSeen: boolean;
+  /**
+   * Support Catzoid (Catzoid #94): when this DevCatz first ran with the feature (the corner card waits 7 days after
+   * it), how many times the card was put off with Not now, when that last was, and whether it is off for good
+   * (Don't show again, or the user already joined / donated from it). Settings → About keeps the links either way.
+   */
+  supportSince?: number;
+  supportLater?: number;
+  supportLaterAt?: number;
+  supportOff?: boolean;
   /** Site ids pinned at the top of the sidebar. */
   favorites: string[];
   /** Sidebar groups, in display order; a site is in at most one. */

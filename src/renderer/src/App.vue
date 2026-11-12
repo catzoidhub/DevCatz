@@ -7,6 +7,7 @@ import UpdateDialog from './components/UpdateDialog.vue';
 import ReportDialog from './components/ReportDialog.vue';
 import UninstallDialog from './components/UninstallDialog.vue';
 import WelcomeDialog from './components/WelcomeDialog.vue';
+import SupportNudge from './components/SupportNudge.vue';
 import McatzpPairDialog from './components/McatzpPairDialog.vue';
 import ProjectView from './components/ProjectView.vue';
 import askMark from './assets/logos/ask-catzoid.svg';
@@ -484,6 +485,12 @@ function navigate(target: string) {
     reportDialog.value = target === 'report:bug' ? 'bug' : 'idea';
     return;
   }
+  // Support Catzoid (Catzoid #94): the heart in the rail → Settings → About, scrolled to its card.
+  if (target === 'support') {
+    navigate('settings:about');
+    setTimeout(() => document.getElementById('support-catzoid')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+    return;
+  }
   // `settings:<tab>`: a Settings tab (About DevCatz in the app menu → settings:about).
   if (target.startsWith('settings:')) {
     section.value = 'settings';
@@ -646,6 +653,10 @@ async function park() {
       </div>
       <!-- Settings stays put below the scrolling sections: a divider keeps the cut clean. -->
       <div class="mb-2 h-px w-12 shrink-0 bg-base-content/15" />
+      <!-- Support Catzoid (Catzoid #94): small and quiet, always there; no badge, no animation. -->
+      <button class="support-heart mb-1 grid size-8 shrink-0 place-items-center rounded-[10px]" title="Support Catzoid" @click="navigate('support')">
+        <svg class="size-4" viewBox="0 0 20 20" fill="currentColor"><path :d="ICONS.heart" /></svg>
+      </button>
       <button class="rail-item relative shrink-0" :class="{ 'is-active': section === 'settings' }" style="--rail-c: var(--c-settings)" :title="`Settings (${keyLabel('mod+,')})`" @click="section = 'settings'">
         <span class="rail-icon"><svg class="size-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS.cog" /></svg></span>
         Settings
@@ -851,6 +862,7 @@ async function park() {
     <ReportDialog />
     <UninstallDialog />
     <WelcomeDialog />
+    <SupportNudge />
     <McatzpPairDialog />
     <!-- Asked once, after the first crash or error (Catzoid #65). -->
     <dialog v-if="state?.reports.askCrash" open class="modal modal-open">

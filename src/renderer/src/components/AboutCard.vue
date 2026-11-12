@@ -8,6 +8,7 @@ import dbcatzLogo from '../assets/logos/dbcatz.png';
 import dialcatzLogo from '../assets/logos/dialcatz.png';
 import docatzLogo from '../assets/logos/docatz.png';
 import mcatzpLogo from '../assets/logos/mcatzp.svg';
+import SupportCard from './SupportCard.vue';
 
 /**
  * Settings → About (Catzoid family #62; the app menu's About DevCatz opens it): the app, its slogan and version, the
@@ -103,6 +104,8 @@ function copyDetails() {
       </p>
     </div>
   </div>
+
+  <SupportCard />
 
   <div class="card">
     <div class="card-body gap-3">

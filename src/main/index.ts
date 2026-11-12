@@ -1239,6 +1239,8 @@ app.whenReady().then(async () => {
   // system proxy, as the browser does. Every download / API call in the main process goes through it there.
   if (isWin) globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => net.fetch(input as string, init as never)) as typeof fetch;
   console.log(`DevCatz ${app.getVersion()} starting (packaged=${app.isPackaged})`);
+  // Support Catzoid (Catzoid #94): the corner card counts its 7 days from the first run that knows about it.
+  if (!store.settings.supportSince) store.updateSettings({ supportSince: Date.now() });
   // Linux AppImage run from Downloads: the install window first (it restarts DevCatz from ~/Applications).
   if (await offerAppImageInstall(RESOURCES)) return;
   await loadShellEnv();

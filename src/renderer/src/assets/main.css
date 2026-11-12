@@ -494,6 +494,15 @@ pre,
     box-shadow 120ms ease,
     transform 120ms ease;
 }
+/* Support Catzoid (#94) above Settings: muted like the rail labels, the heart takes the primary colour on hover. */
+.support-heart {
+  color: oklch(from var(--color-base-content) l c h / 0.45);
+  transition: color 0.15s, background 0.15s;
+}
+.support-heart:hover {
+  color: var(--primary-ink, var(--color-primary));
+  background: oklch(from var(--color-base-content) l c h / 0.06);
+}
 .rail-item.is-active {
   color: var(--rail-c);
 }
