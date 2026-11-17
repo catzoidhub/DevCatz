@@ -14,6 +14,12 @@ const s = computed(() => state.value?.settings);
 const mine = computed(() => s.value?.supportRating ?? null);
 const queued = computed(() => s.value?.supportRatingQueued ?? null);
 const editing = ref(false);
+/** Cancel clears the stars picked (a fresh form). */
+const formKey = ref(0);
+function stop() {
+  editing.value = false;
+  formKey.value++;
+}
 const status = computed(() => {
   const m = mine.value;
   if (!m?.text) return '';
@@ -39,7 +45,7 @@ const status = computed(() => {
       </div>
 
       <div class="border-t border-base-300/60 pt-4 sm:pl-14">
-        <RatingForm v-if="editing || (!mine && !queued)" @done="editing = false" @cancel="editing = false" />
+        <RatingForm v-if="editing || (!mine && !queued)" :key="formKey" @done="stop" @cancel="stop" />
         <div v-else class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
           <span class="opacity-70">Your rating</span>
           <span class="inline-flex gap-[0.08em] text-[1.15rem]" :aria-label="`${(mine ?? queued)!.rating} out of 5`">

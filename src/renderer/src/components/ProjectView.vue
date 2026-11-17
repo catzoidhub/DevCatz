@@ -686,12 +686,12 @@ async function generateKey() {
                   <StackMark :icon="f.icon" :label="f.label" :class="frameworks.length > 2 ? 'size-4' : 'size-5'" />
                 </span>
                 <span v-if="frameworks.length > 2" class="min-w-0 truncate text-xs leading-tight">
-                  <span class="font-medium">{{ f.label }}<template v-if="f.version"> {{ versionText(f.version) }}</template></span>
+                  <span class="font-medium">{{ f.version ? `${f.label} ${versionText(f.version)}` : f.label }}</span>
                   <span class="opacity-55"> · {{ f.main ? 'main' : f.apps.join(', ') }}</span>
                 </span>
                 <span v-else class="min-w-0">
-                  <span class="block text-sm font-medium leading-tight">{{ f.label }}<span v-if="f.version" class="font-normal opacity-70"> {{ versionText(f.version) }}</span></span>
-                  <span class="block text-[11px] leading-tight opacity-55">{{ f.main ? 'main framework' : f.apps.join(', ') }}<template v-for="x in f.version?.extras ?? []" :key="x.label"> · {{ x.label }} {{ versionText(x) }}</template></span>
+                  <span class="block text-sm font-medium leading-tight">{{ f.label }}<span v-if="f.version" class="font-normal opacity-70">{{ `\u00a0${versionText(f.version)}` }}</span></span>
+                  <span class="block text-[11px] leading-tight opacity-55">{{ f.main ? 'main framework' : f.apps.join(', ') }}<template v-for="x in f.version?.extras ?? []" :key="x.label">{{ ` · ${x.label} ${versionText(x)}` }}</template></span>
                 </span>
               </li>
             </ul>
