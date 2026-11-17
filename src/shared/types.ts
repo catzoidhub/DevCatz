@@ -934,6 +934,8 @@ export interface Settings {
   crashAsked: boolean;
   /** The first-run welcome (Catzoid #29) was closed; it shows only on a first launch with no sites. */
   welcomeSeen: boolean;
+  /** Where the window was when it was last closed (Catzoid #95: closing it ends the renderer; it comes back here). */
+  windowBounds?: { x: number; y: number; width: number; height: number; maximized?: boolean } | null;
   /**
    * Support Catzoid (Catzoid #94): when this DevCatz first ran with the feature (the corner card waits 7 days after
    * it), how many times the card was put off with Not now, when that last was, and whether it is off for good

@@ -4,7 +4,7 @@ import { readShared, siteBase, watchShared, writeShared } from './shared';
 // First: moves the MrCatz Herd data folder before store/herd read it.
 import './migrate';
 import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, Notification, screen, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -173,10 +173,29 @@ function titleBarOverlay(): { color: string; symbolColor: string; height: number
 }
 if (isWin || isLinux) nativeTheme.on('updated', () => win && !win.isDestroyed() && win.setTitleBarOverlay(titleBarOverlay()));
 
+/** The bounds the window was closed with, when they still fit on a connected display. */
+function savedBounds(): { x?: number; y?: number; width: number; height: number } {
+  const b = store.settings.windowBounds;
+  if (!b || b.width < 860 || b.height < 520) return { width: 1120, height: 740 };
+  const area = screen.getDisplayMatching(b).workArea;
+  const fits = b.x >= area.x - 50 && b.y >= area.y - 50 && b.x + b.width <= area.x + area.width + 50 && b.y + b.height <= area.y + area.height + 50;
+  return fits ? { x: b.x, y: b.y, width: b.width, height: b.height } : { width: b.width, height: b.height };
+}
+
+function saveBounds(w: BrowserWindow): void {
+  try {
+    const maximized = w.isMaximized();
+    const b = maximized ? w.getNormalBounds() : w.getBounds();
+    store.updateSettings({ windowBounds: { ...b, maximized } });
+  } catch {
+    /* already gone */
+  }
+}
+
 function createWindow(): void {
+  const bounds = savedBounds();
   win = new BrowserWindow({
-    width: 1120,
-    height: 740,
+    ...bounds,
     minWidth: 860,
     minHeight: 520,
     show: false,
@@ -205,7 +224,11 @@ function createWindow(): void {
   });
   // Coming back to DevCatz: runtimes installed or removed meanwhile (Herd uninstalled …) show up.
   win.on('focus', () => void herd.refreshRuntimes().catch(() => undefined));
-  win.once('ready-to-show', () => win?.show());
+  const self = win;
+  win.once('ready-to-show', () => {
+    if (store.settings.windowBounds?.maximized) self.maximize();
+    self.show();
+  });
   // Back / forward: three-finger swipe on macOS, the mouse / keyboard browser keys on Windows.
   win.on('swipe', (_e, dir) => {
     if (dir === 'left' || dir === 'right') win?.webContents.send('herd:navigate', dir === 'right' ? 'history:back' : 'history:forward');
@@ -213,12 +236,15 @@ function createWindow(): void {
   win.on('app-command', (_e, cmd) => {
     if (cmd === 'browser-backward' || cmd === 'browser-forward') win?.webContents.send('herd:navigate', cmd === 'browser-backward' ? 'history:back' : 'history:forward');
   });
-  // Closing the window keeps the app (and dev servers) running in the menu bar.
-  win.on('close', (e) => {
-    if (quitting) return;
-    e.preventDefault();
-    win?.hide();
-    app.dock?.hide();
+  // Closing the window keeps the app (and dev servers) running in the menu bar / tray, and ends the renderer
+  // (Catzoid #95): ~200 MB back while DevCatz only serves sites. The tray, the Dock and a devcatz:// link make a new
+  // one where it was, at the section and site it showed (the renderer keeps those in localStorage).
+  win.on('close', () => {
+    saveBounds(self);
+    if (!quitting) app.dock?.hide();
+  });
+  win.on('closed', () => {
+    if (win === self) win = null;
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     void openWeb(url);
