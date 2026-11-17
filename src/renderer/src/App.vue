@@ -534,6 +534,14 @@ function navigate(target: string) {
     return;
   }
   // devcatz://services/<kind>[?install=1] (DoCatz's DevCatz Services group): Typesense / Sonic (Search), Sockudo (WebSocket).
+  // devcatz://storage/<kind> (DoCatz's DevCatz Services → Open in DevCatz): Storage at that engine.
+  if (target.startsWith('storage:')) {
+    section.value = 'storage';
+    storageFocus.value = null;
+    const kind = target.slice('storage:'.length);
+    void nextTick(() => (storageFocus.value = kind));
+    return;
+  }
   if (target.startsWith('services:')) {
     const [, kind, install] = target.split(':');
     const ws = kind === 'sockudo';

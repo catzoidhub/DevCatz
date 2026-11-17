@@ -1860,6 +1860,25 @@ export class Herd extends EventEmitter {
       container: null,
       link: `devcatz://services/${s.kind}`,
     }));
+    // Object storage that runs as containers (TODO §40: Garage, Ceph), in DoCatz unless it runs on the system's engine.
+    for (const s of this.storage.state().filter((x) => x.inDocker)) {
+      const inDocatz = (s.config?.docker?.container ?? s.defaults.docker?.container) === 'docatz';
+      services.push({
+        kind: s.kind,
+        name: s.name,
+        category: 'storage',
+        docker: inDocatz,
+        installed: s.installed,
+        status: s.status,
+        version: s.config?.version ?? null,
+        url: s.urls?.api ?? null,
+        api: s.urls?.apiLocal ?? null,
+        webUi: s.hasConsole ? (s.urls?.consoleLocal ?? null) : null,
+        project: inDocatz ? `devcatz-svc-${s.kind}` : null,
+        container: null,
+        link: `devcatz://storage/${s.kind}`,
+      });
+    }
     writeBridge(sites, gateways, services);
   }
 

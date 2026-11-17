@@ -17,7 +17,7 @@ import { HerdTray } from './tray';
 import { dockerStatus, startEngine } from './docker';
 import { etcDir } from './php';
 import * as s3 from './s3';
-import { ENGINES } from './storage';
+import { ENGINES, STORAGE_KINDS } from './storage';
 import { SearchManager } from './search';
 import * as gitHosts from './githosts';
 import { MIGRATION_FLAG } from './migrate';
@@ -1204,6 +1204,7 @@ async function quit(reason: string): Promise<void> {
  *   devcatz://gateways/<kind>   a gateway (gowa, waha, postal, ntfy …); ?install=1 its install dialog,
  *                               ?action=start|stop|restart runs that (DoCatz's DevCatz Services group, Windows)
  *   devcatz://services/<kind>   Typesense, Sonic or Sockudo (Windows: they run in DoCatz); same options
+ *   devcatz://storage/<kind>    Storage at that engine (Garage, Ceph run in DoCatz); ?action=start|stop|restart
  *   devcatz://<section>          a rail section (database, storage, …)
  */
 function handleLink(raw: string): void {
@@ -1225,6 +1226,17 @@ function handleLink(raw: string): void {
       return showWindow(`gateways:${id}${u.searchParams.get('install') === '1' ? ':install' : ''}`);
     }
     // DoCatz's DevCatz Services group: devcatz://services/<typesense|sonic|sockudo>[?install=1 | ?action=…].
+    // Object storage that runs as containers (Garage, Ceph — DoCatz lists them under DevCatz Services):
+    // devcatz://storage/<kind> opens Storage there; ?action=start|stop|restart runs that.
+    if (u.hostname === 'storage') {
+      if (!(STORAGE_KINDS as string[]).includes(id)) return showWindow('storage');
+      const action = u.searchParams.get('action');
+      if (action === 'start' || action === 'stop' || action === 'restart') {
+        void herd.storage.action(id as StorageKind, action).catch((e: Error) => console.warn(`devcatz://storage/${id}?action=${action}:`, e.message));
+        return;
+      }
+      return showWindow(`storage:${id}`);
+    }
     if (u.hostname === 'services') {
       if (!isSvcKind(id)) return showWindow('search');
       const action = u.searchParams.get('action');

@@ -50,6 +50,8 @@ export interface BridgeGateway {
  * `services`: servers DevCatz runs that have no Windows build (Typesense, Sonic, Sockudo), in the gateways' shape —
  * on Windows they run in DoCatz's engine (compose project devcatz-svc-<kind>), listed read-only on DoCatz's DevCatz
  * Services page; `link` is devcatz://services/<kind> (?install=1, ?action=start|stop|restart). All three, installed or not.
+ * Also the object storage that runs as containers on every platform (Garage, Ceph; category `storage`, compose project
+ * devcatz-svc-<kind>, `webUi` = its console when it has one), with `link` devcatz://storage/<kind> (?action=…).
  */
 export const bridgeFile = () => join(app.getPath('userData'), 'bridge.json');
 
