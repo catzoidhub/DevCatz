@@ -8,6 +8,7 @@ import { rustDriver } from './rust';
 import { staticDriver } from './static';
 import type { RuntimeDriver } from './types';
 import { withDataLibs } from './datalibs';
+import { withFrameworkVersions } from './fwversion';
 import { detectFolders, projectFolders, siblingApps } from './folders';
 
 /**
@@ -40,7 +41,7 @@ export function detectStack(root: string, domain: string): StackInfo {
   // (frontend/ + backend/ …): every folder becomes an app. A JS workspace keeps its own detection.
   if (!base || (!base.apps.length && !base.monorepo) || ((base.runtime === 'go' || base.runtime === 'rust') && !base.monorepo)) {
     const folders = detectFolders(root, domain, base);
-    if (folders) return withDataLibs(root, folders);
+    if (folders) return withFrameworkVersions(root, withDataLibs(root, folders));
   }
   // A PHP or Python site with projects of other runtimes in its folders (Laravel + frontend/ with Vite, Django +
   // frontend/, FastAPI + api/ with NestJS): the root keeps the site's domain (PHP-FPM, or its own dev server), each
@@ -54,5 +55,5 @@ export function detectStack(root: string, domain: string): StackInfo {
       base.warnings.push(...extra.warnings);
     }
   }
-  return withDataLibs(root, base ?? nodeDriver.detect(root, domain));
+  return withFrameworkVersions(root, withDataLibs(root, base ?? nodeDriver.detect(root, domain)));
 }

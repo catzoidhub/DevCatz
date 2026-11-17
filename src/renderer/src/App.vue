@@ -2,12 +2,13 @@
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { attempt, cloneRequest, dbGroupRequest, gwInstallRequest, svcInstallRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog, runtimeTabRequest, confirmRequest } from './store';
+import { attempt, cloneRequest, dbGroupRequest, gwInstallRequest, svcInstallRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog, updateDialogAuto, runtimeTabRequest, confirmRequest } from './store';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ReportDialog from './components/ReportDialog.vue';
 import UninstallDialog from './components/UninstallDialog.vue';
 import WelcomeDialog from './components/WelcomeDialog.vue';
 import SupportNudge from './components/SupportNudge.vue';
+import UpdatePrompt from './components/UpdatePrompt.vue';
 import CatHeart from './components/CatHeart.vue';
 import McatzpPairDialog from './components/McatzpPairDialog.vue';
 import ProjectView from './components/ProjectView.vue';
@@ -33,7 +34,7 @@ import StatusDot from './components/StatusDot.vue';
 import PopMenu from './components/PopMenu.vue';
 import { groupByType, sortList, useListView } from './listview';
 import { ICONS, STAR } from './icons';
-import { siteStatus, stackTag, isDesktopSite, runtimeLabel } from './runtimes';
+import { siteStatus, stackTag, isDesktopSite, runtimeLabel, withVersion } from './runtimes';
 import { backIndex, backList, canBack, canForward, forwardList, goBack, goForward, goTo, navApply, navPrune, navVisit, type NavEntry } from './nav';
 import type { AppState, ProjectState } from '@shared/types';
 import { isWin, WIN_SECTIONS } from './platform';
@@ -478,6 +479,7 @@ function navigate(target: string) {
   if (target === 'history:forward') return goForward();
   // Check for Updates… / the update notification (Catzoid #54); Help → Report a Bug… / Send Feedback… (#65).
   if (target === 'update:check' || target === 'update:show') {
+    updateDialogAuto.value = false;
     updateDialog.value = true;
     if (target === 'update:check' && !['available', 'downloading', 'downloaded'].includes(state.value?.appUpdate.status ?? '')) void attempt(() => herd.appUpdateCheck());
     return;
@@ -754,7 +756,7 @@ async function park() {
                     <span v-if="gitBadge(p)" class="git-chip shrink-0" :class="{ 'is-warn': p.git?.conflicts || p.git?.operation }" :title="gitTitle(p)">{{ gitBadge(p) }}</span>
                   </div>
                 </div>
-                <span class="shrink-0" :title="`Built with ${stackTag(p).label}`"><StackMark :icon="stackTag(p).icon" :label="stackTag(p).label" class="size-4" /></span>
+                <span class="shrink-0" :title="`Built with ${withVersion(stackTag(p).label, stackTag(p).version, true)}`"><StackMark :icon="stackTag(p).icon" :label="stackTag(p).label" class="size-4" /></span>
               </a>
             </li>
             <!-- Its worktrees, indented under it (branch name, own domain). -->
@@ -864,6 +866,7 @@ async function park() {
     <UninstallDialog />
     <WelcomeDialog />
     <SupportNudge />
+    <UpdatePrompt />
     <McatzpPairDialog />
     <!-- Asked once, after the first crash or error (Catzoid #65). -->
     <dialog v-if="state?.reports.askCrash" open class="modal modal-open">

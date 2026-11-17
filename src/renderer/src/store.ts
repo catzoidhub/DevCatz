@@ -86,6 +86,8 @@ export const navRequest = ref<{ section: 'projects' | 'websocket' | 'search' | '
 
 /** What's New / update progress (Catzoid #54): open from the app menu, the notification, Settings or About. */
 export const updateDialog = ref(false);
+/** The update dialog opened by itself (Catzoid #97): it then offers "Don't open this on its own". */
+export const updateDialogAuto = ref(false);
 /** Report a Bug / Send Feedback (Catzoid #65): the kind it opens with, null = closed. */
 export const reportDialog = ref<ReportKind | null>(null);
 /** Uninstall DevCatz (Catzoid #55). */

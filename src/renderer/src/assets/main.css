@@ -2028,3 +2028,16 @@ html.is-linux .win-top {
   filter: brightness(1.08);
 }
 
+
+/* Rating stars (Catzoid #96, CatStar.vue): gold everywhere; on a light background the edge is a little darker. */
+:root {
+  --cat-star-edge: color-mix(in oklch, #f5b63c 82%, #6b4a00);
+}
+[data-theme='dark'] {
+  --cat-star-edge: #f5b63c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --cat-star-edge: #f5b63c;
+  }
+}

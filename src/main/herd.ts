@@ -81,6 +81,7 @@ import { DialCatz } from './dialcatz';
 import { DoCatz, docatzContainerUrl, docatzHttpsPort, docatzProxyPort } from './docatz';
 import { onSharedChange, sharedDomains, writeShared, type SharedDomains } from './shared';
 import { Reports } from './reports';
+import { Reviews } from './reviews';
 import { AppUpdater } from './updater';
 import { browsersState, editorIcons, validBrowser } from './browsers';
 import { Monitor, type MonitorTarget } from './monitor';
@@ -349,6 +350,7 @@ export class Herd extends EventEmitter {
   readonly updater = new AppUpdater();
   /** Report a Bug / feedback / crash reports to the Catzoid site (Catzoid #65). */
   readonly reports = new Reports();
+  readonly reviews = new Reviews();
   /** Uninstall DevCatz in progress (Catzoid #55). */
   uninstallTask: TaskProgress | null = null;
   /** Trust the local CA / clean URLs, shown as steps in Welcome and Settings (they can wait on an OS prompt a while). */
@@ -465,6 +467,8 @@ export class Herd extends EventEmitter {
     this.updater.onChange = () => this.changed();
     this.updater.headers = () => this.reports.headers();
     this.reports.onChange = () => this.changed();
+    this.reviews.onChange = () => this.changed();
+    this.reviews.installId = () => this.reports.installId();
     void this.dialcatz.locate();
     void this.docatz.locate();
     this.dbs.linkedSites = (sid) => this.projects.filter((p) => p.dbService === sid).map((p) => p.id);

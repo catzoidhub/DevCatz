@@ -2,11 +2,12 @@
 import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { BuildTarget, DbAction, DockerComposeFile, PackageManager, ProjectState, RustToolId } from '@shared/types';
+import { versionText } from '@shared/types';
 import { attempt, herd, navRequest, notify, siteTabRequest, state } from '../store';
 import { navVisit } from '../nav';
 import AiExplain from './AiExplain.vue';
 import { aiOn } from '../ai';
-import { appCommand, frameworkTag, hasExtras, pythonInstallLabel, siteFrameworks, siteStatus, runsPerApp, runtimesOf, usesGo, usesJs, usesPhp, usesPython, usesRuby, portWhy, isDesktopSite, isDesktopApp } from '../runtimes';
+import { appCommand, frameworkTag, withVersion, hasExtras, pythonInstallLabel, siteFrameworks, siteStatus, runsPerApp, runtimesOf, usesGo, usesJs, usesPhp, usesPython, usesRuby, portWhy, isDesktopSite, isDesktopApp } from '../runtimes';
 import StackMark from './StackMark.vue';
 import DataLibsCard from './DataLibsCard.vue';
 import { mark } from '../datamarks';
@@ -679,18 +680,18 @@ async function generateKey() {
                 :key="f.label"
                 class="flex min-w-0 items-center border border-base-300/60 bg-base-200/40"
                 :class="frameworks.length > 2 ? 'gap-2 rounded-lg py-1 pr-2.5 pl-1' : 'gap-2.5 rounded-xl py-1.5 pr-3.5 pl-1.5'"
-                :title="f.main ? `${f.label}: main framework` : `${f.label}: ${f.apps.join(', ')}`"
+                :title="f.main ? `${withVersion(f.label, f.version, true)}: main framework` : `${withVersion(f.label, f.version, true)}: ${f.apps.join(', ')}`"
               >
                 <span class="grid shrink-0 place-items-center bg-base-100 ring-1 ring-base-content/10" :class="frameworks.length > 2 ? 'size-6 rounded-md' : 'size-8 rounded-lg'">
                   <StackMark :icon="f.icon" :label="f.label" :class="frameworks.length > 2 ? 'size-4' : 'size-5'" />
                 </span>
                 <span v-if="frameworks.length > 2" class="min-w-0 truncate text-xs leading-tight">
-                  <span class="font-medium">{{ f.label }}</span>
+                  <span class="font-medium">{{ f.label }}<template v-if="f.version"> {{ versionText(f.version) }}</template></span>
                   <span class="opacity-55"> · {{ f.main ? 'main' : f.apps.join(', ') }}</span>
                 </span>
                 <span v-else class="min-w-0">
-                  <span class="block text-sm font-medium leading-tight">{{ f.label }}</span>
-                  <span class="block text-[11px] leading-tight opacity-55">{{ f.main ? 'main framework' : f.apps.join(', ') }}</span>
+                  <span class="block text-sm font-medium leading-tight">{{ f.label }}<span v-if="f.version" class="font-normal opacity-70"> {{ versionText(f.version) }}</span></span>
+                  <span class="block text-[11px] leading-tight opacity-55">{{ f.main ? 'main framework' : f.apps.join(', ') }}<template v-for="x in f.version?.extras ?? []" :key="x.label"> · {{ x.label }} {{ versionText(x) }}</template></span>
                 </span>
               </li>
             </ul>
@@ -809,6 +810,7 @@ async function generateKey() {
                 <span class="inline-flex items-center gap-1.5">
                   <StackMark :icon="frameworkTag(app.framework, app.library).icon" class="size-3.5 shrink-0" />
                   {{ app.framework === 'mix' ? 'Laravel Mix' : app.kind === 'assets' && app.framework.startsWith('vite') ? 'Vite' : frameworkTag(app.framework, app.library).label }}
+                  <span v-if="app.frameworkVersion" class="opacity-70" :title="withVersion('', app.frameworkVersion, true).trim()">{{ versionText(app.frameworkVersion) }}</span>
                   <span class="opacity-50">({{ app.kind }})</span>
                 </span>
               </td>

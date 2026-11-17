@@ -722,6 +722,7 @@ function api(): HerdApi {
     siteRuntimeNeeds: (siteId) => herd.siteRuntimeNeeds(String(siteId)),
     runtimePick: (kind, spec) => herd.runtimePick(['php', 'node', 'go', 'bun'].includes(kind) ? kind : 'node', spec ? String(spec) : null),
     appUpdateCheck: () => herd.updater.check(true),
+    appUpdateNotes: () => herd.updater.refreshNotes(),
     appUpdateDownload: () => herd.updater.download(),
     appUpdateCancel: async () => herd.updater.cancelDownload(),
     appUpdateRestart: () => restartForUpdate(),
@@ -732,11 +733,13 @@ function api(): HerdApi {
       if (typeof patch.auto === 'boolean') p.appUpdateAuto = patch.auto;
       if (patch.channel === 'stable' || patch.channel === 'beta') p.appUpdateChannel = patch.channel;
       if (typeof patch.notify === 'boolean') p.appUpdateNotify = patch.notify;
+      if (typeof patch.dialog === 'boolean') p.appUpdateDialog = patch.dialog;
       store.updateSettings(p);
       herd.updater.schedule();
       herd.emit('change');
     },
     reportPreview: async (kind, message, email, shots) => herd.reports.preview(reportKind(kind), String(message ?? ''), String(email ?? ''), Number(shots) || 0),
+    ratingSend: (rating, text) => herd.reviews.send(Number(rating), typeof text === 'string' ? text : null),
     reportSend: (kind, message, email, shots) => herd.reports.sendFeedback(reportKind(kind), String(message ?? ''), String(email ?? ''), Array.isArray(shots) ? shots : []),
     // capturePage never answers on some Linux setups (a VM without a GPU, Wayland): the report goes without the picture.
     captureWindow: async () =>
@@ -1353,8 +1356,11 @@ app.whenReady().then(async () => {
   herd.on('change', appMenu);
   // Updates: the feed sends the install id / version / channel headers; a click on the notification opens What's New.
   herd.updater.onShow = () => showWindow('update:show');
+  // The window in front opens the dialog by itself (Catzoid #97): no notification on top of it.
+  herd.updater.inFront = () => !!win && !win.isDestroyed() && win.isVisible() && win.isFocused() && store.settings.appUpdateDialog !== false;
   herd.updater.schedule();
   herd.reports.startCrashReporter();
+  herd.reviews.start();
   if (app.isPackaged) app.setAsDefaultProtocolClient('devcatz'); // not the dev Electron binary
   // Installed browsers and the system default (Settings → Browser), looked at again when DevCatz comes to the front.
   void refreshApps().then((changed) => changed && herd.emit('change'));

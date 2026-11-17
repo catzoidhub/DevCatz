@@ -1,5 +1,5 @@
 import { words } from '@shared/platform';
-import { isPhpFramework, isPythonFramework, isRubyFramework, type BunChoice, type NodeChoice, type ProjectState, type StackInfo } from '@shared/types';
+import { isPhpFramework, isPythonFramework, isRubyFramework, versionText, type FrameworkVersion, type BunChoice, type NodeChoice, type ProjectState, type StackInfo } from '@shared/types';
 import { STACK_ICONS, type StackIcon } from './stackicons';
 
 /** One language runtime a site uses, for the Runtimes card and the version pickers. */
@@ -292,10 +292,16 @@ export function frameworkTag(fw: string, library?: string | null): { label: stri
   return { label, icon: STACK_ICONS[icon] ?? STACK_ICONS.javascript };
 }
 
+/** "Laravel 13.2 · Livewire 4.3 · Vue 3.5" (TODO §41): the name with its version and libraries, for tooltips. */
+export function withVersion(label: string, v: FrameworkVersion | null | undefined, full = false): string {
+  if (!v) return label;
+  return [`${label} ${versionText(v, full)}`, ...(v.extras ?? []).map((x) => `${x.label} ${versionText(x, full)}`)].join(' · ');
+}
+
 /** The site's framework (or language) for the site list: its web app's mark and name (Laravel, Nuxt, Go, …). */
-export function stackTag(p: ProjectState): { label: string; icon: StackIcon } {
+export function stackTag(p: ProjectState): { label: string; icon: StackIcon; version?: FrameworkVersion | null } {
   const web = p.stack.apps.find((a) => a.kind === 'web') ?? p.stack.apps[0];
-  return frameworkTag(web?.framework ?? (p.stack.runtime === 'go' || p.stack.runtime === 'python' || p.stack.runtime === 'rust' || p.stack.runtime === 'ruby' ? p.stack.runtime : 'node'), web?.library);
+  return { version: web?.frameworkVersion ?? null, ...frameworkTag(web?.framework ?? (p.stack.runtime === 'go' || p.stack.runtime === 'python' || p.stack.runtime === 'rust' || p.stack.runtime === 'ruby' ? p.stack.runtime : 'node'), web?.library) };
 }
 
 /**
@@ -303,15 +309,15 @@ export function stackTag(p: ProjectState): { label: string; icon: StackIcon } {
  * Next.js web app and NestJS API; Vite asset servers behind a PHP site are not
  * frameworks of their own). Each with the apps that use it.
  */
-export function siteFrameworks(p: ProjectState): { label: string; icon: StackIcon; apps: string[]; main: boolean }[] {
+export function siteFrameworks(p: ProjectState): { label: string; icon: StackIcon; apps: string[]; main: boolean; version?: FrameworkVersion | null }[] {
   const main = stackTag(p);
-  const out: { label: string; icon: StackIcon; apps: string[]; main: boolean }[] = [{ ...main, apps: [], main: true }];
+  const out: { label: string; icon: StackIcon; apps: string[]; main: boolean; version?: FrameworkVersion | null }[] = [{ ...main, apps: [], main: true }];
   for (const a of p.stack.apps) {
     if (a.kind === 'assets') continue;
     const t = frameworkTag(a.framework, a.library);
     const hit = out.find((x) => x.label === t.label);
     if (hit) hit.apps.push(a.name);
-    else out.push({ ...t, apps: [a.name], main: false });
+    else out.push({ ...t, apps: [a.name], main: false, version: a.frameworkVersion ?? null });
   }
   return out;
 }

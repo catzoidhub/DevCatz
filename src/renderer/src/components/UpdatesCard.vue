@@ -57,8 +57,15 @@ const prefs = (patch: Parameters<typeof herd.appUpdatePrefs>[0]) => attempt(() =
       </label>
       <label class="flex cursor-pointer items-center justify-between gap-4">
         <span>
+          <span class="block">Show what's new when an update is found</span>
+          <span class="block text-xs opacity-60">The update window opens by itself once per version, when you are not busy. Later asks again on the next launch.</span>
+        </span>
+        <input type="checkbox" class="toggle toggle-sm toggle-primary" :checked="s.appUpdateDialog !== false" @change="prefs({ dialog: ($event.target as HTMLInputElement).checked })" />
+      </label>
+      <label class="flex cursor-pointer items-center justify-between gap-4">
+        <span>
           <span class="block">Notify me</span>
-          <span class="block text-xs opacity-60">A notification once per new version (not for a version you skipped).</span>
+          <span class="block text-xs opacity-60">A notification once per new version when DevCatz is not in front (not for a version you skipped).</span>
         </span>
         <input type="checkbox" class="toggle toggle-sm toggle-primary" :checked="s.appUpdateNotify" @change="prefs({ notify: ($event.target as HTMLInputElement).checked })" />
       </label>

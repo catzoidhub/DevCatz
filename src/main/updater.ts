@@ -36,6 +36,8 @@ export class AppUpdater {
   headers: () => Record<string, string> = () => ({});
   /** "click to see what's new" from the notification: the window opens the What's New dialog. */
   onShow: () => void = () => undefined;
+  /** The window is in front and opens the update dialog by itself (Catzoid #97): the notification would only repeat it. */
+  inFront: () => boolean = () => false;
   private st: AppUpdateState = {
     status: 'idle',
     current: app.getVersion(),
@@ -65,7 +67,7 @@ export class AppUpdater {
     );
     autoUpdater.on('update-downloaded', () => {
       this.set({ status: 'downloaded', progress: null });
-      if (store.settings.appUpdateNotify && Notification.isSupported()) {
+      if (store.settings.appUpdateNotify && !this.inFront() && Notification.isSupported()) {
         const n = new Notification({ title: `DevCatz ${this.st.version} is ready to install`, body: 'Restart DevCatz to finish the update.' });
         n.on('click', () => this.onShow());
         n.show();
@@ -121,8 +123,10 @@ export class AppUpdater {
         notes: await this.notesSince(info),
         lastChecked: Date.now(),
       });
+      this.lastInfo = info;
+      this.retryNotes();
       const s = store.settings;
-      if (!manual && s.appUpdateNotify && s.appUpdateSkip !== info.version && s.appUpdateNotified !== info.version && Notification.isSupported()) {
+      if (!manual && s.appUpdateNotify && s.appUpdateSkip !== info.version && s.appUpdateNotified !== info.version && !this.inFront() && Notification.isSupported()) {
         store.updateSettings({ appUpdateNotified: info.version });
         const n = new Notification({ title: `DevCatz ${info.version} is available`, body: "Click to see what's new." });
         n.on('click', () => this.onShow());
@@ -137,24 +141,66 @@ export class AppUpdater {
     return this.st;
   }
 
-  /** Release notes of every version after the installed one (the site's API), else the feed's own notes. */
+  /**
+   * Release notes of every version after the installed one (the site's API), else the feed's own notes (empty for our
+   * builds). "Sometimes no notes" (user, 2026-11-18): one slow or failed request, or the site's GitHub cache not having
+   * the new release yet, left What's New empty until the next check 6 h later. Now: three tries, and while the newest
+   * version's notes are missing they are fetched again every 5 minutes (an hour at most) and when the dialog opens.
+   */
   private async notesSince(info: UpdateInfo): Promise<AppUpdateState['notes']> {
     const newer = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }) > 0;
-    try {
-      const res = await net.fetch(`${siteBase()}/api/devcatz/releases`, { headers: this.headers(), signal: AbortSignal.timeout(10_000) });
-      if (res.ok) {
+    const beta = store.settings.appUpdateChannel === 'beta';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, attempt * 3000));
+      try {
+        const res = await net.fetch(`${siteBase()}/api/devcatz/releases`, { headers: this.headers(), signal: AbortSignal.timeout(15_000) });
+        if (!res.ok) continue;
         const list = (await res.json()) as { version: string; date: string | null; notes: string }[];
-        const beta = store.settings.appUpdateChannel === 'beta';
         const out = list
           .filter((r) => newer(r.version, this.st.current) && !newer(r.version, info.version) && (beta || !r.version.includes('-')))
           .map((r) => ({ version: r.version, date: r.date, notes: r.notes ?? '' }));
         if (out.length) return out;
+        break; // answered, but without this release yet: the retries below pick it up
+      } catch {
+        /* next try */
       }
-    } catch {
-      /* the feed's notes below */
     }
     const own = Array.isArray(info.releaseNotes) ? info.releaseNotes.map((n) => n.note ?? '').join('\n\n') : (info.releaseNotes ?? '');
     return [{ version: info.version, date: info.releaseDate ?? null, notes: own }];
+  }
+
+  /** The newest version's notes are missing (see notesSince). */
+  private notesMissing(): boolean {
+    const v = this.st.version;
+    return !!v && !this.st.notes.find((n) => n.version === v)?.notes.trim();
+  }
+
+  private notesTimer: ReturnType<typeof setInterval> | null = null;
+  private lastInfo: UpdateInfo | null = null;
+
+  /** Fetches the notes again while they are missing: every 5 minutes for an hour, and when What's New opens. */
+  async refreshNotes(): Promise<void> {
+    const info = this.lastInfo;
+    if (!info || !this.notesMissing() || !['available', 'downloading', 'downloaded'].includes(this.st.status)) return this.stopNotes();
+    const notes = await this.notesSince(info);
+    if (info !== this.lastInfo) return;
+    if (notes.some((n) => n.notes.trim())) this.set({ notes });
+    if (!this.notesMissing()) this.stopNotes();
+  }
+
+  private retryNotes(): void {
+    this.stopNotes();
+    if (!this.notesMissing()) return;
+    let left = 12;
+    this.notesTimer = setInterval(() => {
+      if (--left < 0) return this.stopNotes();
+      void this.refreshNotes();
+    }, 5 * 60_000);
+  }
+
+  private stopNotes(): void {
+    if (this.notesTimer) clearInterval(this.notesTimer);
+    this.notesTimer = null;
   }
 
   /** Downloads the update (the zip; SHA-512 checked); progress in the state. */

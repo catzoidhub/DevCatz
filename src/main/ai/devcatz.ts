@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import type {
+  FrameworkVersion,
   AiAction,
   AiActionKind,
   AiAskAnswer,
@@ -29,6 +30,10 @@ import { git, repoRoot } from '../git';
 import { AiClient } from './client';
 import { isLinux, isWin } from '../platform';
 import { needFeature } from './settings';
+
+/** " 13.2.1 (+ Livewire 4.3.0)" / " 13.x (declared)": the framework version the project uses (TODO §41), so answers match it. */
+const fwv = (v: FrameworkVersion | null | undefined): string =>
+  v ? ` ${v.exact ? v.version : `${v.version}.x (declared, not installed)`}${v.extras?.length ? ` + ${v.extras.map((x) => `${x.label} ${x.exact ? x.version : `${x.version}.x`}`).join(', ')}` : ''}` : '';
 
 /**
  * DevCatz's AI features (TODO §28): each builds a system prompt from what DevCatz knows (stack, logs, Git,
@@ -209,7 +214,7 @@ export class DevCatzAi {
   /** The site in a few lines: stack, frameworks, runtime versions, dev command, services, tasks. */
   private siteContext(p: ProjectState): string[] {
     const s = p.stack;
-    const apps = s.apps.map((a) => `${a.name} (${a.framework}${a.library ? ` / ${a.library}` : ''}, ${a.kind}${a.port ? `, port ${a.port}` : ''})`).join('; ');
+    const apps = s.apps.map((a) => `${a.name} (${a.framework}${a.library ? ` / ${a.library}` : ''}${fwv(a.frameworkVersion)}, ${a.kind}${a.port ? `, port ${a.port}` : ''})`).join('; ');
     const rt = [
       s.runtime === 'node' || s.packageManager ? `Node ${p.node.version ?? '?'}${s.packageManager ? `, ${s.packageManager}` : ''}` : '',
       s.runtime === 'php' ? `PHP ${p.php.version ?? '?'} (installed: ${this.herd.phpVersions().join(', ') || 'none'})` : '',
@@ -538,7 +543,7 @@ export class DevCatzAi {
       const p = this.herd.state(c);
       const links = [p.dbService && `database ${p.dbService}`, c.storageService && `storage ${c.storageService}`, c.searchEngine && `search ${c.searchEngine}`, c.wsServer && `WebSocket ${c.wsServer}`].filter(Boolean).join(', ');
       const switches = SITE_SWITCHES.filter((k) => c[k]).join(', ');
-      return `${p.id}: "${p.name}" ${p.domain} — ${p.stack.runtime}${p.stack.apps[0] ? ` ${p.stack.apps[0].library ?? p.stack.apps[0].framework}` : ''}, ${p.status}${p.worktreeOf ? `, worktree of ${p.worktreeOf}` : ''}${links ? `; uses ${links}` : ''}${switches ? `; on: ${switches}` : ''}`;
+      return `${p.id}: "${p.name}" ${p.domain} — ${p.stack.runtime}${p.stack.apps[0] ? ` ${p.stack.apps[0].library ?? p.stack.apps[0].framework}${fwv(p.stack.apps[0].frameworkVersion)}` : ''}, ${p.status}${p.worktreeOf ? `, worktree of ${p.worktreeOf}` : ''}${links ? `; uses ${links}` : ''}${switches ? `; on: ${switches}` : ''}`;
     });
     const shares = this.shareLines();
     const system = [

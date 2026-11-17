@@ -52,6 +52,8 @@ const DEFAULT_SETTINGS: Settings = {
   appUpdateNotify: true,
   appUpdateSkip: null,
   appUpdateNotified: null,
+  appUpdateDialog: true,
+  appUpdatePromptAt: null,
   resumeSites: [],
   crashReports: false,
   crashAsked: false,

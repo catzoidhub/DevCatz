@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorUpdate } from '@shared/types';
 import Sparkline from './Sparkline.vue';
 import StackMark from './StackMark.vue';
-import { stackTag } from '../runtimes';
+import { stackTag, withVersion } from '../runtimes';
 import { STACK_ICONS } from '../stackicons';
 import { ICONS } from '../icons';
 import DepsCleanup from './DepsCleanup.vue';
@@ -329,7 +329,7 @@ const minutesShown = 10;
                       style="color: var(--c-runtimes); background: color-mix(in oklch, var(--c-runtimes) 14%, transparent)"
                       ><svg class="size-3.5" :viewBox="RUNTIME_ICON[e.kind]!.box" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="RUNTIME_ICON[e.kind]!.d" /></svg
                     ></span>
-                    <span v-else-if="siteTagOf(e)" class="shrink-0" :title="`Built with ${siteTagOf(e)!.label}`"><StackMark :icon="siteTagOf(e)!.icon" :label="siteTagOf(e)!.label" class="size-5" /></span>
+                    <span v-else-if="siteTagOf(e)" class="shrink-0" :title="`Built with ${withVersion(siteTagOf(e)!.label, siteTagOf(e)!.version, true)}`"><StackMark :icon="siteTagOf(e)!.icon" :label="siteTagOf(e)!.label" class="size-5" /></span>
                     <img v-else-if="logoOf(e)" :src="logoOf(e)!" alt="" class="size-5 shrink-0 rounded bg-white object-contain p-px" draggable="false" />
                     <span v-else class="size-2.5 shrink-0 rounded-full" :style="{ background: KIND_COLOR[e.kind] }" />
                     <div class="min-w-0">

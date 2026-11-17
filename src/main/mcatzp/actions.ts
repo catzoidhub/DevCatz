@@ -38,7 +38,8 @@ function runtimeProgress(r: RuntimeInstallProgress | null | undefined): { messag
 
 const reply = (data: unknown): CallResult => ({ text: JSON.stringify(data, null, 2), data });
 
-const appsOf = (p: ProjectState) => p.stack.apps.map((a) => ({ dir: a.dir, name: a.name, framework: a.framework, library: a.library ?? null, kind: a.kind, port: a.port }));
+/** Each app with its framework and the version the project uses (TODO §41: exact = installed, else a declared range). */
+const appsOf = (p: ProjectState) => p.stack.apps.map((a) => ({ dir: a.dir, name: a.name, framework: a.framework, library: a.library ?? null, frameworkVersion: a.frameworkVersion ?? null, kind: a.kind, port: a.port }));
 
 /** One site by id, name or domain; a name two sites share is refused rather than guessed. */
 export function findSite(projects: Pick<ProjectState, 'id' | 'name' | 'domain'>[], ref: string): string {
@@ -110,7 +111,7 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
   const read = (name: string, title: string, description: string, input: ReturnType<typeof OBJECT>, run: (args: Record<string, unknown>) => Promise<CallResult>): ActionDef => ({ name, title, description, tier: 'read', input, run });
 
   return [
-    read('list_sites', 'List sites', 'The sites DevCatz runs: name, domain, folder, status, whether it is a favorite, its sidebar group, and its apps with framework and port.', OBJECT(), async () => {
+    read('list_sites', 'List sites', 'The sites DevCatz runs: name, domain, folder, status, whether it is a favorite, its sidebar group, and its apps with framework, framework version and port.', OBJECT(), async () => {
       const { projects: all, settings } = await state();
       const projects = all.filter((p) => scopes.site(p.id));
       if (!projects.length) return { text: NOTHING_SHARED, data: [] };

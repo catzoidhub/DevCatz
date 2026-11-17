@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import CatMood from './CatMood.vue';
-import { attempt, herd, state, updateDialog } from '../store';
+import { attempt, herd, state, updateDialog, updateDialogAuto } from '../store';
 import devcatzLogo from '../assets/logos/devcatz.svg';
 import { downloadPlatform } from '../platform';
 
@@ -69,6 +69,15 @@ async function skip() {
   updateDialog.value = false;
 }
 const close = () => (updateDialog.value = false);
+/** The newest version's notes did not come (a failed request, the site not caught up yet): ask again on open. */
+const notesMissing = computed(() => !!u.value?.version && !u.value.notes.find((n) => n.version === u.value?.version)?.notes.trim());
+watch(
+  () => updateDialog.value && notesMissing.value,
+  (ask) => ask && void herd.appUpdateNotes().catch(() => undefined),
+  { immediate: true },
+);
+/** "Don't open this on its own" (Catzoid #97), shown when the dialog opened by itself; Settings → Updates has it too. */
+const quiet = (off: boolean) => attempt(() => herd.appUpdatePrefs({ dialog: !off }));
 </script>
 
 <template>
@@ -100,7 +109,10 @@ const close = () => (updateDialog.value = false);
               <span class="text-xs opacity-50">{{ date(n.date) }}</span>
             </div>
             <div v-if="n.notes.trim()" class="selectable" v-html="md(n.notes)" />
-            <p v-else class="opacity-50">No notes for this version.</p>
+            <p v-else class="opacity-60">
+              The notes did not load yet.
+              <button type="button" class="link link-hover" @click="herd.openUrl(`${site}/devcatz/download#versions`)">Read them on the site</button>
+            </p>
           </section>
         </div>
 
@@ -134,7 +146,11 @@ const close = () => (updateDialog.value = false);
         </div>
         <p v-if="u.dev && u.status === 'available'" class="text-xs opacity-60">A development build: it shows updates but cannot install them.</p>
 
-        <div class="modal-action flex-wrap">
+        <div class="modal-action flex-wrap items-center">
+          <label v-if="updateDialogAuto && (u.status === 'available' || u.status === 'downloaded')" class="mr-auto flex cursor-pointer items-center gap-2 text-xs opacity-70">
+            <input type="checkbox" class="checkbox checkbox-xs" :checked="state?.settings.appUpdateDialog === false" @change="quiet(($event.target as HTMLInputElement).checked)" />
+            Don't open this on its own
+          </label>
           <template v-if="u.status === 'available'">
             <button type="button" class="btn btn-ghost btn-sm" @click="skip">Skip this version</button>
             <button type="button" class="btn btn-ghost btn-sm" @click="close">Later</button>

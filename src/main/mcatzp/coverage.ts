@@ -622,6 +622,7 @@ export const MCATZP_COVERAGE = {
   // never: reports go out in the users name
   reportPreview: 'never: reports go out in the users name',
   reportSend: 'never: reports go out in the users name',
+  ratingSend: 'never: a rating goes out in the users name',
   reportError: 'never: reports go out in the users name',
   setCrashReports: 'never: reports go out in the users name',
   crashAskDismiss: 'never: reports go out in the users name',
@@ -640,6 +641,7 @@ export const MCATZP_COVERAGE = {
   updateSettings: 'never: the app itself (user, 2026-11-04)',
   // never: updating the app itself stays with the user
   appUpdateDownload: 'never: updating the app itself stays with the user',
+  appUpdateNotes: 'not a tool',
   appUpdateCancel: 'never: updating the app itself stays with the user',
   appUpdateRestart: 'never: updating the app itself stays with the user',
   appUpdateSkip: 'never: updating the app itself stays with the user',

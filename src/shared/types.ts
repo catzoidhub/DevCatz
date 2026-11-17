@@ -55,6 +55,23 @@ export const isRubyFramework = (f: Framework) => RUBY_FRAMEWORKS.includes(f);
 export const isPhpFramework = (f: Framework) => PHP_FRAMEWORKS.includes(f);
 export const isPythonFramework = (f: Framework) => PYTHON_FRAMEWORKS.includes(f);
 
+/** A framework's version (TODO §41): "13.2.1" exact, or "13" from a range ("^13.0" → shown as "13.x"). */
+export interface FrameworkVersion {
+  version: string;
+  exact: boolean;
+  /** Libraries that shape the project, with theirs (Laravel + Livewire / Inertia + Vue, Nuxt + Vue). */
+  extras?: { label: string; version: string; exact: boolean }[];
+}
+
+/** "13.2" (the list), "13.2.1" (full), "13.x" (from a range). */
+export function versionText(v: { version: string; exact: boolean } | null | undefined, full = false): string {
+  if (!v) return '';
+  if (!v.exact) return `${v.version}.x`;
+  if (full) return v.version;
+  const [maj, min] = v.version.split(/[.-]/);
+  return min !== undefined && /^\d+$/.test(min) ? `${maj}.${min}` : maj;
+}
+
 /** One runnable app inside a project (the project itself, or a workspace). */
 export interface AppInfo {
   /** Workspace-relative directory ('.' for a single-package project). */
@@ -69,6 +86,11 @@ export interface AppInfo {
    * aiohttp …): for its label and mark only. Null when none was recognised.
    */
   library?: string | null;
+  /**
+   * The framework's (or `library`'s) version the project uses (TODO §41), from its lockfile / installed packages; a
+   * declared range when nothing is installed (`exact: false`, shown as "13.x"). Null when unknown.
+   */
+  frameworkVersion?: FrameworkVersion | null;
   devScript: string | null;
   /** Port the dev server listens on (the managed one when DevCatz assigns ports). */
   port: number | null;
@@ -140,6 +162,15 @@ export interface UninstallPlan {
 }
 
 /** DevCatz's own update (Catzoid #54), from the feed `<site>/updates/devcatz/`. */
+/** One rating of DevCatz (Catzoid #96). status: none = stars only; pending = the text waits for the team. */
+export interface SupportRating {
+  rating: number;
+  text: string | null;
+  status: 'none' | 'pending' | 'approved' | 'hidden';
+  version: string;
+  sentAt: number;
+}
+
 export interface AppUpdateState {
   status: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'downloaded' | 'error';
   /** The installed version. */
@@ -890,6 +921,11 @@ export interface Settings {
   appUpdateSkip: string | null;
   /** The version the notification was shown for. */
   appUpdateNotified: string | null;
+  /** The What's New dialog opens by itself when a new version is found (Catzoid #97); off = only the dot, Settings
+   * and the notification. Missing in older settings = on. */
+  appUpdateDialog?: boolean;
+  /** When the dialog last opened by itself: Later brings it back on the next launch or 24 h after this. */
+  appUpdatePromptAt?: number | null;
   /** Sites that ran before an update restart: started again on the next launch, then cleared. */
   resumeSites: string[];
   /** Crash and error reports to the Catzoid site (Catzoid #65): off until the user turns them on. */
@@ -907,6 +943,10 @@ export interface Settings {
   supportLater?: number;
   supportLaterAt?: number;
   supportOff?: boolean;
+  /** Your rating (Catzoid #96): what the site answered — the cleaned text and whether it is shown yet. */
+  supportRating?: SupportRating | null;
+  /** A rating sent without a connection: it goes by itself later. */
+  supportRatingQueued?: { rating: number; text: string | null; at: number } | null;
   /** Site ids pinned at the top of the sidebar. */
   favorites: string[];
   /** Sidebar groups, in display order; a site is in at most one. */
@@ -2959,16 +2999,20 @@ export interface HerdApi {
   aboutInfo(): Promise<AboutInfo>;
   /** DevCatz's own updates (Catzoid #54). */
   appUpdateCheck(): Promise<AppUpdateState>;
+  /** Fetches the release notes again when they are missing (What's New opened). */
+  appUpdateNotes(): Promise<void>;
   appUpdateDownload(): Promise<void>;
   appUpdateCancel(): Promise<void>;
   /** Stops everything, installs the downloaded update and starts DevCatz again (running sites come back). */
   appUpdateRestart(): Promise<void>;
   appUpdateSkip(): Promise<void>;
   appUpdateInstallOnQuit(on: boolean): Promise<void>;
-  appUpdatePrefs(patch: { auto?: boolean; channel?: 'stable' | 'beta'; notify?: boolean }): Promise<void>;
+  appUpdatePrefs(patch: { auto?: boolean; channel?: 'stable' | 'beta'; notify?: boolean; dialog?: boolean }): Promise<void>;
   /** Report a Bug / Send Feedback (Catzoid #65). */
   reportPreview(kind: ReportKind, message: string, email: string, shots?: number): Promise<ReportPreview>;
   reportSend(kind: ReportKind, message: string, email: string, shots?: ReportShot[]): Promise<{ sent: boolean; queued: boolean }>;
+  /** Rate DevCatz 1–5 with an optional review (Catzoid #96); queued when offline. */
+  ratingSend(rating: number, text: string | null): Promise<{ sent: boolean; queued: boolean }>;
   /** The window as a PNG (base64), for "Capture this window" in Report a Bug (the dialog hides itself first). */
   captureWindow(): Promise<string>;
   /** An uncaught error in the window (sent only with crash reports on). */
@@ -3479,7 +3523,7 @@ export interface HerdApi {
 export const API_METHODS: (keyof HerdApi)[] = [
   'mcatzpSetup', 'mcatzpInstall', 'mcatzpUninstall', 'mcatzpInstallCancel', 'mcatzpApprovals', 'mcatzpTargets', 'mcatzpAddToClient', 'mcatzpRemoveFromClient',
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
-  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
+  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateNotes', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'ratingSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'pickEditor', 'siteRun', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',
