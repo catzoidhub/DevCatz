@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import CatMood from './CatMood.vue';
 import { attempt, herd, state, updateDialog, updateDialogAuto } from '../store';
 import devcatzLogo from '../assets/logos/devcatz.svg';
@@ -49,6 +49,12 @@ function md(src: string): string {
     }
     if (list) out.push('</ul>');
     list = false;
+    // "> note" (a quote in the release notes): shown as a plain paragraph, without the ">".
+    const q = line.match(/^\s*>\s?(.*)$/);
+    if (q) {
+      if (q[1].trim()) out.push(`<p class="opacity-80">${inline(q[1])}</p>`);
+      continue;
+    }
     const h = line.match(/^#{1,4}\s+(.*)$/);
     if (h) out.push(`<h4>${inline(h[1])}</h4>`);
     else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
@@ -69,6 +75,12 @@ async function skip() {
   updateDialog.value = false;
 }
 const close = () => (updateDialog.value = false);
+/** What's New starts at the newest version's first line, not wherever focus scrolled it. */
+const notesBox = ref<HTMLElement | null>(null);
+watch(
+  () => updateDialog.value && u.value?.version,
+  (open) => open && void nextTick(() => notesBox.value && (notesBox.value.scrollTop = 0)),
+);
 /** The newest version's notes did not come (a failed request, the site not caught up yet): ask again on open. */
 const notesMissing = computed(() => !!u.value?.version && !u.value.notes.find((n) => n.version === u.value?.version)?.notes.trim());
 watch(
@@ -102,7 +114,7 @@ const quiet = (off: boolean) => attempt(() => herd.appUpdatePrefs({ dialog: !off
         </div>
 
         <!-- What's New -->
-        <div v-if="u.notes.length && (u.status === 'available' || u.status === 'downloading' || u.status === 'downloaded')" class="update-notes max-h-72 space-y-4 overflow-y-auto rounded-box bg-base-200/60 px-4 py-3 text-sm">
+        <div v-if="u.notes.length && (u.status === 'available' || u.status === 'downloading' || u.status === 'downloaded')" ref="notesBox" class="update-notes max-h-72 space-y-4 overflow-y-auto rounded-box bg-base-200/60 px-4 py-3 text-sm">
           <section v-for="n in u.notes" :key="n.version">
             <div class="mb-1 flex items-baseline gap-2">
               <span class="font-semibold">{{ n.version }}</span>
