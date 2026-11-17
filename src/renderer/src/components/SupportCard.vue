@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import CatHeart from './CatHeart.vue';
 import CatStar from './CatStar.vue';
 import RatingForm from './RatingForm.vue';
 import { SUPPORT_TEXT, openCommunity, openDonate } from '../support';
-import { state } from '../store';
+import { herd, state } from '../store';
 
 /**
  * Settings → About: Support Catzoid (Catzoid #94), always there; the heart in the rail and the corner card lead here.
@@ -20,6 +20,17 @@ function stop() {
   editing.value = false;
   formKey.value++;
 }
+// The team's reply and the status come from the site (Catzoid #96): read again when About opens, and the reply
+// counts as seen once shown here (the dot on the rail's heart goes).
+onMounted(() => void herd.ratingRefresh().catch(() => undefined));
+watch(
+  () => mine.value?.repliedAt,
+  (at) => {
+    if (at && s.value?.supportReplySeen !== at) void herd.updateSettings({ supportReplySeen: at }).catch(() => undefined);
+  },
+  { immediate: true },
+);
+const replyDate = computed(() => (mine.value?.repliedAt ? new Date(mine.value.repliedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : ''));
 const status = computed(() => {
   const m = mine.value;
   if (!m?.text) return '';
@@ -55,6 +66,13 @@ const status = computed(() => {
           <p v-if="queued" class="w-full text-xs opacity-60">Not sent yet: it goes by itself when DevCatz is online.</p>
           <p v-else-if="mine?.text" class="selectable w-full text-xs leading-relaxed opacity-70">“{{ mine.text }}”</p>
           <p v-if="status && !queued" class="w-full text-[11px] opacity-50">{{ status }}</p>
+          <div v-if="mine?.reply && !queued" class="mt-1.5 flex w-full gap-2.5 rounded-box bg-base-200/60 px-3 py-2.5">
+            <span class="grid size-6 shrink-0 place-items-center rounded-full bg-primary/12 text-[var(--primary-ink,var(--color-primary))]"><CatHeart class="size-4" /></span>
+            <div class="min-w-0 space-y-0.5">
+              <p class="text-xs font-medium">Reply from the Catzoid team<span v-if="replyDate" class="font-normal opacity-50"> · {{ replyDate }}</span></p>
+              <p class="selectable text-xs leading-relaxed whitespace-pre-line opacity-80">{{ mine.reply }}</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

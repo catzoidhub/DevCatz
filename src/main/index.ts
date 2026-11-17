@@ -765,6 +765,7 @@ function api(): HerdApi {
       herd.emit('change');
     },
     reportPreview: async (kind, message, email, shots) => herd.reports.preview(reportKind(kind), String(message ?? ''), String(email ?? ''), Number(shots) || 0),
+    ratingRefresh: () => herd.reviews.refresh(),
     ratingSend: (rating, text) => herd.reviews.send(Number(rating), typeof text === 'string' ? text : null),
     reportSend: (kind, message, email, shots) => herd.reports.sendFeedback(reportKind(kind), String(message ?? ''), String(email ?? ''), Array.isArray(shots) ? shots : []),
     // capturePage never answers on some Linux setups (a VM without a GPU, Wayland): the report goes without the picture.
@@ -1488,7 +1489,9 @@ app.whenReady().then(async () => {
     // Keep the UI usable; the Settings page shows proxy/certificate state.
     console.error('DevCatz failed to initialise:', err);
   }
-  if (app.dock && existsSync(join(RESOURCES, 'icon.png'))) app.dock.setIcon(join(RESOURCES, 'icon.png'));
+  // Only the development build needs it (Electron's own icon otherwise): the packaged app has its .icns, and setting a
+  // 1024 px PNG kept ~30 MB of decoded image in the main process (Catzoid #95).
+  if (!app.isPackaged && app.dock && existsSync(join(RESOURCES, 'icon.png'))) app.dock.setIcon(join(RESOURCES, 'icon.png'));
   await finishMigration();
   herd.autoStart();
   // Started by the login item: live quietly in the menu bar, like Laravel Herd.

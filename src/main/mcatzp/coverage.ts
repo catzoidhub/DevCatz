@@ -623,6 +623,7 @@ export const MCATZP_COVERAGE = {
   reportPreview: 'never: reports go out in the users name',
   reportSend: 'never: reports go out in the users name',
   ratingSend: 'never: a rating goes out in the users name',
+  ratingRefresh: 'not a tool',
   reportError: 'never: reports go out in the users name',
   setCrashReports: 'never: reports go out in the users name',
   crashAskDismiss: 'never: reports go out in the users name',

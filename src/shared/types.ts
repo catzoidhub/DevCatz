@@ -169,6 +169,9 @@ export interface SupportRating {
   status: 'none' | 'pending' | 'approved' | 'hidden';
   version: string;
   sentAt: number;
+  /** The Catzoid team's answer (plain text) and when it was written. */
+  reply?: string | null;
+  repliedAt?: string | null;
 }
 
 export interface AppUpdateState {
@@ -949,6 +952,8 @@ export interface Settings {
   supportRating?: SupportRating | null;
   /** A rating sent without a connection: it goes by itself later. */
   supportRatingQueued?: { rating: number; text: string | null; at: number } | null;
+  /** The reply already seen in Settings → About (its repliedAt): a newer one puts a dot on the rail's heart. */
+  supportReplySeen?: string | null;
   /** Site ids pinned at the top of the sidebar. */
   favorites: string[];
   /** Sidebar groups, in display order; a site is in at most one. */
@@ -3015,6 +3020,8 @@ export interface HerdApi {
   reportSend(kind: ReportKind, message: string, email: string, shots?: ReportShot[]): Promise<{ sent: boolean; queued: boolean }>;
   /** Rate DevCatz 1–5 with an optional review (Catzoid #96); queued when offline. */
   ratingSend(rating: number, text: string | null): Promise<{ sent: boolean; queued: boolean }>;
+  /** Reads this install's own review again (the team's reply, the status); quiet when offline. */
+  ratingRefresh(): Promise<void>;
   /** The window as a PNG (base64), for "Capture this window" in Report a Bug (the dialog hides itself first). */
   captureWindow(): Promise<string>;
   /** An uncaught error in the window (sent only with crash reports on). */
@@ -3525,7 +3532,7 @@ export interface HerdApi {
 export const API_METHODS: (keyof HerdApi)[] = [
   'mcatzpSetup', 'mcatzpInstall', 'mcatzpUninstall', 'mcatzpInstallCancel', 'mcatzpApprovals', 'mcatzpTargets', 'mcatzpAddToClient', 'mcatzpRemoveFromClient',
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
-  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateNotes', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'ratingSend', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
+  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateNotes', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'ratingSend', 'ratingRefresh', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'pickEditor', 'siteRun', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',

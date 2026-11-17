@@ -401,6 +401,11 @@ onBeforeUnmount(() => {
 const reportWindowError = (message: string, stack?: string | null) => void herd.reportError(message, stack ?? null).catch(() => undefined);
 window.addEventListener('error', (e) => reportWindowError(e.message, (e.error as Error | undefined)?.stack));
 window.addEventListener('unhandledrejection', (e) => reportWindowError(String((e.reason as Error)?.message ?? e.reason), (e.reason as Error)?.stack));
+/** The Catzoid team replied to this install's rating and it was not seen in Settings → About yet (Catzoid #96). */
+const replyDot = computed(() => {
+  const s = state.value?.settings;
+  return !!s?.supportRating?.repliedAt && s.supportRating.repliedAt !== s.supportReplySeen;
+});
 /** A DevCatz update waits that was not skipped: a dot on the Settings gear. */
 const updateDot = computed(() => {
   const u = state.value?.appUpdate;
@@ -657,8 +662,9 @@ async function park() {
       <!-- Settings stays put below the scrolling sections: a divider keeps the cut clean. -->
       <div class="mb-2 h-px w-12 shrink-0 bg-base-content/15" />
       <!-- Support Catzoid (Catzoid #94): small and quiet, always there; no badge, no animation. -->
-      <button class="support-heart mb-1 grid size-8 shrink-0 place-items-center rounded-[10px]" title="Support Catzoid" @click="navigate('support')">
+      <button class="support-heart relative mb-1 grid size-8 shrink-0 place-items-center rounded-[10px]" :title="replyDot ? 'The Catzoid team replied to your rating' : 'Support Catzoid'" @click="navigate('support')">
         <CatHeart class="size-5" />
+        <span v-if="replyDot" class="absolute top-0.5 right-0.5 size-2 rounded-full bg-primary ring-2 ring-base-200" />
       </button>
       <button class="rail-item relative shrink-0" :class="{ 'is-active': section === 'settings' }" style="--rail-c: var(--c-settings)" :title="`Settings (${keyLabel('mod+,')})`" @click="section = 'settings'">
         <span class="rail-icon"><svg class="size-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS.cog" /></svg></span>
