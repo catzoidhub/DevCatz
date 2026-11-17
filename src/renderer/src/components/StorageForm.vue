@@ -10,6 +10,8 @@ const props = defineProps<{ service: StorageState; mode: 'install' | 'edit' }>()
 const emit = defineEmits<{ close: []; done: [] }>();
 
 const form = ref<StorageConfig>({ ...(props.mode === 'edit' && props.service.config ? props.service.config : props.service.defaults) });
+// Garage's Web UI is on unless it was turned off (installs from before the switch have no value).
+if (props.service.kind === 'garage') form.value.webUi = form.value.webUi !== false;
 // Older installs have no binaryDir: show the folder the binary really is in.
 if (props.mode === 'edit' && !form.value.binaryDir && !form.value.binaryPath && props.service.binary) {
   form.value.binaryDir = props.service.binary.replace(/\/[^/]+$/, '');
@@ -37,10 +39,23 @@ async function chooseBinary() {
   if (file) form.value.binaryPath = file;
 }
 function generate() {
+  // Garage takes a 64-digit hexadecimal secret only.
+  if (props.service.kind === 'garage') {
+    form.value.secretKey = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    showSecret.value = true;
+    return;
+  }
   const bytes = crypto.getRandomValues(new Uint8Array(18));
   form.value.secretKey = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '').slice(0, 24);
   showSecret.value = true;
 }
+
+/** Garage has a console only with the optional Web UI. */
+const showConsole = computed(() => props.service.kind !== 'garage' || form.value.webUi !== false);
+/** What the second port / domain is called: a console, Ceph's dashboard. */
+const consoleWord = computed(() => (props.service.consoleKind === 'dashboard' ? 'Dashboard' : 'Console'));
+/** Where its containers run: DoCatz (default wherever it exists) or the system's engine. */
+const engineWord = computed(() => (props.service.defaults.docker?.container === 'system' ? 'Docker' : 'DoCatz'));
 
 const cancelling = ref(false);
 async function cancel() {
@@ -82,6 +97,7 @@ async function submit() {
       <div>
         <h3 class="text-lg font-semibold tracking-tight">{{ mode === 'install' ? `Install ${service.name}` : `${service.name} settings` }}</h3>
         <p class="text-xs opacity-60">{{ service.description }}</p>
+        <p v-if="service.inDocker && service.needs" class="mt-1 text-xs opacity-60">{{ service.needs }}</p>
       </div>
 
       <template v-if="!showProgress">
@@ -91,10 +107,14 @@ async function submit() {
           <span class="label-caps mb-1 block">API port</span>
           <input v-model.number="form.apiPort" type="number" min="1024" max="65535" class="input input-sm w-full font-mono" required />
         </label>
-        <label class="block">
-          <span class="label-caps mb-1 block">Console port</span>
+        <label v-if="showConsole" class="block">
+          <span class="label-caps mb-1 block">{{ consoleWord }} port</span>
           <input v-model.number="form.consolePort" type="number" min="1024" max="65535" class="input input-sm w-full font-mono" required />
         </label>
+        <p v-if="service.kind === 'garage'" class="col-span-2 -mt-1 text-xs opacity-60">
+          Garage also serves public buckets as websites on port {{ Number(form.apiPort) + 2 }}, at
+          <code>&lt;bucket&gt;.web.{{ form.apiDomain }}.{{ tld }}</code>.
+        </p>
         <p v-if="service.kind === 'seaweedfs'" class="col-span-2 -mt-1 text-xs opacity-60">
           SeaweedFS also uses master {{ Number(form.apiPort) + 1000 }}, volume {{ Number(form.apiPort) + 2 }} and filer {{ Number(form.apiPort) + 3 }} (gRPC = +10000).
         </p>
@@ -109,8 +129,8 @@ async function submit() {
             <span class="join-item flex items-center border border-base-300 bg-base-200 px-2 font-mono text-xs opacity-70">.{{ tld }}</span>
           </div>
         </label>
-        <label class="block">
-          <span class="label-caps mb-1 block">Console domain</span>
+        <label v-if="showConsole" class="block">
+          <span class="label-caps mb-1 block">{{ consoleWord }} domain</span>
           <div class="join w-full">
             <input v-model="form.consoleDomain" class="input input-sm join-item w-full font-mono" required spellcheck="false" />
             <span class="join-item flex items-center border border-base-300 bg-base-200 px-2 font-mono text-xs opacity-70">.{{ tld }}</span>
@@ -124,14 +144,28 @@ async function submit() {
 
       <!-- 3. Folders, binary, autostart -->
       <fieldset class="space-y-3">
-        <label class="block">
+        <div v-if="service.inDocker" role="note" class="rounded-box bg-base-200/60 px-3 py-2.5 text-xs leading-relaxed opacity-80">
+          Runs as a container of the official image in {{ engineWord }}: no program to download, and the data stays in the
+          Docker volume <code>devcatz-storage-{{ service.kind }}</code>. Uninstall asks whether to delete it.
+        </div>
+        <label v-if="service.kind === 'garage'" class="flex cursor-pointer items-start gap-2 text-sm">
+          <input v-model="form.webUi" type="checkbox" class="toggle toggle-sm toggle-primary mt-0.5" />
+          <span>
+            <span class="block">Garage Web UI as the console</span>
+            <span class="block text-xs opacity-60">
+              A community project (khairul169/garage-webui), not made by Garage's authors: cluster status, buckets and keys in
+              the browser, logged in with the S3 keys. Without it, manage buckets here in DevCatz.
+            </span>
+          </span>
+        </label>
+        <label v-if="!service.inDocker" class="block">
           <span class="label-caps mb-1 block">Data folder</span>
           <div class="join w-full">
             <input v-model="form.dataDir" class="input input-sm join-item w-full font-mono text-xs" required spellcheck="false" />
             <button type="button" class="btn btn-sm join-item" @click="chooseFolder">Choose…</button>
           </div>
         </label>
-        <div>
+        <div v-if="!service.inDocker">
           <span class="label-caps mb-1 block">Binary</span>
           <div class="flex flex-wrap gap-4 text-sm">
             <label class="flex cursor-pointer items-center gap-2">
@@ -179,6 +213,8 @@ async function submit() {
         <label class="block">
           <span class="label-caps mb-1 block">Access key (user)</span>
           <input v-model="form.accessKey" class="input input-sm w-full font-mono" required minlength="3" spellcheck="false" autocomplete="off" />
+          <span v-if="service.kind === 'garage'" class="mt-1 block text-xs opacity-60">Garage's format: GK + 24 hex digits; the secret is 64 hex digits (↻ makes one).</span>
+          <span v-if="service.kind === 'ceph'" class="mt-1 block text-xs opacity-60">The dashboard login is <code>admin</code> with the secret key.</span>
         </label>
         <label class="block">
           <span class="label-caps mb-1 block">Secret key (password)</span>

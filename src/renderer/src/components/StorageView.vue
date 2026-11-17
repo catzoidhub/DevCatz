@@ -264,7 +264,7 @@ async function copyEnv() {
             </button>
             <button v-else class="btn btn-sm" :disabled="!!busy || selected.status === 'stopping'" @click="act(selected, 'stop')">Stop</button>
             <button class="btn btn-sm" :disabled="!!busy || !active(selected)" @click="act(selected, 'restart')">Restart</button>
-            <button class="btn btn-sm" :disabled="!active(selected)" @click="open(selected.urls.console)">Open Console</button>
+            <button v-if="selected.hasConsole !== false" class="btn btn-sm" :disabled="!active(selected)" @click="open(selected.urls.console)">Open {{ selected.consoleKind === 'dashboard' ? 'Dashboard' : 'Console' }}</button>
             <PopMenu :items="moreItems" align="end" :width="220">
               <button class="btn btn-sm">More ▾</button>
             </PopMenu>
@@ -284,8 +284,8 @@ async function copyEnv() {
               <span class="truncate">{{ selected.urls.api.replace('https://', '') }}</span>
               <span class="ml-auto font-sans text-[10px] opacity-60">:{{ selected.config.apiPort }}</span>
             </a>
-            <a class="url-chip w-full" :title="`Console · 127.0.0.1:${selected.config.consolePort}`" @click="open(selected.urls.console)">
-              <span class="badge badge-ghost badge-xs font-sans">Console</span>
+            <a v-if="selected.hasConsole !== false" class="url-chip w-full" :title="`Console · 127.0.0.1:${selected.config.consolePort}`" @click="open(selected.urls.console)">
+              <span class="badge badge-ghost badge-xs font-sans">{{ selected.consoleKind === 'dashboard' ? 'Dashboard' : 'Console' }}</span>
               <span class="truncate">{{ selected.urls.console.replace('https://', '') }}</span>
               <span class="ml-auto font-sans text-[10px] opacity-60">:{{ selected.config.consolePort }}</span>
             </a>
@@ -300,7 +300,8 @@ async function copyEnv() {
               <div><span class="label-caps block">Access key</span><code class="selectable">{{ selected.config.accessKey }}</code></div>
               <div><span class="label-caps block">Secret key</span><code class="selectable">{{ selected.config.secretKey }}</code></div>
               <div><span class="label-caps block">Region</span><code>{{ region }}</code></div>
-              <div><span class="label-caps block">Data folder</span><code class="selectable break-all">{{ selected.config.dataDir }}</code></div>
+              <div v-if="selected.inDocker"><span class="label-caps block">Data</span><code class="selectable break-all">Docker volume devcatz-storage-{{ selected.kind }}</code></div>
+              <div v-else><span class="label-caps block">Data folder</span><code class="selectable break-all">{{ selected.config.dataDir }}</code></div>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <div class="seg">

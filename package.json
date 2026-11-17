@@ -27,6 +27,7 @@
     "@catzoid/mcatzp-host": "^1.0.5",
     "@catzoid/mcatzp-protocol": "^1.0.5",
     "ajv": "^8.17.1",
+    "bcryptjs": "3.0.3",
     "electron-updater": "^6.8.11",
     "http-proxy-3": "^2.0.1",
     "node-forge": "^1.4.0",

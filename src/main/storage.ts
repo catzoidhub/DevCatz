@@ -13,6 +13,8 @@ import { exe, removeTemp, isLinux, isWin, TAR } from './platform';
 import { unzipLinux } from './linuxapps';
 import { githubJson } from './github';
 import { brewBin } from './php';
+import { defaultContainer } from './docker';
+import * as sd from './storagedocker';
 
 /**
  * Local S3-compatible object storage, one instance per kind: RustFS, MinIO and
@@ -21,7 +23,7 @@ import { brewBin } from './php';
  * manager, so "Stop All" for sites leaves them alone) and served on HTTPS
  * domains through the proxy (Host kept: S3 signatures include it).
  */
-export const STORAGE_KINDS: StorageKind[] = ['rustfs', 'minio', 'silo', 'seaweedfs'];
+export const STORAGE_KINDS: StorageKind[] = ['rustfs', 'minio', 'silo', 'seaweedfs', 'garage', 'ceph'];
 
 interface Engine {
   name: string;
@@ -31,7 +33,22 @@ interface Engine {
   description: string;
   defaults: Omit<StorageConfig, 'kind' | 'dataDir' | 'binaryPath' | 'binaryDir' | 'autoStart' | 'region'>;
   /** Downloads the binary into the folder `dir` (as `dir/<exe>`); throws on checksum/version problems. */
-  install(dir: string, progress: Report, signal: AbortSignal): Promise<void>;
+  install?(dir: string, progress: Report, signal: AbortSignal): Promise<void>;
+  /**
+   * Runs as containers instead of a downloaded program (TODO §40, storagedocker.ts): the image of a version, the files
+   * written before each start (compose file, configuration) and what to do once it answers (Garage's layout and key).
+   */
+  docker?: {
+    image(version: string): string;
+    write(c: StorageConfig, image: string): void;
+    setup?(c: StorageConfig): Promise<void>;
+  };
+  /** The second port / domain: a web console (default), Ceph's dashboard. */
+  consoleKind?: 'console' | 'website' | 'dashboard';
+  /** RAM / disk it needs, said in the install form. */
+  needs?: string;
+  /** Public objects come from https://<bucket>.<website domain>/<key> (Garage). */
+  publicHost?: boolean;
   /** Newest release, from the installer's source (update check). */
   latest(): Promise<string>;
   /** No build for this platform: why, shown instead of Install. */
@@ -39,7 +56,7 @@ interface Engine {
   /** Where the builds come from (repository / download page), linked on its page. */
   sourceUrl?: string;
   /** Process specs to run (SeaweedFS needs two). */
-  specs(c: StorageConfig, bin: string): { label: string; command: string; env: Record<string, string> }[];
+  specs?(c: StorageConfig, bin: string): { label: string; command: string; env: Record<string, string> }[];
 }
 
 /** Updates the running task (merged into the current TaskProgress). */
@@ -378,6 +395,39 @@ export const ENGINES: Record<StorageKind, Engine> = {
       ];
     },
   },
+  garage: {
+    name: 'Garage',
+    exe: 'garage',
+    description:
+      'Lightweight S3 storage from Deuxfleurs, made for small self-hosted clusters (AGPL-3.0). Runs as a container and ' +
+      'serves public buckets as websites; Garage has no console of its own yet (an optional community Web UI can run with it).',
+    sourceUrl: 'https://garagehq.deuxfleurs.fr',
+    defaults: { apiPort: 3900, consolePort: 3909, apiDomain: 'garage', consoleDomain: 'console.garage', accessKey: '', secretKey: '' },
+    latest: () => brewLatest('garage'),
+    publicHost: true,
+    needs: 'About 100 MB of images and a little RAM; runs in DoCatz (or Docker).',
+    docker: {
+      image: (v) => `dxflrs/garage:v${v}`,
+      write: (c, image) => sd.writeGarage(c, image),
+      setup: (c) => sd.garageSetup(c),
+    },
+  },
+  ceph: {
+    name: 'Ceph',
+    exe: 'ceph',
+    description:
+      'Ceph’s S3 RADOS Gateway on a single-node cluster (monitor, manager, one OSD) in one container of the official ' +
+      'image; the Ceph dashboard is its console.',
+    sourceUrl: 'https://quay.io/repository/ceph/ceph',
+    defaults: { apiPort: 7480, consolePort: 8480, apiDomain: 'ceph', consoleDomain: 'dashboard.ceph', accessKey: 'devcatz', secretKey: 'devcatz-secret' },
+    latest: () => sd.cephLatest(),
+    consoleKind: 'dashboard',
+    needs: 'About 2 GB of images and 0.5–1 GB of RAM while running; data in a Docker volume (up to 10 GB). Runs in DoCatz (or Docker).',
+    docker: {
+      image: (v) => `${sd.CEPH_IMAGE}:v${v}`,
+      write: (c, image) => sd.writeCeph(c, image),
+    },
+  },
 };
 
 /**
@@ -386,6 +436,26 @@ export const ENGINES: Record<StorageKind, Engine> = {
  * cwd = the data folder, so `.` names the same folder without the space.
  */
 const rustfsVolume = (dir: string) => (/\s/.test(dir) ? '.' : q(dir));
+
+/** Garage has a console only with its optional Web UI. */
+const hasConsole = (c: StorageConfig) => c.kind !== 'garage' || c.webUi !== false;
+
+/** Every port a service listens on (for clashes and the port check before a start). */
+function portsOf(c: StorageConfig): number[] {
+  if (c.kind === 'seaweedfs') return [c.apiPort, c.consolePort, ...Object.values(seaweedPorts(c))];
+  if (c.kind === 'garage') return c.webUi !== false ? [c.apiPort, c.consolePort, sd.garageWebPort(c)] : [c.apiPort, sd.garageWebPort(c)];
+  return [c.apiPort, c.consolePort];
+}
+
+/** An HTTP answer on the port (a container's published port accepts connections before the server inside listens). */
+async function httpAnswers(port: number): Promise<boolean> {
+  try {
+    await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(3000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** SeaweedFS's master / volume / filer ports, derived from the S3 port (gRPC = +10000). */
 export function seaweedPorts(c: StorageConfig): Record<string, number> {
@@ -426,9 +496,25 @@ export const binaryDirOf = (c: Pick<StorageConfig, 'kind' | 'binaryDir'>) => c.b
 // Programs end in .exe on Windows.
 export const binaryOf = (c: StorageConfig) => c.binaryPath || join(binaryDirOf(c), exe(ENGINES[c.kind].exe));
 
+/** Runs as containers (Ceph, Garage): no program to download, data in a Docker volume. */
+export const inDocker = (kind: StorageKind) => !!ENGINES[kind].docker;
+
 export function defaultsFor(kind: StorageKind): StorageConfig {
   const root = store.settings.storageRoot;
   const binRoot = store.settings.storageBinRoot;
+  if (inDocker(kind)) {
+    return {
+      kind,
+      ...ENGINES[kind].defaults,
+      ...(kind === 'garage' ? { ...sd.garageDefaultKeys(), webUi: true } : {}),
+      dataDir: sd.configDir(kind),
+      binaryPath: '',
+      binaryDir: '',
+      autoStart: false,
+      region: s3Region(),
+      docker: { image: '', container: defaultContainer() },
+    };
+  }
   return {
     kind,
     ...ENGINES[kind].defaults,
@@ -473,6 +559,7 @@ export class StorageManager {
     if (!c) throw new Error(`${ENGINES[kind].name} is not installed`);
     if (c.binaryPath) throw new Error(`${ENGINES[kind].name} runs your own binary (${c.binaryPath}); update that file yourself`);
     if (this.aborts.has(kind)) throw new Error(`${ENGINES[kind].name} is busy`);
+    if (inDocker(kind)) return this.upgradeDocker(kind, c);
     const steps = [...INSTALL_STEPS.slice(0, 5), ...UPDATE_TAIL];
     const t = this.task(kind, { kind: 'update', title: `Updating ${ENGINES[kind].name}`, steps, step: 0 });
     const abort = new AbortController();
@@ -480,7 +567,7 @@ export class StorageManager {
     try {
       const v = await upgradeBinaries({
         binDir: binaryDirOf(c),
-        install: (d, report, signal) => ENGINES[kind].install(d, report, signal),
+        install: (d, report, signal) => ENGINES[kind].install!(d, report, signal),
         inPlace: false,
         stop: () => this.processes.stop(storageId(kind)),
         start: () => this.action(kind, 'start'),
@@ -496,6 +583,38 @@ export class StorageManager {
       t.report({ title: `Updated ${ENGINES[kind].name} to ${v}` });
       t.finish();
     } catch (err) {
+      t.fail(abort.signal.aborted ? new Error('Update cancelled; the current version was kept') : err);
+    } finally {
+      this.aborts.delete(kind);
+      this.onChange();
+    }
+  }
+
+  /** A container service: the newer image pulled, then started again when it was running (data stays in its volume). */
+  private async upgradeDocker(kind: StorageKind, c: StorageConfig): Promise<void> {
+    const name = ENGINES[kind].name;
+    const t = this.task(kind, { kind: 'update', title: `Updating ${name}`, steps: ['Finding the latest release', 'Pulling the new image', 'Restarting'], step: 0 });
+    const abort = new AbortController();
+    this.aborts.set(kind, abort);
+    try {
+      const v = await ENGINES[kind].latest();
+      t.report({ title: `Updating ${name} to ${v}`, step: 1 });
+      const image = ENGINES[kind].docker!.image(v);
+      const next: StorageConfig = { ...c, version: v, docker: { image, container: sd.where(c) } };
+      await sd.engineReady(next, (d) => t.report({ detail: d }), abort.signal);
+      ENGINES[kind].docker!.write(next, image);
+      await sd.pull(next, t.report, abort.signal);
+      const was = this.isActive(kind);
+      t.report({ step: 2, detail: was ? 'restarting' : 'not running' });
+      if (was) await this.action(kind, 'stop');
+      store.setStorage(kind, next);
+      if (was) await this.action(kind, 'start');
+      this.updates.delete(kind);
+      this.processes.log(storageId(kind), 'sys', `Updated ${c.version ?? ''} → ${v}`);
+      t.finish();
+    } catch (err) {
+      // The old compose file comes back with the old image.
+      ENGINES[kind].docker!.write(c, c.docker?.image ?? '');
       t.fail(abort.signal.aborted ? new Error('Update cancelled; the current version was kept') : err);
     } finally {
       this.aborts.delete(kind);
@@ -584,12 +703,30 @@ export class StorageManager {
     return c ? { ...c, binaryDir: c.binaryDir ?? '', region: c.region || s3Region() } : null;
   }
 
-  /** "running" once the S3 port answers. */
+  /** Containers being set up after a start (Garage's layout and key), so one poll does it at a time. */
+  private settingUp = new Set<StorageKind>();
+
+  /**
+   * "running" once the S3 port answers. A container's port is published before the server inside listens, so there an
+   * HTTP answer counts (and Garage's one-time setup runs first).
+   */
   private async poll(): Promise<void> {
     for (const kind of STORAGE_KINDS) {
       const c = this.config(kind);
-      if (!c || this.processes.getStatus(storageId(kind)).status !== 'starting') continue;
-      if (await isPortOpen(c.apiPort)) {
+      if (!c || this.processes.getStatus(storageId(kind)).status !== 'starting' || this.settingUp.has(kind)) continue;
+      const up = inDocker(kind) ? await httpAnswers(c.apiPort) : await isPortOpen(c.apiPort);
+      if (up && ENGINES[kind].docker?.setup) {
+        this.settingUp.add(kind);
+        try {
+          await ENGINES[kind].docker!.setup!(c);
+        } catch (e) {
+          this.processes.log(storageId(kind), 'sys', `Waiting for ${ENGINES[kind].name}: ${(e as Error).message}`);
+          continue;
+        } finally {
+          this.settingUp.delete(kind);
+        }
+      }
+      if (up) {
         this.processes.markRunning(storageId(kind));
         this.processes.log(storageId(kind), 'sys', `Ready → https://${host(c.apiDomain)} (console https://${host(c.consoleDomain)})`);
       }
@@ -608,11 +745,11 @@ export class StorageManager {
     if (c.apiDomain === c.consoleDomain) throw new Error('API and console domains must differ');
     const sites = new Set(this.siteDomains());
     for (const label of [c.apiDomain, c.consoleDomain]) if (sites.has(host(label))) throw new Error(`${host(label)} is already a site`);
-    const used = c.kind === 'seaweedfs' ? [c.apiPort, c.consolePort, ...Object.values(seaweedPorts(c))] : [c.apiPort, c.consolePort];
+    const used = portsOf(c);
     for (const kind of STORAGE_KINDS) {
       const o = this.config(kind);
       if (!o || kind === c.kind) continue;
-      const theirs = kind === 'seaweedfs' ? [o.apiPort, o.consolePort, ...Object.values(seaweedPorts(o))] : [o.apiPort, o.consolePort];
+      const theirs = portsOf(o);
       const clash = used.find((p) => theirs.includes(p));
       if (clash) throw new Error(`Port ${clash} is used by ${ENGINES[kind].name}`);
       for (const label of [c.apiDomain, c.consoleDomain]) {
@@ -622,6 +759,8 @@ export class StorageManager {
     if (!/^[a-z0-9-]{2,32}$/.test(c.region)) throw new Error('Region: lowercase letters, digits and hyphens, e.g. us-east-1');
     if (!c.accessKey || c.accessKey.length < 3) throw new Error('Access key: at least 3 characters');
     if (!c.secretKey || c.secretKey.length < 8) throw new Error('Secret key: at least 8 characters');
+    if (c.kind === 'garage' && !sd.GARAGE_KEY.test(c.accessKey)) throw new Error('Garage access key: "GK" followed by 24 hexadecimal digits (lowercase)');
+    if (c.kind === 'garage' && !sd.GARAGE_SECRET.test(c.secretKey)) throw new Error('Garage secret key: 64 hexadecimal digits (lowercase)');
   }
 
   async install(kind: StorageKind, input: StorageConfig): Promise<void> {
@@ -630,6 +769,7 @@ export class StorageManager {
     if (this.aborts.has(kind)) throw new Error(`${ENGINES[kind].name} is already being installed`);
     const c = { ...input, kind };
     this.validate(c);
+    if (inDocker(kind)) return this.installDocker(kind, c);
     const own = Boolean(c.binaryPath);
     const steps = own
       ? ['Checking the binary', 'Checking the version', 'Preparing the data folder', 'Saving settings']
@@ -648,7 +788,7 @@ export class StorageManager {
         t.report({ step: 0, detail: c.binaryPath });
         if (!existsSync(c.binaryPath)) throw new Error(`${c.binaryPath} does not exist`);
       } else {
-        await ENGINES[kind].install(binaryDirOf(c), t.report, signal);
+        await ENGINES[kind].install!(binaryDirOf(c), t.report, signal);
       }
       check(signal);
       t.report({ step: at('Checking the version'), detail: binaryOf(c), received: undefined, total: undefined });
@@ -682,7 +822,53 @@ export class StorageManager {
     }
   }
 
+  /** A container service: the engine ready, the newest image pulled, the configuration written. */
+  private async installDocker(kind: StorageKind, input: StorageConfig): Promise<void> {
+    const name = ENGINES[kind].name;
+    const steps = ['Checking the container engine', 'Finding the latest release', 'Pulling the image', 'Writing the configuration', 'Saving settings'];
+    if (input.autoStart) steps.push('Starting');
+    const t = this.task(kind, { kind: 'install', title: `Installing ${name}`, steps, step: 0 });
+    const abort = new AbortController();
+    this.aborts.set(kind, abort);
+    const signal = abort.signal;
+    const c: StorageConfig = { ...input, binaryPath: '', binaryDir: '', dataDir: sd.configDir(kind), docker: { image: '', container: input.docker?.container ?? defaultContainer() } };
+    try {
+      t.report({ step: 0, detail: c.docker!.container === 'docatz' ? 'DoCatz' : 'Docker' });
+      await sd.engineReady(c, (d) => t.report({ detail: d }), signal);
+      check(signal);
+      t.report({ step: 1, detail: ENGINES[kind].sourceUrl });
+      const v = await ENGINES[kind].latest();
+      const image = ENGINES[kind].docker!.image(v);
+      c.version = v;
+      c.docker = { image, container: c.docker!.container };
+      t.report({ title: `Installing ${name} ${v}`, step: 2, detail: image });
+      ENGINES[kind].docker!.write(c, image);
+      await sd.pull(c, t.report, signal);
+      check(signal);
+      t.report({ step: 3, detail: sd.composeFile(kind) });
+      ENGINES[kind].docker!.write(c, image);
+      this.aborts.delete(kind);
+      t.report({ step: 4, detail: `https://${host(c.apiDomain)} · https://${host(c.consoleDomain)}` });
+      store.setStorage(kind, c);
+      this.onChange();
+      if (c.autoStart) {
+        t.report({ step: 5, detail: `127.0.0.1:${c.apiPort}` });
+        await this.action(kind, 'start');
+      }
+      t.finish();
+    } catch (err) {
+      if (err instanceof Cancelled || signal.aborted) {
+        t.report({ cancelled: true, error: 'Install cancelled; nothing was kept.', received: undefined, total: undefined });
+        throw new Error('Install cancelled');
+      }
+      t.fail(err);
+    } finally {
+      this.aborts.delete(kind);
+    }
+  }
+
   private async version(c: StorageConfig): Promise<string | null> {
+    if (inDocker(c.kind)) return c.version ?? null;
     const bin = binaryOf(c);
     if (!existsSync(bin)) return null;
     const args = c.kind === 'seaweedfs' ? ['version'] : ['--version'];
@@ -704,6 +890,21 @@ export class StorageManager {
     if (!old) throw new Error('Not installed');
     const c = { ...old, ...input, kind, version: old.version };
     this.validate(c);
+    if (inDocker(kind)) {
+      c.docker = old.docker;
+      c.dataDir = old.dataDir;
+      store.setStorage(kind, c);
+      if (kind === 'garage' && old.webUi !== false && c.webUi === false) await sd.removeGarageWebUi(old);
+      if (kind === 'garage' && old.webUi === false && c.webUi !== false) {
+        ENGINES[kind].docker!.write(c, c.docker?.image ?? '');
+        await sd.engineReady(c);
+        await sd.compose(c, ['pull', 'webui'], 600_000);
+      }
+      ENGINES[kind].docker!.write(c, c.docker?.image ?? '');
+      if (this.isActive(kind)) await this.action(kind, 'restart');
+      this.onChange();
+      return;
+    }
     // Managed binary moved to another folder: take the file along.
     if (!c.binaryPath && !old.binaryPath && binaryDirOf(c) !== binaryDirOf(old)) {
       const from = binaryOf(old);
@@ -728,6 +929,7 @@ export class StorageManager {
   async uninstall(kind: StorageKind, deleteData: boolean): Promise<void> {
     const c = this.config(kind);
     if (!c) return;
+    if (inDocker(kind)) return this.uninstallDocker(kind, c, deleteData);
     const steps = ['Stopping the service', ...(c.binaryPath ? [] : ['Removing the binary']), ...(deleteData ? ['Deleting the data folder'] : []), 'Removing settings'];
     const at = (name: string) => steps.indexOf(name);
     const t = this.task(kind, { kind: 'uninstall', title: `Uninstalling ${ENGINES[kind].name}`, steps, step: 0 });
@@ -753,6 +955,25 @@ export class StorageManager {
     }
   }
 
+  /** Containers and images removed; the data volume (and the configuration) only with `deleteData`. */
+  private async uninstallDocker(kind: StorageKind, c: StorageConfig, deleteData: boolean): Promise<void> {
+    const steps = ['Stopping the service', 'Removing the containers and images', ...(deleteData ? ['Deleting the data volume'] : []), 'Removing settings'];
+    const t = this.task(kind, { kind: 'uninstall', title: `Uninstalling ${ENGINES[kind].name}`, steps, step: 0 });
+    try {
+      await this.processes.stop(storageId(kind));
+      t.report({ step: 1, detail: c.docker?.image });
+      if (deleteData) t.report({ step: 2, detail: sd.volumeOf(kind) });
+      await sd.remove(c, deleteData);
+      if (deleteData) await rm(sd.configDir(kind), { recursive: true, force: true }).catch(() => undefined);
+      t.report({ step: steps.length - 1, detail: deleteData ? undefined : `Data kept in the Docker volume ${sd.volumeOf(kind)}` });
+      store.setStorage(kind, null);
+      this.processes.clearLogs(storageId(kind));
+      t.finish();
+    } catch (err) {
+      t.fail(err);
+    }
+  }
+
   isActive(kind: StorageKind): boolean {
     return this.processes.isActive(storageId(kind));
   }
@@ -761,12 +982,16 @@ export class StorageManager {
     const id = storageId(kind);
     const c = this.config(kind);
     if (!c) throw new Error(`${ENGINES[kind].name} is not installed`);
-    if (action === 'stop' || action === 'restart') await this.processes.stop(id);
+    if (action === 'stop' || action === 'restart') {
+      await this.processes.stop(id);
+      // `compose up` stops its containers on the signal; make sure (a killed client leaves them running).
+      if (inDocker(kind)) await sd.compose(c, ['stop'], 60_000).catch(() => undefined);
+    }
     if (action === 'stop') return;
     // Already up (just installed, a second click): leave it. The port check below would call its own port taken.
     if (action === 'start' && this.isActive(kind)) return;
     for (let i = 0; i < 10 && (await isPortOpen(c.apiPort)); i++) await new Promise((r) => setTimeout(r, 300));
-    const ports = c.kind === 'seaweedfs' ? [c.apiPort, c.consolePort, ...Object.values(seaweedPorts(c))] : [c.apiPort, c.consolePort];
+    const ports = portsOf(c);
     for (const port of ports) {
       if (await isPortOpen(port)) {
         const owner = await portOwner(port);
@@ -778,12 +1003,26 @@ export class StorageManager {
       }
     }
     this.errors.delete(kind);
+    if (inDocker(kind)) {
+      try {
+        await sd.engineReady(c, (d) => this.processes.log(id, 'sys', d));
+      } catch (e) {
+        this.errors.set(kind, (e as Error).message);
+        this.onChange();
+        throw e;
+      }
+      ENGINES[kind].docker!.write(c, c.docker?.image ?? '');
+      // A container left from a crash or a killed client would hold the ports.
+      await sd.compose(c, ['down', '--remove-orphans'], 60_000).catch(() => undefined);
+      this.processes.startMany(id, [{ label: '', command: sd.upCommand(c), env: {}, cwd: sd.configDir(kind) }]);
+      return;
+    }
     const bin = binaryOf(c);
     if (!existsSync(bin)) throw new Error(`${bin} is missing; reinstall ${ENGINES[kind].name}`);
     mkdirSync(c.dataDir, { recursive: true });
     this.processes.startMany(
       id,
-      ENGINES[kind].specs(c, bin).map((s) => ({ ...s, cwd: c.dataDir })),
+      ENGINES[kind].specs!(c, bin).map((s) => ({ ...s, cwd: c.dataDir })),
     );
   }
 
@@ -805,7 +1044,7 @@ export class StorageManager {
       if (!c) continue;
       const running = this.isActive(kind);
       out.push({ domain: host(c.apiDomain), port: c.apiPort, projectName: `${ENGINES[kind].name} API`, running, secure: true, keepHost: true });
-      out.push({
+      if (hasConsole(c)) out.push({
         domain: host(c.consoleDomain),
         port: c.consolePort,
         projectName: `${ENGINES[kind].name} console`,
@@ -814,6 +1053,8 @@ export class StorageManager {
         keepHost: true,
         rootRedirect: ENGINES[kind].consolePath,
       });
+      // Garage's website endpoint: public buckets at <bucket>.web.garage.<tld> (subdomains reach the route).
+      if (kind === 'garage') out.push({ domain: host(sd.garageWebDomain(c)), port: sd.garageWebPort(c), projectName: 'Garage websites', running, secure: true, keepHost: true });
     }
     return out;
   }
@@ -845,7 +1086,12 @@ export class StorageManager {
               consoleLocal: `http://127.0.0.1:${c.consolePort}`,
             }
           : null,
-        internalPorts: c && kind === 'seaweedfs' ? seaweedPorts(c) : undefined,
+        internalPorts: c && kind === 'seaweedfs' ? seaweedPorts(c) : c && kind === 'garage' ? { website: sd.garageWebPort(c) } : undefined,
+        inDocker: inDocker(kind),
+        consoleKind: ENGINES[kind].consoleKind ?? 'console',
+        needs: ENGINES[kind].needs ?? null,
+        publicHost: ENGINES[kind].publicHost ?? false,
+        hasConsole: c ? hasConsole(c) : kind !== 'garage',
       };
     });
   }

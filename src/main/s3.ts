@@ -116,10 +116,11 @@ export async function isPublic(t: S3Target, bucket: string): Promise<boolean> {
   return res.status === 200 && res.body.includes('s3:GetObject') && /"\*"/.test(res.body);
 }
 
-export async function listBuckets(t: S3Target): Promise<S3Bucket[]> {
+export async function listBuckets(t: S3Target, policies = true): Promise<S3Bucket[]> {
   const res = await ok(t, { method: 'GET', path: '/' });
   const buckets = all(res.body, 'Bucket').map((b) => ({ name: unxml(tag(b, 'Name')), created: tag(b, 'CreationDate'), public: false }));
-  await Promise.all(buckets.map(async (b) => (b.public = await isPublic(t, b.name).catch(() => false))));
+  // Public = a bucket policy; a server without policies (Garage) says public another way (the caller asks it).
+  if (policies) await Promise.all(buckets.map(async (b) => (b.public = await isPublic(t, b.name).catch(() => false))));
   return buckets.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -142,8 +143,13 @@ async function allKeys(t: S3Target, bucket: string, prefix: string): Promise<str
   return keys;
 }
 
-export async function deleteBucket(t: S3Target, bucket: string): Promise<void> {
+/** Every object in the bucket deleted (the bucket stays). */
+export async function emptyBucket(t: S3Target, bucket: string): Promise<void> {
   for (const key of await allKeys(t, bucket, '')) await ok(t, { method: 'DELETE', path: `/${bucket}/${key}` }, [404]);
+}
+
+export async function deleteBucket(t: S3Target, bucket: string): Promise<void> {
+  await emptyBucket(t, bucket);
   await ok(t, { method: 'DELETE', path: `/${bucket}` });
 }
 

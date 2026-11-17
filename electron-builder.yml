@@ -14,6 +14,9 @@ extraResources:
   # the server of a static site (a folder of plain HTML), run with the app's own Electron as Node
   - from: resources/static-server.cjs
     to: static-server.cjs
+  # Ceph's single-node start script, run inside the official image (DevCatz TODO §40)
+  - from: resources/storage/ceph-start.sh
+    to: storage/ceph-start.sh
   # the licences of the open-source packages inside (Catzoid #66), opened from About → Third-party licences
   - from: resources/third-party-licenses.txt
     to: third-party-licenses.txt

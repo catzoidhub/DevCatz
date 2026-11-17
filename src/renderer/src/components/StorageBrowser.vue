@@ -135,7 +135,12 @@ async function remove(e: S3Entry) {
   await loadEntries();
 }
 function publicUrl(e: S3Entry) {
-  return `${props.service.urls!.api}/${bucket.value}/${e.key.split('/').map(encodeURIComponent).join('/')}`;
+  const path = e.key.split('/').map(encodeURIComponent).join('/');
+  // Garage serves public buckets from its website endpoint: https://<bucket>.web.<api domain>/<key>.
+  if (props.service.publicHost && current.value?.public && props.service.config) {
+    return `https://${bucket.value}.web.${props.service.urls!.api.replace('https://', '')}/${path}`;
+  }
+  return `${props.service.urls!.api}/${bucket.value}/${path}`;
 }
 async function copyUrl(e: S3Entry) {
   await navigator.clipboard.writeText(publicUrl(e));

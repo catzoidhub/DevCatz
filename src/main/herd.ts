@@ -74,6 +74,7 @@ import * as docker from './docker';
 import * as gorm from './gorm';
 import * as envfiles from './envfiles';
 import * as s3 from './s3';
+import { garageCreateBucket, garageDeleteBucket, garageIsPublic, garageSetPublic } from './storagedocker';
 import { ENGINES, StorageManager, binaryDirOf as storageBinaryDirOf, s3Region, seaweedPublic, setSeaweedPublic } from './storage';
 import { DB_DOMAIN_LABEL, DbServiceManager, dbProcessId } from './dbservices';
 import { DbCatz } from './dbcatz';
@@ -4173,8 +4174,28 @@ export class Herd extends EventEmitter {
     return { port: c.apiPort, accessKey: c.accessKey, secretKey: c.secretKey, region: s3Region(c) };
   }
 
+  /** Garage: buckets through its CLI (a global name, so its website can serve them); the others through S3. */
+  async s3CreateBucket(kind: StorageKind, bucket: string): Promise<void> {
+    if (kind !== 'garage') return s3.createBucket(this.s3Target(kind), bucket);
+    if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) throw new Error('Bucket names: 3–63 characters, lowercase letters, digits, dots and hyphens');
+    this.s3Target(kind);
+    await garageCreateBucket(this.storage.config(kind)!, bucket);
+  }
+
+  async s3DeleteBucket(kind: StorageKind, bucket: string): Promise<void> {
+    if (kind !== 'garage') return s3.deleteBucket(this.s3Target(kind), bucket);
+    // Empty it through S3 first (the CLI refuses a bucket with objects), then drop it.
+    await s3.emptyBucket(this.s3Target(kind), bucket);
+    await garageDeleteBucket(this.storage.config(kind)!, bucket);
+  }
+
   async s3Buckets(kind: StorageKind): Promise<S3Bucket[]> {
-    const list = await s3.listBuckets(this.s3Target(kind));
+    const list = await s3.listBuckets(this.s3Target(kind), kind !== 'garage');
+    // Garage: public = website access on the bucket (no bucket policies).
+    if (kind === 'garage') {
+      const c = this.storage.config(kind)!;
+      await Promise.all(list.map(async (b) => (b.public = await garageIsPublic(c, b.name).catch(() => false))));
+    }
     // SeaweedFS before bucket policies: public = anonymous read in its identity file.
     if (kind === 'seaweedfs') {
       const pub = new Set(seaweedPublic());
@@ -4189,6 +4210,10 @@ export class Herd extends EventEmitter {
    * policies fall back to an anonymous identity in s3.json, which needs a restart.
    */
   async s3SetPublic(kind: StorageKind, bucket: string, on: boolean): Promise<void> {
+    if (kind === 'garage') {
+      this.s3Target(kind);
+      return garageSetPublic(this.storage.config(kind)!, bucket, on);
+    }
     try {
       await s3.setPublic(this.s3Target(kind), bucket, on);
     } catch (err) {

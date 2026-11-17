@@ -663,8 +663,8 @@ function api(): HerdApi {
       if (c) await shell.openPath(c.dataDir);
     },
     s3Buckets: (kind) => herd.s3Buckets(kind),
-    s3CreateBucket: (kind, bucket) => s3.createBucket(herd.s3Target(kind), bucket),
-    s3DeleteBucket: (kind, bucket) => s3.deleteBucket(herd.s3Target(kind), bucket),
+    s3CreateBucket: (kind, bucket) => herd.s3CreateBucket(kind, bucket),
+    s3DeleteBucket: (kind, bucket) => herd.s3DeleteBucket(kind, bucket),
     s3SetPublic: (kind, bucket, on) => herd.s3SetPublic(kind, bucket, on),
     s3List: (kind, bucket, prefix) => s3.list(herd.s3Target(kind), bucket, prefix),
     s3Upload: async (kind, bucket, prefix, paths) => {

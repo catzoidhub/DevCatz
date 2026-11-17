@@ -1130,7 +1130,7 @@ export type DockerAction = 'up' | 'down' | 'start' | 'stop' | 'restart' | 'build
 
 // ------------------------------------------------------------ object storage
 
-export type StorageKind = 'rustfs' | 'minio' | 'silo' | 'seaweedfs';
+export type StorageKind = 'rustfs' | 'minio' | 'silo' | 'seaweedfs' | 'garage' | 'ceph';
 
 /** Settings of one installed object storage service (one per kind). */
 export interface StorageConfig {
@@ -1154,6 +1154,13 @@ export interface StorageConfig {
   secretKey: string;
   /** Installed version (from the binary). */
   version?: string | null;
+  /**
+   * Runs as a container instead of a downloaded program (TODO §40: Ceph everywhere; Garage where it publishes no
+   * checksummed build for this computer): the image and where it runs (DoCatz's engine or the system's).
+   */
+  docker?: { image: string; container: 'docatz' | 'system' } | null;
+  /** Garage: the community Garage Web UI as its console (on unless false; optional, not made by Garage's authors). */
+  webUi?: boolean;
 }
 
 /** A multi-step job (install / uninstall) with the step it is on, for a stepper in the UI. */
@@ -1199,6 +1206,16 @@ export interface StorageState {
   sourceUrl: string | null;
   /** SeaweedFS internal ports (master / volume / filer), for information. */
   internalPorts?: Record<string, number>;
+  /** Runs as a container on this computer (the install form says so and needs DoCatz / Docker). */
+  inDocker?: boolean;
+  /** It has a console to open (Garage only with its optional Web UI). */
+  hasConsole?: boolean;
+  /** What the second port / domain is: a web console, Garage's website endpoint (public buckets), Ceph's dashboard. */
+  consoleKind?: 'console' | 'website' | 'dashboard';
+  /** RAM / disk the service needs, said in the install form (Ceph). */
+  needs?: string | null;
+  /** Public objects are served from `https://<bucket>.<console domain>/<key>` (Garage) instead of the API path. */
+  publicHost?: boolean;
 }
 
 // ------------------------------------------------------------ WebSocket servers

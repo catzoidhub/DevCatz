@@ -143,3 +143,5 @@ Container engines (engines/, the "Run in" choice and Site → Docker): orbstack.
 /Applications/OrbStack.app (AppIcon.icns, 192 px); docker.svg (Docker Desktop, Docker Engine), podman.svg, rancher.svg —
 Simple Icons 13.21.0, in each brand's colour.
 Simple Icons 16.36.0 (zedindustries) — Zed, Settings → MCatzP.
+- garage.png — https://garagehq.deuxfleurs.fr/icons/favicon.svg (the PNG inside, 180 px; Garage, Deuxfleurs)
+- ceph.png — https://ceph.io/assets/favicons/android-chrome-192x192.png (Ceph)
