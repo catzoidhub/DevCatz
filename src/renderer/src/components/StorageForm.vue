@@ -74,6 +74,8 @@ async function submit() {
     consoleDomain: form.value.consoleDomain.trim().toLowerCase(),
     binaryPath: binarySource.value === 'existing' ? form.value.binaryPath.trim() : '',
     binaryDir: (form.value.binaryDir ?? '').trim() || props.service.defaults.binaryDir,
+    // A nested object of the form is a Vue proxy, which IPC cannot copy ("An object could not be cloned"): send a plain one.
+    docker: form.value.docker ? { ...form.value.docker } : form.value.docker,
   };
   if (props.mode === 'install') showProgress.value = true;
   const ok = await attempt(() =>
@@ -214,7 +216,7 @@ async function submit() {
           <span class="label-caps mb-1 block">Access key (user)</span>
           <input v-model="form.accessKey" class="input input-sm w-full font-mono" required minlength="3" spellcheck="false" autocomplete="off" />
           <span v-if="service.kind === 'garage'" class="mt-1 block text-xs opacity-60">Garage's format: GK + 24 hex digits; the secret is 64 hex digits (↻ makes one).</span>
-          <span v-if="service.kind === 'ceph'" class="mt-1 block text-xs opacity-60">The dashboard login is <code>admin</code> with the secret key.</span>
+          <span v-if="service.kind === 'ceph'" class="mt-1 block text-xs opacity-60">Also the Ceph dashboard's login (user and password).</span>
         </label>
         <label class="block">
           <span class="label-caps mb-1 block">Secret key (password)</span>

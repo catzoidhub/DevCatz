@@ -17,7 +17,7 @@ const RESOURCES = app.isPackaged ? process.resourcesPath : join(__dirname, '../.
  * DoCatz is not there), the same on macOS, Windows and Linux:
  *  · Ceph: no build for macOS / Windows and a real cluster is heavy, so one container of the official
  *    quay.io/ceph/ceph image runs a single-node cluster (MON, MGR, one file-backed OSD, RGW) from resources/storage/
- *    ceph-start.sh; the dashboard is the console.
+ *    ceph-start.sh; the dashboard is the console, logged in with the S3 access key and secret key.
  *  · Garage: official builds are Linux-only and published without checksums, so the official dxflrs/garage image runs
  *    it everywhere; Garage has no web console of its own yet, so the community Garage Web UI (khairul169/garage-webui)
  *    can run next to it — on by default but optional, since it is not Garage's own (user, 2026-11-18; replaced by
@@ -256,8 +256,6 @@ export async function garageIsPublic(c: StorageConfig, bucket: string): Promise<
 // ---------------------------------------------------------------- Ceph
 
 export const CEPH_IMAGE = 'quay.io/ceph/ceph';
-/** Ceph's dashboard login user (its password is the S3 secret key). */
-export const CEPH_DASH_USER = 'admin';
 
 export function writeCeph(c: StorageConfig, image: string): void {
   const dir = configDir('ceph');
@@ -282,7 +280,8 @@ export function writeCeph(c: StorageConfig, image: string): void {
       `      S3_SECRET_KEY: ${JSON.stringify(c.secretKey.replace(/\$/g, '$$$$'))}`,
       `      S3_REGION: ${JSON.stringify(c.region)}`,
       `      RGW_DNS_NAME: ${JSON.stringify(host(c.apiDomain))}`,
-      `      DASH_USER: ${CEPH_DASH_USER}`,
+      // The dashboard's login is the same key pair DevCatz shows (user, 2026-11-18: "admin" was not guessable).
+      `      DASH_USER: ${JSON.stringify(c.accessKey)}`,
       `      DASH_PASSWORD: ${JSON.stringify(c.secretKey.replace(/\$/g, '$$$$'))}`,
       '      OSD_SIZE: "10"',
       '    volumes:',

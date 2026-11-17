@@ -417,7 +417,7 @@ export const ENGINES: Record<StorageKind, Engine> = {
     exe: 'ceph',
     description:
       'Ceph’s S3 RADOS Gateway on a single-node cluster (monitor, manager, one OSD) in one container of the official ' +
-      'image; the Ceph dashboard is its console.',
+      'image; the Ceph dashboard is its console, logged in with the access key and secret key.',
     sourceUrl: 'https://quay.io/repository/ceph/ceph',
     defaults: { apiPort: 7480, consolePort: 8480, apiDomain: 'ceph', consoleDomain: 'dashboard.ceph', accessKey: 'devcatz', secretKey: 'devcatz-secret' },
     latest: () => sd.cephLatest(),
