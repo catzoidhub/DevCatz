@@ -92,7 +92,14 @@ if [ ! -f "$DATA/osd/ceph-0/whoami" ]; then
   ceph-osd -i 0 --mkfs --osd-uuid "$OSD_UUID" --osd-data "$DATA/osd/ceph-0"
 fi
 log "OSD"
-ceph-osd -i 0
+# Right after `ceph osd new` the monitor can refuse the new OSD ("mon_cmd_maybe_osd_create fail: 'wrong fsid'") and
+# ceph-osd exits: the first start of a fresh install ended there (Linux x64 VM, 2026-11-18); a second try works.
+for try in 1 2 3 4 5; do
+  if ceph-osd -i 0; then break; fi
+  [ "$try" = 5 ] && { log "the OSD did not start"; exit 1; }
+  log "the OSD did not start yet (try $try), again in 3 s"
+  sleep 3
+done
 
 for _ in $(seq 1 120); do ceph osd stat 2>/dev/null | grep -q '1 up' && break; sleep 1; done
 
