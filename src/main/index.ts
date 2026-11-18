@@ -42,6 +42,10 @@ app.setName('DevCatz');
 // Node's happy eyeballs gives each address of a host 250 ms: behind a slow NAT (a Linux VM, some networks) every IPv4
 // attempt timed out while IPv6 was unreachable, and fetch failed with a bare AggregateError (found by DialCatz).
 setDefaultAutoSelectFamilyAttemptTimeout(2500);
+// Chromium's HTTP cache had no limit: 891 MB of Vite dev-server modules on this Mac (2026-11-19, every HMR reload kept
+// a copy), and on Windows every download made through net.fetch (below) would be stored there too, next to DevCatz's
+// own copy (found by DoCatz: 1.1 GB). 64 MB is plenty for the window's remote images and the updater.
+app.commandLine.appendSwitch('disk-cache-size', String(64 * 1024 * 1024));
 
 // A second process (a devcatz:// link on Linux / Windows, a second launch) hands its arguments to the running one through
 // 'second-instance' and leaves at once: app.quit() let it reach whenReady and flash a window of its own (found by DBCatz).
@@ -1283,7 +1287,9 @@ app.whenReady().then(async () => {
   // Windows: Node's fetch tries one IPv4 address and gives up when a CDN node is unreachable from the user's network
   // (windows.php.net / downloads.php.net, 2026-10-27); Chromium's stack tries every address (IPv6 too) and uses the
   // system proxy, as the browser does. Every download / API call in the main process goes through it there.
-  if (isWin) globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => net.fetch(input as string, init as never)) as typeof fetch;
+  // cache: 'no-store' — what DevCatz downloads it keeps itself (runtimes, databases, tools); Chromium's cache only
+  // doubled it on disk.
+  if (isWin) globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => net.fetch(input as string, { cache: 'no-store', ...init } as never)) as typeof fetch;
   console.log(`DevCatz ${app.getVersion()} starting (packaged=${app.isPackaged})`);
   // Support Catzoid (Catzoid #94): the corner card counts its 7 days from the first run that knows about it.
   if (!store.settings.supportSince) store.updateSettings({ supportSince: Date.now() });
