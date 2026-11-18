@@ -244,7 +244,9 @@ export class AppUpdater {
 
   /** Swaps the app and starts the new version (the caller has stopped everything first). */
   quitAndInstall(): void {
-    autoUpdater.quitAndInstall(false, true);
+    // Windows: silent, or the assisted NSIS installer (oneClick: false) shows its "Who should this application be
+    // installed for?" page and waits for a click (found by the DialCatz session, 2026-11-18); it reopens the app after.
+    autoUpdater.quitAndInstall(process.platform === 'win32', true);
   }
 
   /** An update the user has not skipped: the app menu says "Update Available…" and the Settings gear has a dot. */
