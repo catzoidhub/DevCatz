@@ -990,6 +990,18 @@ export class StorageManager {
     if (action === 'stop') return;
     // Already up (just installed, a second click): leave it. The port check below would call its own port taken.
     if (action === 'start' && this.isActive(kind)) return;
+    // A container service left running (DevCatz killed, a crash): its own containers hold the ports, so they go first.
+    if (inDocker(kind)) {
+      try {
+        await sd.engineReady(c, (d) => this.processes.log(id, 'sys', d));
+      } catch (e) {
+        this.errors.set(kind, (e as Error).message);
+        this.onChange();
+        throw e;
+      }
+      ENGINES[kind].docker!.write(c, c.docker?.image ?? '');
+      await sd.compose(c, ['down', '--remove-orphans'], 60_000).catch(() => undefined);
+    }
     for (let i = 0; i < 10 && (await isPortOpen(c.apiPort)); i++) await new Promise((r) => setTimeout(r, 300));
     const ports = portsOf(c);
     for (const port of ports) {
@@ -1004,16 +1016,6 @@ export class StorageManager {
     }
     this.errors.delete(kind);
     if (inDocker(kind)) {
-      try {
-        await sd.engineReady(c, (d) => this.processes.log(id, 'sys', d));
-      } catch (e) {
-        this.errors.set(kind, (e as Error).message);
-        this.onChange();
-        throw e;
-      }
-      ENGINES[kind].docker!.write(c, c.docker?.image ?? '');
-      // A container left from a crash or a killed client would hold the ports.
-      await sd.compose(c, ['down', '--remove-orphans'], 60_000).catch(() => undefined);
       this.processes.startMany(id, [{ label: '', command: sd.upCommand(c), env: {}, cwd: sd.configDir(kind) }]);
       return;
     }
