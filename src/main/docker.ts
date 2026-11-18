@@ -369,7 +369,7 @@ export async function dockerStatus(): Promise<DockerStatus> {
     const onDocatz = docatzUp && !ownPick && (store.settings.dockerEngine !== 'system' || !sys);
     const engines: DockerStatus['engines'] = [
       ...(docatzUp || docatzCtx || docatz ? [{ id: 'docatz' as const, context: 'docatz', running: docatzUp, used: onDocatz }] : []),
-      ...contexts.map((c) => ({ id: c.engine, context: c.name, running: c.running, used: !onDocatz && c === sys, ...(c.engine === 'other' ? { label: c.description || c.name } : {}) })),
+      ...contexts.map((c) => ({ id: c.engine, context: c.name, running: c.running, used: !onDocatz && !ownPick && c === sys, ...(c.engine === 'other' ? { label: c.description || c.name } : {}) })),
       // Installed but without a context yet (Colima before its first start, Docker Desktop never opened): Start makes one.
       // Podman / Finch without a docker context: through their own CLI ('@podman' / '@finch').
       ...clis.filter((x) => !contexts.some((c) => c.engine === x.id)).map((x) => ({ id: x.id, context: `@${x.id}`, running: x.running, used: !onDocatz && x === ownPick })),
