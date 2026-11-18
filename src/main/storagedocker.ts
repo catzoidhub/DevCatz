@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import bcrypt from 'bcryptjs';
@@ -262,7 +262,8 @@ export function writeCeph(c: StorageConfig, image: string): void {
   mkdirSync(dir, { recursive: true });
   // The start script is copied next to the compose file: the app bundle is not shared with DoCatz's VM.
   const script = join(dir, 'ceph-start.sh');
-  copyFileSync(join(RESOURCES, 'storage', 'ceph-start.sh'), script);
+  // LF only: bash in the container stops at a CRLF line (a Windows checkout could have converted it).
+  writeFileSync(script, readFileSync(join(RESOURCES, 'storage', 'ceph-start.sh'), 'utf8').replace(/\r\n/g, '\n'), { mode: 0o755 });
   writeFileSync(
     composeFile('ceph'),
     [
