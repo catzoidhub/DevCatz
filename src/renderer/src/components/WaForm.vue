@@ -62,7 +62,7 @@ async function submit() {
       </div>
 
       <template v-if="!showProgress">
-        <RunInPicker v-if="mode === 'install' && service.docker" v-model="form.container" />
+        <RunInPicker v-if="mode === 'install' && service.docker" v-model="form.container" :kind="service.engine" :name="service.name" />
         <fieldset class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="label-caps mb-1 block">API port</span>

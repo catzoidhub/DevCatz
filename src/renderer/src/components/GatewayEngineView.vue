@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { moveItems } from '../moveengine';
+import { loadPlaces } from '../engines';
 import { words } from '@shared/platform';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { CaughtSms, GwKind, GwSendResult, GwState } from '@shared/types';
 import { GW_CATEGORY_LABEL, GW_LOGO } from '../gateways';
 import StatusDot from './StatusDot.vue';
@@ -29,6 +30,7 @@ const tld = computed(() => state.value?.settings.tld ?? 'localhost');
 const g = computed<GwState | null>(() => state.value?.gateways.find((x) => x.kind === props.kind) ?? null);
 const active = (s: GwState) => s.status === 'running' || s.status === 'starting';
 /** The Docker gateways install and run in DoCatz by default (macOS, Windows), listed under DoCatz's DevCatz Services; the form offers another engine when there is one. */
+onMounted(() => void loadPlaces());
 const inDocatz = computed(() => !!g.value?.docker && (g.value.config ? (g.value.config.container ?? (isWin ? 'docatz' : 'system')) === 'docatz' : !!state.value?.docatz.forGateways));
 /** DoCatz is not on this PC at all (no app, no DoCatz data), or its Download & Install is under way: that comes first. */
 const needDocatz = computed(() => inDocatz.value && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task));
@@ -94,7 +96,7 @@ const moreItems = computed<MenuItem[]>(() => {
   return [
     ...(s.webPath ? [{ label: 'Open web UI', action: () => herd.openUrl(s.url! + s.webPath) }] : []),
     ...(inDocatz.value ? [{ label: 'Open in DoCatz', action: () => openInDocatz(s) }] : []),
-    ...moveItems(s.docker, inDocatz.value, s.name, (to) => herd.gwMove(s.kind, to)),
+    ...moveItems(s.docker, s.config?.container ?? (isWin ? 'docatz' : 'system'), s.name, (to) => herd.gwMove(s.kind, to)),
     { label: 'Open data folder', action: () => herd.gwOpenData(s.kind) },
     { label: 'Check for updates', action: checkUpdates },
     { label: 'Settings…', action: () => (form.value = { service: s, mode: 'edit' }) },

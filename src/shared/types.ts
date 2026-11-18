@@ -882,6 +882,8 @@ export interface Settings {
   tld: string;
   /** Docker tab: run on DoCatz's engine while it runs (default), or always on the system's current docker context. */
   dockerEngine?: 'docatz' | 'system';
+  /** With dockerEngine 'system': the docker context picked in the Docker tab (Kiri, Colima …); unset = the current one. */
+  dockerContext?: string;
   theme: ThemeMode;
   /** Start every site when DevCatz launches (otherwise only those marked autoStart). */
   startAllOnLaunch: boolean;
@@ -1028,7 +1030,15 @@ export interface SiteGroup {
   collapsed?: boolean;
 }
 
-export type DockerEngineId = 'docatz' | 'orbstack' | 'docker-desktop' | 'docker-engine' | 'colima' | 'rancher' | 'podman' | 'finch' | 'other';
+/**
+ * Where a Docker gateway or a storage container runs: DoCatz's engine (recommended, the default wherever DoCatz exists),
+ * 'system' = the engine the Docker tab uses (installs before 2026-11-18), or one docker context picked at install
+ * (`ctx:kiri`, `ctx:desktop-linux` …) when several engines are installed; Podman and Finch without a docker context
+ * through their own CLIs (`cli:podman`, `cli:finch`).
+ */
+export type GwWhere = 'docatz' | 'system' | `ctx:${string}` | 'cli:podman' | 'cli:finch';
+
+export type DockerEngineId = 'docatz' | 'orbstack' | 'docker-desktop' | 'docker-engine' | 'colima' | 'rancher' | 'podman' | 'finch' | 'kiri' | 'other';
 
 export interface DockerStatus {
   /** Container engines found on this Mac (app or CLI), most recommended first. */
@@ -1049,8 +1059,13 @@ export interface DockerStatus {
   docatz: 'running' | 'stopped' | null;
   /** The system's current docker context and its engine when DevCatz runs on DoCatz instead (to offer switching back). */
   system: { context: string; engine: DockerEngineId; running: boolean } | null;
-  /** Every engine DevCatz can use, DoCatz first, then the system's current context: which runs, which one is used. */
-  engines: { id: DockerEngineId; context: string; running: boolean; used: boolean }[];
+  /**
+   * Every engine DevCatz can use: DoCatz first, then each docker context (`docker context ls`), then engines installed
+   * without a context yet (Colima before its first start: context ''). Which runs, which one is used.
+   */
+  engines: { id: DockerEngineId; context: string; running: boolean; used: boolean; label?: string }[];
+  /** Podman / Finch found by their own CLI (they need no docker context): whether each answers. */
+  clis?: { id: 'podman' | 'finch'; running: boolean }[];
 }
 
 export interface DockerFile {
@@ -1158,7 +1173,7 @@ export interface StorageConfig {
    * Runs as a container instead of a downloaded program (TODO §40: Ceph everywhere; Garage where it publishes no
    * checksummed build for this computer): the image and where it runs (DoCatz's engine or the system's).
    */
-  docker?: { image: string; container: 'docatz' | 'system' } | null;
+  docker?: { image: string; container: GwWhere } | null;
   /** Garage: the community Garage Web UI as its console (on unless false; optional, not made by Garage's authors). */
   webUi?: boolean;
 }
@@ -1246,6 +1261,8 @@ export interface WsConfig {
   binaryDir: string;
   autoStart: boolean;
   version?: string | null;
+  /** Runs as a container (Windows, or no native build): where — DoCatz, or the engine picked at install. */
+  container?: GwWhere;
 }
 
 export interface WsChannelStat {
@@ -1366,6 +1383,8 @@ export interface SearchConfig {
   binaryDir: string;
   autoStart: boolean;
   version?: string | null;
+  /** Runs as a container (Windows, or no native build): where — DoCatz, or the engine picked at install. */
+  container?: GwWhere;
 }
 
 export interface SearchState {
@@ -1947,7 +1966,7 @@ export interface WaConfig {
   autoStart: boolean;
   dataDir: string;
   /** Docker gateways: DoCatz's engine or the system's (see docker.ts containerOf); unset = installed before the choice. */
-  container?: 'docatz' | 'system';
+  container?: GwWhere;
 }
 
 export interface WaSession {
@@ -2082,7 +2101,7 @@ export interface GwConfig {
   /** First-start setup done (users, tokens, routes); cleared when ports or credentials change so it runs again. */
   setupDone: boolean;
   /** Docker gateways: DoCatz's engine or the system's (see docker.ts containerOf); unset = installed before the choice. */
-  container?: 'docatz' | 'system';
+  container?: GwWhere;
 }
 
 export interface GwState {
@@ -3294,7 +3313,7 @@ export interface HerdApi {
   gwCheckUpdates(): Promise<string[]>;
   gwUpgrade(kind: GwKind): Promise<void>;
   /** A Docker gateway (WAHA too) to DoCatz's engine or the system's; its data folder stays. */
-  gwMove(kind: GwKind | 'waha', to: 'docatz' | 'system'): Promise<void>;
+  gwMove(kind: GwKind | 'waha', to: GwWhere): Promise<void>;
   gwSetAutoStart(kind: GwKind, on: boolean): Promise<void>;
   /** Sends a test email / notification / SMS through the gateway, as a site would. */
   gwSend(kind: GwKind, input: GwSendInput): Promise<GwSendResult>;

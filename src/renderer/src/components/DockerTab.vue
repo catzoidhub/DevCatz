@@ -43,6 +43,7 @@ const ENGINES: EngineCard[] = ([
   { id: 'rancher', name: 'Rancher Desktop', start: 'Open Rancher Desktop', download: 'https://rancherdesktop.io/' },
   { id: 'podman', name: 'Podman', start: 'Start Podman', download: 'https://podman-desktop.io/downloads' },
   { id: 'finch', name: 'Finch', start: 'finch vm start', download: 'https://github.com/runfinch/finch/releases', macOnly: true },
+  { id: 'kiri', name: 'Kiri', start: 'Open Kiri', download: 'https://runkiri.com' },
 ] as EngineCard[]).filter((e) => !((isWin || isLinux) && e.macOnly) && !(!isLinux && e.linuxOnly));
 const engineName = (id: DockerEngineId | null) => ENGINES.find((e) => e.id === id)?.name ?? 'Container engine';
 // DoCatz has its own button (Open in DoCatz / Download & Install) in the alert: not a second one here.
@@ -257,18 +258,30 @@ const engineOptions = computed(() => {
   if (!st) return [];
   return st.engines.length ? st.engines : [{ id: st.engine ?? ('other' as DockerEngineId), context: st.context ?? '', running: true, used: true }];
 });
-/** A click on an engine: use it; one that is not running is started first (its app, colima start …). */
-async function pickEngine(e: { id: DockerEngineId; running: boolean }) {
-  if (!e.running) await start(e.id);
-  await useEngine(e.id === 'docatz' ? 'docatz' : 'system');
+/**
+ * A click on an engine: use it; one that is not running is started first (its app, colima start …). Every docker
+ * context is a choice (user, 2026-11-18), not only DoCatz and the current one; DevCatz runs compose with
+ * `--context <it>` and never switches the system's current context.
+ */
+async function pickEngine(e: { id: DockerEngineId; context: string; running: boolean }) {
+  let ctx = e.context;
+  if (!e.running) {
+    await start(e.id);
+    // Colima's context exists only after its first start: find it now.
+    if (!ctx) await refresh();
+    if (!ctx) ctx = status.value?.engines.find((x) => x.id === e.id && x.context)?.context ?? '';
+  }
+  await useEngine(e.id === 'docatz' ? 'docatz' : 'system', ctx);
 }
 /** Open in DoCatz is off while the containers run on another engine (OrbStack …): DoCatz would not show them. */
 const notOnDocatz = computed(() => (status.value?.daemon && status.value.engine !== 'docatz' ? `The containers run on ${engineName(status.value.engine)}: pick DoCatz in step 1 to see them in DoCatz` : null));
-async function useEngine(which: 'docatz' | 'system') {
-  await attempt(() => herd.updateSettings({ dockerEngine: which }));
+/** An engine card's name: a context of an engine DevCatz does not know shows its own description. */
+const cardName = (e: { id: DockerEngineId; label?: string; context: string }) => (e.id === 'other' ? (e.label ?? e.context) : engineName(e.id));
+async function useEngine(which: 'docatz' | 'system', context?: string) {
+  await attempt(() => herd.updateSettings(which === 'docatz' ? { dockerEngine: 'docatz' } : { dockerEngine: 'system', ...(context ? { dockerContext: context } : {}) }));
   await refresh();
   const now: DockerStatus | null = status.value;
-  notify('success', which === 'docatz' ? 'Containers now run on DoCatz' : `Containers now run on ${engineName(now?.engine ?? null)}`);
+  notify('success', which === 'docatz' ? 'Containers now run on DoCatz' : `Containers now run on ${now?.engine === 'other' ? (now.context ?? 'that engine') : engineName(now?.engine ?? null)}`);
 }
 
 // ------------------------------------------------- start with the app, .env
@@ -383,7 +396,7 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             class="flex items-center gap-3 rounded-box border px-3 py-2.5 text-left transition-colors disabled:cursor-default"
             :class="e.used ? 'border-primary bg-primary/5 ring-1 ring-primary' : e.running ? 'border-base-300/60 bg-base-200/40 hover:border-primary/50 hover:bg-base-200' : 'border-base-300/60 bg-base-200/20 opacity-70'"
             :disabled="e.used || starting === e.id"
-            :title="e.used ? 'This site\'s containers run here' : e.running ? `Run this site's containers on ${engineName(e.id)}` : `Start ${engineName(e.id)} and run this site's containers there`"
+            :title="e.used ? 'This site\'s containers run here' : e.running ? `Run this site's containers on ${cardName(e)}` : `Start ${cardName(e)} and run this site's containers there`"
             @click="pickEngine(e)"
           >
             <img v-if="ENGINE_LOGO[e.id]" :src="ENGINE_LOGO[e.id]" alt="" class="size-8 shrink-0" :class="/svg/.test(ENGINE_LOGO[e.id]!) ? 'rounded-lg bg-white p-1.5 ring-1 ring-base-content/10' : ''" draggable="false" />
@@ -392,17 +405,15 @@ const stateClass = (s: string) => (s === 'running' ? 'badge-success' : s === 'ex
             </span>
             <span class="min-w-0 flex-1">
               <span class="flex items-center gap-1.5 text-sm font-medium leading-tight">
-                {{ engineName(e.id) }}
+                {{ cardName(e) }}
                 <span v-if="e.id === 'docatz'" class="badge badge-ghost badge-xs">recommended</span>
               </span>
               <span class="block text-[11px] leading-tight opacity-60">
-                <template v-if="e.running">running · context {{ e.context }}</template>
+                <template v-if="e.running">running · {{ e.context.startsWith('@') ? `its own ${e.id} CLI` : `context ${e.context}` }}</template>
                 <template v-else-if="starting === e.id">starting…</template>
+                <template v-else-if="!e.context">installed · click to start it</template>
                 <template v-else>not running · click to start it</template>
               </span>
-            </span>
-            <span class="grid size-4 shrink-0 place-items-center rounded-full border" :class="e.used ? 'border-primary' : 'border-base-content/30'">
-              <span v-if="e.used" class="size-2 rounded-full bg-primary" />
             </span>
             <span
               class="grid size-[18px] shrink-0 place-items-center rounded-full border"

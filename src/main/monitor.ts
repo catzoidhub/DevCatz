@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorSnapshot, MonitorSystem, MonitorUpdate } from '@shared/types';
 import { words } from '@shared/platform';
 import { sizeOf as walkSizeOf } from './depclean';
+import { dockerCompose } from './docker';
 import { run } from './env';
 import { isLinux, isWin } from './platform';
 import { dataDir, store } from './store';
@@ -742,15 +743,15 @@ export class Monitor {
     if (!this.live) return [];
     if (Date.now() - this.dockerCheckedAt > 60_000) {
       this.dockerCheckedAt = Date.now();
-      this.dockerOk = (await run('docker', ['info', '--format', '{{.ServerVersion}}'], { timeout: 5000 })).code === 0;
+      this.dockerOk = (await run(dockerCompose()[0], [...dockerCompose().slice(1, -1), 'info', '--format', '{{.ServerVersion}}'], { timeout: 5000 })).code === 0;
     }
     if (!this.dockerOk) return [];
     if (Date.now() - this.lastContainersAt < 9000) return this.containers;
     const since = this.lastContainersAt ? (Date.now() - this.lastContainersAt) / 1000 : dt;
     this.lastContainersAt = Date.now();
     const [stats, ps] = await Promise.all([
-      run('docker', ['stats', '--no-stream', '--format', '{{json .}}'], { timeout: 15_000 }),
-      run('docker', ['ps', '--format', '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}'], { timeout: 10_000 }),
+      run(dockerCompose()[0], [...dockerCompose().slice(1, -1), 'stats', '--no-stream', '--format', '{{json .}}'], { timeout: 15_000 }),
+      run(dockerCompose()[0], [...dockerCompose().slice(1, -1), 'ps', '--format', '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}'], { timeout: 10_000 }),
     ]);
     const project = new Map(ps.stdout.split('\n').filter(Boolean).map((l) => l.split('\t')).map(([n, p, dir]) => [n, { p, dir }]));
     const sites = this.targets().filter((t) => t.kind === 'site');

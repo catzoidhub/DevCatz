@@ -7,7 +7,7 @@ import { connect as netConnect } from 'node:net';
 import { join } from 'node:path';
 import type { CaughtSms, GwCategory, GwConfig, GwKind, GwSendInput, GwSendResult, GwState, ProjectConfig, StorageAction, TaskProgress } from '@shared/types';
 import { readEnvFiles } from '../detect';
-import { containerOf, defaultContainer, docatzAvailable, gatewayCompose, gatewayDocker, gatewayEngineReady, hostGateway, otherEngineName, type GwContainer } from '../docker';
+import { containerOf, defaultContainer, docatzAvailable, gatewayCompose, gatewayDocker, gatewayEngineReady, hostGateway, whereLabel, asWhere, type GwContainer } from '../docker';
 import { getShellEnv, run } from '../env';
 import { sendMail } from '../mail/smtp';
 import { ProcessManager } from '../processes';
@@ -682,7 +682,7 @@ ${xh}${dbVolume ? 'volumes:\n  mysql: {}\n' : ''}`;
     try {
       if (e.docker) {
         // A choice the platform does not have (DoCatz on Linux) falls back to the system's engine.
-        c.container = c.container === 'docatz' && docatzAvailable() ? 'docatz' : c.container === 'system' ? 'system' : defaultContainer();
+        c.container = c.container === 'docatz' ? (docatzAvailable() ? 'docatz' : defaultContainer()) : (asWhere(c.container) ?? defaultContainer());
         this.installingIn.set(kind, c.container);
         await gatewayEngineReady(c.container, (detail) => t.report({ detail }), abort.signal);
         t.report({ step: 1, detail: IMAGE[kind as Exclude<GwKind, 'stalwart'>] });
@@ -917,7 +917,7 @@ ${xh}${dbVolume ? 'volumes:\n  mysql: {}\n' : ''}`;
     const from = containerOf(c);
     if (from === to) return;
     if (to === 'docatz' && !docatzAvailable()) throw new Error('DoCatz is not on this system');
-    const label = (w: GwContainer) => (w === 'docatz' ? 'DoCatz' : (otherEngineName() ?? 'the container engine'));
+    const label = whereLabel;
     const wasActive = this.isActive(kind);
     const steps = ['Stopping', `Checking ${label(to)}`, 'Pulling the images', `Removing it from ${label(from)}`, ...(wasActive ? ['Starting'] : [])];
     const t = this.task(kind, { kind: 'install', title: `Moving ${e.name} to ${label(to)}`, steps, step: 0 });

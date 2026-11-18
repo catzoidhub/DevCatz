@@ -2,7 +2,7 @@
 import { isWin } from '../platform';
 import { words } from '@shared/platform';
 import { WS_LOGO } from '../logos';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ProjectState, StorageAction, WsKind, WsState, WsStats } from '@shared/types';
 import StatusDot from './StatusDot.vue';
 import LogView from './LogView.vue';
@@ -15,6 +15,7 @@ import Sparkline from './Sparkline.vue';
 import PopMenu, { type MenuItem } from './PopMenu.vue';
 import { attempt, herd, notify, state, svcInstallRequest, uninstallRequest } from '../store';
 import docatzLogo from '../assets/logos/docatz.png';
+import { loadPlaces, placeOf } from '../engines';
 import DoCatzInstallCard from './DoCatzInstallCard.vue';
 import CatMood from './CatMood.vue';
 
@@ -36,6 +37,14 @@ function pick(k: WsKind) {
   selectedKind.value = k;
 }
 const selected = computed(() => (selectedSiteId.value ? null : (services.value.find((s) => s.kind === selectedKind.value) ?? null)));
+/**
+ * A container service (no native build here): where it runs — DoCatz, or the engine picked at install (user,
+ * 2026-11-18). Not installed: where Install would put it (DoCatz when installed, else the user's own engine).
+ */
+onMounted(() => void loadPlaces());
+const place = computed(() => (selected.value?.inDocatz ? placeOf(selected.value.config ? (selected.value.config.container ?? 'docatz') : undefined) : null));
+const onDocatz = computed(() => !!selected.value?.inDocatz && (!place.value || place.value.where === 'docatz'));
+const placeName = computed(() => place.value?.name ?? 'DoCatz');
 const installed = computed(() => services.value.filter((s) => s.installed));
 // First installed server, else the first kind (its install page).
 watch(
@@ -56,7 +65,7 @@ const moreItems = computed<MenuItem[]>(() => {
   const s = selected.value;
   if (!s?.installed) return [];
   return [
-    ...(s.inDocatz ? [{ label: 'Open in DoCatz', action: () => openInDocatz(s.kind) }] : []),
+    ...(s.inDocatz && onDocatz.value ? [{ label: 'Open in DoCatz', action: () => openInDocatz(s.kind) }] : []),
     { label: 'Open data folder', action: () => herd.wsOpenData(s.kind) },
     { label: 'Check for updates', action: checkUpdates },
     { label: 'Settings…', action: () => (form.value = { service: s, mode: 'edit' }) },
@@ -70,7 +79,7 @@ type Tab = 'inspector' | 'client' | 'connection' | 'sites' | 'logs';
 const tab = ref<Tab>('inspector');
 const form = ref<{ service: WsState; mode: 'install' | 'edit' } | null>(null);
 /** Windows: Typesense, Sonic and Sockudo run from their official images in DoCatz (no Windows builds); DoCatz lists them. */
-const needDocatz = computed(() => !!selected.value?.inDocatz && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task));
+const needDocatz = computed(() => onDocatz.value && ((state.value?.docatz.installed === false && !state.value.docatz.engine) || !!state.value?.docatz.task));
 async function openInDocatz(kind: string) {
   if (!(await attempt(() => herd.docatzOpenGateway(kind)))) notify('error', 'DoCatz is not installed: install it to see this server there');
 }
@@ -352,10 +361,10 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.wsUninstall(re
             </div>
             <DoCatzInstallCard v-else-if="needDocatz" :kind="selected.kind" :name="selected.name" />
             <button v-else class="btn btn-primary" :disabled="!!selected.task && !selected.task.done && !selected.task.error" @click="form = { service: selected, mode: 'install' }">
-              <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="selected.inDocatz" :src="docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ selected.inDocatz ? 'Install in DoCatz…' : `Install ${selected.name}…` }}
+              <span v-if="selected.task && !selected.task.done && !selected.task.error" class="loading loading-spinner loading-xs" /><img v-else-if="selected.inDocatz && (place?.logo ?? docatzLogo)" :src="place?.logo ?? docatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ selected.inDocatz ? `Install in ${placeName}…` : `Install ${selected.name}…` }}
             </button>
             <p v-if="selected.inDocatz && !needDocatz" class="text-xs opacity-60">
-              {{ selected.name }} publishes no {{ words.os }} build: here it runs from its official image in DoCatz's container engine{{ isWin ? ' (WSL 2)' : '' }}. DevCatz pulls it there, starts and stops it and keeps its port, domain, keys and .env lines as usual; DoCatz shows the container under DevCatz Services.
+              {{ selected.name }} publishes no {{ words.os }} build: here it runs from its official image in {{ onDocatz ? `DoCatz's container engine${isWin ? ' (WSL 2)' : ''}` : placeName }}. DevCatz pulls it there, starts and stops it and keeps its port, domain, keys and .env lines as usual{{ onDocatz ? '; DoCatz shows the container under DevCatz Services' : '' }}.
             </p>
             <p class="text-xs opacity-60">
               Sites with their own WebSocket server (Socket.IO, ws, Django Channels …) need nothing here: DevCatz passes the upgrade on the site's domain. Install a
@@ -375,7 +384,7 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.wsUninstall(re
                 <StatusDot :status="selected.status" />
                 <span class="badge badge-soft badge-sm" :class="selected.status === 'running' ? 'badge-success' : selected.status === 'starting' ? 'badge-warning' : selected.status === 'crashed' ? 'badge-error' : 'badge-ghost'">{{ selected.status }}</span>
               </h2>
-              <div class="font-mono text-xs opacity-60">{{ selected.config.version }} · {{ PROTOCOL[selected.protocol] }} · 127.0.0.1:{{ selected.config.port }}<template v-if="selected.inDocatz"> · in DoCatz</template><template v-if="selected.config.autoStart"> · starts with DevCatz</template></div>
+              <div class="font-mono text-xs opacity-60">{{ selected.config.version }} · {{ PROTOCOL[selected.protocol] }} · 127.0.0.1:{{ selected.config.port }}<template v-if="selected.inDocatz"> · in {{ placeName }}</template><template v-if="selected.config.autoStart"> · starts with DevCatz</template></div>
             </div>
             <div class="flex shrink-0 flex-wrap items-center gap-2">
             <button v-if="selected.update" class="btn btn-warning btn-soft btn-sm" :disabled="!!busy || updating(selected)" :title="`${selected.config.version} → ${selected.update}: the data folder and settings stay`" @click="upgrade(selected)">

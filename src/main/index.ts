@@ -14,7 +14,7 @@ import { setStatusPageIcon } from './proxy';
 import { store } from './store';
 import { screenshotDataUrl } from './screenshots';
 import { HerdTray } from './tray';
-import { dockerStatus, startEngine } from './docker';
+import { asWhere, dockerStatus, startEngine } from './docker';
 import { etcDir } from './php';
 import * as s3 from './s3';
 import { ENGINES, STORAGE_KINDS } from './storage';
@@ -427,7 +427,11 @@ function api(): HerdApi {
     gwOpenData: async (kind) => void shell.openPath(herd.gateways.openData(kind)),
     gwCheckUpdates: () => herd.gateways.checkUpdates(),
     gwUpgrade: (kind) => herd.gateways.upgrade(kind),
-    gwMove: (kind, to) => (kind === 'waha' ? herd.whatsapp.move(to === 'docatz' ? 'docatz' : 'system') : herd.gateways.move(kind, to === 'docatz' ? 'docatz' : 'system')),
+    gwMove: (kind, to) => {
+      const where = asWhere(to);
+      if (!where) throw new Error(`Unknown engine ${String(to)}`);
+      return kind === 'waha' ? herd.whatsapp.move(where) : herd.gateways.move(kind, where);
+    },
     gwSetAutoStart: async (kind, on) => herd.gateways.setAutoStart(kind, on),
     gwSend: (kind, input) => herd.gateways.send(kind, input),
     gwEnv: (kind, siteId) => herd.gateways.env(kind, siteId),

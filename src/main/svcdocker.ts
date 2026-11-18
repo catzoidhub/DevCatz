@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { TaskProgress } from '@shared/types';
-import { gatewayCompose, gatewayDocker, gatewayEngineReady } from './docker';
+import { asWhere, defaultContainer, docatzAvailable, gatewayCompose, gatewayDocker, gatewayEngineReady, type GwContainer } from './docker';
 import { getShellEnv, run } from './env';
 import { isWin, killTree } from './platform';
 
@@ -25,25 +25,37 @@ const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 /** A host path in the compose file (a Windows path as it is: DoCatz's compose maps C:\… itself). */
 export const vol = (host: string, inside: string, ro = false) => JSON.stringify(`${host}:${inside}${ro ? ':ro' : ''}`);
 
-/** DoCatz's engine answers (opened and waited for when installed but stopped), else why not. */
-export const svcEngineReady = (report?: (detail: string) => void, signal?: AbortSignal) => gatewayEngineReady('docatz', report, signal);
+/**
+ * Where a service container runs (user, 2026-11-18): the Run in choice at install — DoCatz (recommended; the default
+ * when DoCatz is installed or no other engine is), the engine the user already has, or any docker context. Installs
+ * from before the choice ran in DoCatz.
+ */
+export const svcWhere = (c: { container?: GwContainer }): GwContainer => c.container ?? 'docatz';
+/** The Run in choice of an install, checked: DoCatz where DoCatz cannot run falls back to the default. */
+export const svcPick = (v: unknown): GwContainer => {
+  const w = asWhere(v);
+  return !w || (w === 'docatz' && !docatzAvailable()) ? defaultContainer() : w;
+};
+
+/** The engine answers (started and waited for when installed but stopped), else why not. */
+export const svcEngineReady = (where: GwContainer, report?: (detail: string) => void, signal?: AbortSignal) => gatewayEngineReady(where, report, signal);
 
 export function writeSvcCompose(file: string, yaml: string): void {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, yaml, { mode: 0o600 });
 }
 
-export function svcCompose(file: string, kind: SvcKind, args: string[], timeout = 120_000) {
-  const [bin, ...pre] = gatewayCompose('docatz');
+export function svcCompose(where: GwContainer, file: string, kind: SvcKind, args: string[], timeout = 120_000) {
+  const [bin, ...pre] = gatewayCompose(where);
   return run(bin, [...pre, '-f', file, '-p', svcProject(kind), ...args], { timeout, cwd: dirname(file) });
 }
 
 /** The server's process: `compose up`, attached, so its output is the server's log and stopping it stops the container. */
-export const svcUpCommand = (file: string, kind: SvcKind) => [...gatewayCompose('docatz'), '-f', file, '-p', svcProject(kind), 'up', '--remove-orphans'].map(q).join(' ');
+export const svcUpCommand = (where: GwContainer, file: string, kind: SvcKind) => [...gatewayCompose(where), '-f', file, '-p', svcProject(kind), 'up', '--remove-orphans'].map(q).join(' ');
 
 /** `compose pull` with its progress lines as the task's detail; cancellable. */
-export function svcPull(file: string, kind: SvcKind, report: (p: Partial<TaskProgress>) => void, signal: AbortSignal): Promise<void> {
-  const [bin, ...pre] = gatewayCompose('docatz');
+export function svcPull(where: GwContainer, file: string, kind: SvcKind, report: (p: Partial<TaskProgress>) => void, signal: AbortSignal): Promise<void> {
+  const [bin, ...pre] = gatewayCompose(where);
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, [...pre, '-f', file, '-p', svcProject(kind), 'pull'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: dirname(file), env: getShellEnv() as NodeJS.ProcessEnv, windowsHide: true });
     let last = '';
@@ -64,13 +76,13 @@ export function svcPull(file: string, kind: SvcKind, report: (p: Partial<TaskPro
   });
 }
 
-export async function svcRemoveImage(image: string): Promise<void> {
-  const [bin, ...pre] = gatewayDocker('docatz');
+export async function svcRemoveImage(where: GwContainer, image: string): Promise<void> {
+  const [bin, ...pre] = gatewayDocker(where);
   await run(bin, [...pre, 'rmi', image], { timeout: 120_000 }).catch(() => undefined);
 }
 
 /** Containers and network down, the image removed (data stays in the data folder). */
-export async function svcRemove(file: string, kind: SvcKind, image: string): Promise<void> {
-  await svcCompose(file, kind, ['down', '--remove-orphans'], 120_000).catch(() => undefined);
-  await svcRemoveImage(image);
+export async function svcRemove(where: GwContainer, file: string, kind: SvcKind, image: string): Promise<void> {
+  await svcCompose(where, file, kind, ['down', '--remove-orphans'], 120_000).catch(() => undefined);
+  await svcRemoveImage(where, image);
 }

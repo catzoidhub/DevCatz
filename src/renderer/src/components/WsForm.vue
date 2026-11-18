@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import type { WsConfig, WsState } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
 import TaskStepper from './TaskStepper.vue';
+import RunInPicker from './RunInPicker.vue';
 
 /** Install (defaults, fresh keys) or edit one WebSocket server. */
 const props = defineProps<{ service: WsState; mode: 'install' | 'edit' }>();
@@ -68,6 +69,8 @@ async function submit() {
       </div>
 
       <template v-if="!showProgress">
+        <!-- A container here (no native build): DoCatz first and recommended, or the engine already installed. -->
+        <RunInPicker v-if="mode === 'install' && service.inDocatz" v-model="form.container" :kind="service.kind" :name="service.name" :movable="false" />
         <fieldset class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="label-caps mb-1 block">{{ service.kind === 'nats' ? 'WebSocket port' : 'Port' }}</span>

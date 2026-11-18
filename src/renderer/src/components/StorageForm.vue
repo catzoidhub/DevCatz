@@ -4,6 +4,8 @@ import { computed, ref } from 'vue';
 import type { StorageConfig, StorageState } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
 import TaskStepper from './TaskStepper.vue';
+import RunInPicker from './RunInPicker.vue';
+import { gwPlaces, placeOf } from '../engines';
 
 /** Install (defaults) or edit (current settings) one object storage service. */
 const props = defineProps<{ service: StorageState; mode: 'install' | 'edit' }>();
@@ -55,7 +57,15 @@ const showConsole = computed(() => props.service.kind !== 'garage' || form.value
 /** What the second port / domain is called: a console, Ceph's dashboard. */
 const consoleWord = computed(() => (props.service.consoleKind === 'dashboard' ? 'Dashboard' : 'Console'));
 /** Where its containers run: DoCatz (default wherever it exists) or the system's engine. */
-const engineWord = computed(() => (props.service.defaults.docker?.container === 'system' ? 'Docker' : 'DoCatz'));
+const engineWord = computed(() => {
+  const p = placeOf(form.value.docker?.container);
+  return p ? p.name : gwPlaces.value.length ? 'Docker' : 'DoCatz';
+});
+/** The Run in choice writes here; the form starts from the defaults' docker object. */
+const runIn = computed({
+  get: () => form.value.docker?.container,
+  set: (v) => (form.value.docker = { image: form.value.docker?.image ?? '', container: v ?? 'docatz' }),
+});
 
 const cancelling = ref(false);
 async function cancel() {
@@ -146,6 +156,7 @@ async function submit() {
 
       <!-- 3. Folders, binary, autostart -->
       <fieldset class="space-y-3">
+        <RunInPicker v-if="service.inDocker && mode === 'install'" v-model="runIn" :kind="service.kind" :name="service.name" :movable="false" />
         <div v-if="service.inDocker" role="note" class="rounded-box bg-base-200/60 px-3 py-2.5 text-xs leading-relaxed opacity-80">
           Runs as a container of the official image in {{ engineWord }}: no program to download, and the data stays in the
           Docker volume <code>devcatz-storage-{{ service.kind }}</code>. Uninstall asks whether to delete it.

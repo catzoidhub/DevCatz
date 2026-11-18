@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process';
 import { app, shell } from 'electron';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { basename, dirname, isAbsolute, join, posix, relative } from 'node:path';
-import { isPhpFramework, isPythonFramework, isRubyFramework, type AppInfo, type DockerEngineId, type DockerFile, type DockerGenOptions, type DockerTarget, type DockerService, type DockerStatus, type ProjectConfig, type StackInfo } from '@shared/types';
+import { isPhpFramework, isPythonFramework, isRubyFramework, type AppInfo, type DockerEngineId, type DockerFile, type DockerGenOptions, type DockerTarget, type DockerService, type DockerStatus, type GwWhere, type ProjectConfig, type StackInfo } from '@shared/types';
 import { readEnvFiles, readJson, readText, slugify, type PackageJson } from './detect';
 import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
@@ -52,6 +52,9 @@ export const ENGINES: EngineDef[] = ([
   { id: 'rancher', name: 'Rancher Desktop', app: 'Rancher Desktop.app', win: '%LOCALAPPDATA%\\Programs\\Rancher Desktop\\Rancher Desktop.exe', linux: '/opt/rancher-desktop', download: 'https://rancherdesktop.io/' },
   { id: 'podman', name: 'Podman', app: 'Podman Desktop.app', win: '%LOCALAPPDATA%\\Programs\\Podman Desktop\\Podman Desktop.exe', bin: 'podman', download: 'https://podman-desktop.io/downloads' },
   { id: 'finch', name: 'Finch', bin: 'finch', macOnly: true, download: 'https://github.com/runfinch/finch/releases' },
+  // Kiri (runkiri.com, Apache-2.0): a light engine on macOS (Kiri.app), Windows (WSL 2) and Linux, with its own
+  // context "kiri"; its CLI `kiri` is on the PATH everywhere.
+  { id: 'kiri', name: 'Kiri', app: 'Kiri.app', bin: 'kiri', download: 'https://runkiri.com' },
 ] as EngineDef[]).filter((e) => !((isWin || isLinux) && e.macOnly) && !(!isLinux && e.linuxOnly));
 
 /** Windows: an engine's .exe with %ProgramFiles% / %LOCALAPPDATA% filled in. */
@@ -76,7 +79,27 @@ export const dockerCompose = (): string[] => [cli.bin, ...cli.compose];
  * missing). Kept in the gateway's config; one installed before this setting existed stays where it was (DoCatz on
  * Windows, the system's engine elsewhere).
  */
-export type GwContainer = 'docatz' | 'system';
+export type GwContainer = GwWhere;
+/** The docker context of a `ctx:<name>` choice (null for DoCatz / the system's engine). */
+export const contextOf = (w: GwContainer): string | null => (w.startsWith('ctx:') ? w.slice(4) : null);
+/** Accepts what a stored config says (a known value), else null. */
+export const asWhere = (v: unknown): GwContainer | null =>
+  v === 'docatz' || v === 'system' || v === 'cli:podman' || v === 'cli:finch' || (typeof v === 'string' && /^ctx:[\w.-]+$/.test(v)) ? (v as GwContainer) : null;
+/** Podman / Finch through their own CLI (no docker context): the program, else null. */
+export const cliOf = (w: GwContainer): 'podman' | 'finch' | null => (w === 'cli:podman' ? 'podman' : w === 'cli:finch' ? 'finch' : null);
+/** Engine of each context, as dockerStatus() / gatewayEngineReady() last saw it. */
+const contextEngine = new Map<string, DockerEngineId>();
+/** A place's name for messages: DoCatz, Kiri, Docker Desktop … */
+export function whereLabel(w: GwContainer): string {
+  if (w === 'docatz') return 'DoCatz';
+  if (cliOf(w)) return cliOf(w) === 'podman' ? 'Podman' : 'Finch';
+  const ctx = contextOf(w);
+  if (ctx) {
+    const id = contextEngine.get(ctx);
+    return (id && id !== 'other' && ENGINES.find((e) => e.id === id)?.name) || ctx;
+  }
+  return otherEngineName() ?? 'the container engine';
+}
 /**
  * DoCatz is where Docker gateways go: macOS and Windows (DoCatz is installed for them when missing); Linux once DoCatz
  * is there (its bridge.json, ~/.config/DoCatz — DoCatz has no Linux build yet, DoCatz #101).
@@ -88,14 +111,24 @@ export const containerOf = (c?: { container?: GwContainer } | null): GwContainer
   if (isLinux && c?.container === 'docatz' && !docatzAvailable()) return 'system';
   return c?.container ?? (isWin ? 'docatz' : 'system');
 };
-export const defaultContainer = (): GwContainer => (docatzAvailable() ? 'docatz' : 'system');
+/**
+ * The Run in default (user, 2026-11-18): DoCatz when it is installed; when it is not, the container engine the user
+ * already has (OrbStack, Docker Desktop …); DoCatz (installed by DevCatz) only when there is none at all. DoCatz stays
+ * the first, recommended choice in the form either way.
+ */
+export const defaultContainer = (): GwContainer => {
+  if (!docatzAvailable()) return 'system';
+  const docatzHere = docatzEngine() !== null || engineAppInstalled(ENGINES.find((e) => e.id === 'docatz')!);
+  return docatzHere || !otherEngineName() ? 'docatz' : 'system';
+};
 /**
  * Whether a gateway's container gets `host.docker.internal:host-gateway` to reach DevCatz on this computer. Not in
  * DoCatz's engine on macOS: host-gateway is the Lima VM's own docker0 there (172.17.0.1, connection refused), while
  * Lima's DNS already answers host.docker.internal with the Mac (host.lima.internal) — Postal's relay to the mail
  * catcher never arrived (2026-11-10).
  */
-export const hostGateway = (where: GwContainer): boolean => !(isMac && where === 'docatz');
+// Finch is a Lima VM too (like DoCatz on macOS): its DNS already answers host.docker.internal with the Mac.
+export const hostGateway = (where: GwContainer): boolean => !(isMac && (where === 'docatz' || where === 'cli:finch'));
 
 /** The other container engine a gateway could run on (the first one installed), for the "Run in" choice. */
 /** The engine behind the system's docker context, as the last dockerStatus() found it (not DoCatz's). */
@@ -120,7 +153,14 @@ export function otherEngineName(): string | null {
 }
 
 /** The docker command of a gateway: `docker --context docatz` in DoCatz, else the engine compose runs on. */
-export const gatewayDocker = (where: GwContainer): string[] => (where === 'docatz' ? ['docker', '--context', 'docatz'] : [cli.bin, ...cli.compose.slice(0, -1)]);
+export const gatewayDocker = (where: GwContainer): string[] =>
+  where === 'docatz'
+    ? ['docker', '--context', 'docatz']
+    : contextOf(where)
+      ? ['docker', '--context', contextOf(where)!]
+      : cliOf(where)
+        ? [cliOf(where)!]
+        : [cli.bin, ...cli.compose.slice(0, -1)];
 export const gatewayCompose = (where: GwContainer): string[] => [...gatewayDocker(where), 'compose'];
 
 /**
@@ -128,6 +168,46 @@ export const gatewayCompose = (where: GwContainer): string[] => [...gatewayDocke
  * not running is opened (it starts its engine) and waited for. `report` gets what is happening meanwhile.
  */
 export async function gatewayEngineReady(where: GwContainer, report: (detail: string) => void = () => undefined, signal?: AbortSignal): Promise<void> {
+  const own = cliOf(where);
+  if (own) {
+    // Podman / Finch picked at install: `podman machine start` / `finch vm start` (Linux: Podman's API socket) when
+    // `<cli> info` does not answer, then waited for.
+    const name = own === 'podman' ? 'Podman' : 'Finch';
+    if (!(await onPath(own))) throw new Error(`${name} is not installed here (no ${own} command): install it, or pick another engine`);
+    const up = async () => (await run(own, ['info'], { timeout: 10_000 })).code === 0;
+    if (await up()) {
+      if (own === 'podman' && isLinux) await podmanSocket();
+      return;
+    }
+    report(`Starting ${name}`);
+    await startEngine(own);
+    for (const end = Date.now() + 180_000; Date.now() < end; ) {
+      if (signal?.aborted) throw new Error('Cancelled');
+      if (await up()) return;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    throw new Error(`${name} did not start in 3 minutes: start it, then try again`);
+  }
+  const ctx = contextOf(where);
+  if (ctx) {
+    // One engine picked at install (Kiri, Docker Desktop …): started (its app, colima start …) when it does not answer.
+    const up = async () => (await run('docker', ['--context', ctx, 'info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 })).code === 0;
+    if (await up()) return;
+    const inspect = await run('docker', ['context', 'inspect', ctx, '--format', '{{.Endpoints.docker.Host}}'], { timeout: 5000 });
+    if (inspect.code !== 0) throw new Error(`The docker context "${ctx}" is gone: install it again in DoCatz or another engine`);
+    const id = engineFromDocker(ctx, inspect.stdout.trim(), '');
+    contextEngine.set(ctx, id);
+    const def = ENGINES.find((e) => e.id === id);
+    if (!def || id === 'docatz') throw new Error(`The engine of the docker context "${ctx}" is not running: start it, then try again`);
+    report(`Starting ${def.name}`);
+    await startEngine(id);
+    for (const end = Date.now() + 180_000; Date.now() < end; ) {
+      await new Promise((r) => setTimeout(r, 3000));
+      if (signal?.aborted) throw new Error('Cancelled');
+      if (await up()) return;
+    }
+    throw new Error(`${def.name} did not start in 3 minutes: start it, then try again`);
+  }
   if (where === 'system') {
     const ds = await dockerStatus();
     if (ds.daemon) return;
@@ -195,6 +275,7 @@ function engineFromDocker(context: string, endpoint: string, os: string): Docker
   // DoCatz's context (DoCatz TODO #7 / #23): the Catzoid engine.
   if (s.includes('docatz')) return 'docatz';
   if (s.includes('orbstack')) return 'orbstack';
+  if (s.includes('kiri')) return 'kiri';
   if (s.includes('colima')) return 'colima';
   if (s.includes('rancher') || s.includes('.rd/')) return 'rancher';
   if (s.includes('podman')) return 'podman';
@@ -203,57 +284,131 @@ function engineFromDocker(context: string, endpoint: string, os: string): Docker
   return 'other';
 }
 
+/** The docker contexts (`docker context ls`): name, endpoint, description, and which one is current. */
+async function dockerContexts(): Promise<{ name: string; endpoint: string; description: string; current: boolean }[]> {
+  const r = await run('docker', ['context', 'ls', '--format', '{{json .}}'], { timeout: 5000 });
+  const out: { name: string; endpoint: string; description: string; current: boolean }[] = [];
+  for (const line of r.stdout.split('\n')) {
+    try {
+      const c = JSON.parse(line) as { Name?: string; Current?: boolean; DockerEndpoint?: string; Description?: string };
+      if (c.Name) out.push({ name: c.Name, endpoint: c.DockerEndpoint ?? '', description: c.Description ?? '', current: !!c.Current });
+    } catch {
+      /* not a JSON line */
+    }
+  }
+  return out;
+}
+const safeRealpath = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+/** An engine's place in ENGINES (most recommended first); unknown ones last. */
+const order = (id: DockerEngineId): number => {
+  const i = ENGINES.findIndex((e) => e.id === id);
+  return i < 0 ? ENGINES.length : i;
+};
+
 export async function dockerStatus(): Promise<DockerStatus> {
   const installed = (
     await Promise.all(ENGINES.map(async (e) => (engineAppInstalled(e) || (e.bin && (await onPath(e.bin))) ? e : null)))
   ).filter((e): e is EngineDef => !!e);
   const docatz = docatzEngine();
-  const base = { installed: installed.map((e) => e.id), cliFound: false, context: null, engine: null, orbLocal: false, docatz, system: null, engines: [] as DockerStatus['engines'], docatzNames: null as string | null };
+  // Podman / Finch by their own CLI: a Run in choice for gateways, storage and services (no docker context needed).
+  const clis = (
+    await Promise.all(
+      (['podman', 'finch'] as const).map(async (id) =>
+        installed.some((e) => e.id === id) && (await onPath(id)) ? { id, running: (await run(id, ['info'], { timeout: 8000 })).code === 0 } : null,
+      ),
+    )
+  ).filter((x): x is { id: 'podman' | 'finch'; running: boolean } => !!x);
+  const base = { clis, installed: installed.map((e) => e.id), cliFound: false, context: null, engine: null, orbLocal: false, docatz, system: null, engines: [] as DockerStatus['engines'], docatzNames: null as string | null };
 
   let dockerError: string | null = null;
   if (await onPath('docker')) {
-    const ctx = (await run('docker', ['context', 'show'], { timeout: 5000 })).stdout.trim();
-    const endpoint = (await run('docker', ['context', 'inspect', ctx, '--format', '{{.Endpoints.docker.Host}}'], { timeout: 5000 })).stdout.trim();
-    const info = await run('docker', ['info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 });
-    const sysEngine = engineFromDocker(ctx, endpoint, info.stdout.trim());
-    if (ctx && ctx !== 'docatz' && sysEngine !== 'docatz' && sysEngine !== 'other') lastSystemEngine = sysEngine;
-    // DoCatz's own context, whether or not it is the current one (DoCatz never switches the current context itself).
-    const docatzUp = ctx !== 'docatz' && (docatz === 'running' || (await run('docker', ['context', 'inspect', 'docatz'], { timeout: 5000 })).code === 0)
-      ? (await run('docker', ['--context', 'docatz', 'info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 })).code === 0
-      : false;
-    const onDocatz = docatzUp && store.settings.dockerEngine !== 'system';
+    // Every context (user, 2026-11-18: Docker Desktop, Colima and Kiri were installed, the tab showed only DoCatz and
+    // OrbStack — the current context): each one's engine and whether it answers, checked together.
+    const all = await dockerContexts();
+    const current = all.find((c) => c.current)?.name ?? '';
+    const checked = await Promise.all(
+      all.map(async (c) => {
+        // A unix socket that is not there: that engine is stopped, no need to ask (and wait).
+        const sock = c.endpoint.startsWith('unix://') ? c.endpoint.slice(7) : null;
+        const info = sock && !existsSync(sock) ? null : await run('docker', ['--context', c.name, 'info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 });
+        const running = info?.code === 0;
+        return { ...c, running, engine: engineFromDocker(c.name, c.endpoint, `${c.description} ${running ? info!.stdout.trim() : ''}`), error: info && !running ? (info.stderr || info.stdout).trim().split('\n').pop() : null };
+      }),
+    );
+    for (const c of checked) contextEngine.set(c.name, c.engine);
+    const installedIds = new Set(installed.map((e) => e.id));
+    // One entry per engine socket: `default` is often /var/run/docker.sock, a link to another engine's socket. A stopped
+    // context of an engine that is gone (an old Docker Desktop's) or of nothing known is left out.
+    const seen = new Set<string>();
+    const contexts = checked
+      .sort((a, b) => Number(a.name === 'default') - Number(b.name === 'default'))
+      .filter((c) => {
+        if (c.name === 'docatz' || c.engine === 'docatz') return false;
+        const sock = c.endpoint.startsWith('unix://') ? c.endpoint.slice(7) : null;
+        const key = sock && existsSync(sock) ? safeRealpath(sock) : c.endpoint;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return c.running || installedIds.has(c.engine) || (isLinux && c.engine === 'docker-engine');
+      })
+      .sort((a, b) => order(a.engine) - order(b.engine));
+    const docatzCtx = checked.find((c) => c.name === 'docatz');
+    const docatzUp = !!docatzCtx?.running;
+    // The system's engine: the context picked in the tab, else the current one, else the first that runs.
+    const wanted = store.settings.dockerContext;
+    const sys = contexts.find((c) => c.name === wanted && c.running) ?? contexts.find((c) => c.name === current && c.running) ?? contexts.find((c) => c.running) ?? null;
+    if (sys && sys.engine !== 'other') lastSystemEngine = sys.engine;
+    // DoCatz while its engine runs, unless Settings say the system's context (or nothing else runs).
+    // Podman / Finch picked in the tab (dockerContext '@podman' / '@finch'): their own CLI, while it answers.
+    const ownPick = store.settings.dockerEngine === 'system' && wanted?.startsWith('@') ? clis.find((x) => `@${x.id}` === wanted && x.running) : undefined;
+    const onDocatz = docatzUp && !ownPick && (store.settings.dockerEngine !== 'system' || !sys);
     const engines: DockerStatus['engines'] = [
-      ...(ctx !== 'docatz' && (docatzUp || docatz) ? [{ id: 'docatz' as const, context: 'docatz', running: docatzUp, used: onDocatz }] : []),
-      ...(ctx ? [{ id: sysEngine, context: ctx, running: info.code === 0, used: !onDocatz && info.code === 0 }] : []),
+      ...(docatzUp || docatzCtx || docatz ? [{ id: 'docatz' as const, context: 'docatz', running: docatzUp, used: onDocatz }] : []),
+      ...contexts.map((c) => ({ id: c.engine, context: c.name, running: c.running, used: !onDocatz && c === sys, ...(c.engine === 'other' ? { label: c.description || c.name } : {}) })),
+      // Installed but without a context yet (Colima before its first start, Docker Desktop never opened): Start makes one.
+      // Podman / Finch without a docker context: through their own CLI ('@podman' / '@finch').
+      ...clis.filter((x) => !contexts.some((c) => c.engine === x.id)).map((x) => ({ id: x.id, context: `@${x.id}`, running: x.running, used: !onDocatz && x === ownPick })),
+      ...installed
+        .filter((e) => e.id !== 'docatz' && !contexts.some((c) => c.engine === e.id) && !clis.some((x) => x.id === e.id))
+        .map((e) => ({ id: e.id, context: '', running: false, used: false })),
     ];
     Object.assign(base, { engines });
-    // DoCatz runs but the current context is another engine's: compose runs on DoCatz (`docker --context docatz
-    // compose …`) unless Settings say the system's context.
-    onDocatzEngine = onDocatz || (info.code === 0 && sysEngine === 'docatz');
+    onDocatzEngine = onDocatz;
     if (onDocatz) {
       cli = { bin: 'docker', compose: ['--context', 'docatz', 'compose'] };
       orbLocal = false;
-      const system = ctx ? { context: ctx, engine: sysEngine, running: info.code === 0 } : null;
+      const system = sys ? { context: sys.name, engine: sys.engine, running: true } : null;
       return { ...base, cliFound: true, daemon: true, context: 'docatz', engine: 'docatz', orbLocal: false, error: null, system, docatz: 'running', docatzNames: docatzUrl('<service>', '<project>') };
     }
-    if (info.code === 0) {
-      cli = { bin: 'docker', compose: ['compose'] };
-      const engine = engineFromDocker(ctx, endpoint, info.stdout.trim());
-      orbLocal = engine === 'orbstack';
-      return { ...base, cliFound: true, daemon: true, context: ctx || null, engine, orbLocal: engine === 'orbstack', error: null, docatzNames: engine === 'docatz' ? docatzUrl('<service>', '<project>') : null };
+    if (ownPick) {
+      if (ownPick.id === 'podman' && isLinux) await podmanSocket();
+      cli = { bin: ownPick.id, compose: ['compose'] };
+      orbLocal = false;
+      return { ...base, cliFound: true, daemon: true, context: null, engine: ownPick.id, orbLocal: false, error: null, docatzNames: null };
     }
-    // The docker CLI is there but its engine is down; Podman/Finch may still be up below.
-    dockerError = info.stderr.trim().split('\n').pop() || 'The Docker engine is not running';
+    if (sys) {
+      cli = { bin: 'docker', compose: ['--context', sys.name, 'compose'] };
+      orbLocal = sys.engine === 'orbstack';
+      return { ...base, cliFound: true, daemon: true, context: sys.name, engine: sys.engine, orbLocal, error: null, docatzNames: null };
+    }
+    // The docker CLI is there but no engine answers; Podman/Finch may still be up below.
+    const cur = checked.find((c) => c.name === current);
+    dockerError = cur?.error || 'The Docker engine is not running';
     // Linux's own Docker Engine (docker.io / docker-ce): the socket is root's and the docker group's.
     if (isLinux && /permission denied.*docker\.sock/i.test(dockerError))
       dockerError = 'Docker runs, but this user may not use it yet: Start Docker Engine here gives you access (DevCatz asks for your password)';
     else if (isLinux && /Cannot connect to the Docker daemon/i.test(dockerError) && existsSync('/usr/bin/dockerd'))
       dockerError = 'Docker Engine is not running: Start it here (DevCatz asks for your password)';
-    Object.assign(base, { cliFound: true, context: ctx || null });
+    Object.assign(base, { cliFound: true, context: current || null });
   }
   for (const [bin, id] of [['podman', 'podman'], ['finch', 'finch']] as const) {
     if (!(await onPath(bin))) continue;
-    if ((await run(bin, ['info'], { timeout: 8000 })).code === 0) {
+    if (clis.find((x) => x.id === id)?.running) {
       if (id === 'podman' && isLinux) await podmanSocket();
       cli = { bin, compose: ['compose'] };
       orbLocal = false;
@@ -327,6 +482,11 @@ export async function startEngine(id: DockerEngineId): Promise<void> {
   }
   // Podman on Linux runs without a VM: only its API socket, for compose.
   if (isLinux && id === 'podman') return podmanSocket();
+  // Kiri without its app (Windows, Linux): its window starts the engine; it stays open, so it is not waited for.
+  if (id === 'kiri') {
+    spawn(exePath('kiri', getShellEnv()), ['ui', '--start'], { detached: true, stdio: 'ignore', env: getShellEnv() }).unref();
+    return;
+  }
   const cmd: Record<string, string[]> = { colima: ['colima', 'start'], podman: ['podman', 'machine', 'start'], finch: ['finch', 'vm', 'start'] };
   const c = cmd[id];
   if (!c) throw new Error(`${e.name} is not installed`);

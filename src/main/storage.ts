@@ -13,7 +13,7 @@ import { exe, removeTemp, isLinux, isWin, TAR } from './platform';
 import { unzipLinux } from './linuxapps';
 import { githubJson } from './github';
 import { brewBin } from './php';
-import { defaultContainer } from './docker';
+import { asWhere, defaultContainer, docatzAvailable, whereLabel } from './docker';
 import * as sd from './storagedocker';
 
 /**
@@ -831,9 +831,9 @@ export class StorageManager {
     const abort = new AbortController();
     this.aborts.set(kind, abort);
     const signal = abort.signal;
-    const c: StorageConfig = { ...input, binaryPath: '', binaryDir: '', dataDir: sd.configDir(kind), docker: { image: '', container: input.docker?.container ?? defaultContainer() } };
+    const c: StorageConfig = { ...input, binaryPath: '', binaryDir: '', dataDir: sd.configDir(kind), docker: { image: '', container: input.docker?.container === 'docatz' && !docatzAvailable() ? defaultContainer() : (asWhere(input.docker?.container) ?? defaultContainer()) } };
     try {
-      t.report({ step: 0, detail: c.docker!.container === 'docatz' ? 'DoCatz' : 'Docker' });
+      t.report({ step: 0, detail: whereLabel(c.docker!.container) });
       await sd.engineReady(c, (d) => t.report({ detail: d }), signal);
       check(signal);
       t.report({ step: 1, detail: ENGINES[kind].sourceUrl });

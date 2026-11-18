@@ -5,6 +5,7 @@ import { computed, ref } from 'vue';
 import type { SearchConfig, SearchState } from '@shared/types';
 import { attempt, herd, notify, state } from '../store';
 import TaskStepper from './TaskStepper.vue';
+import RunInPicker from './RunInPicker.vue';
 
 /** Install (defaults, a fresh key) or edit one search engine: ports, domain, key, heap, origins, data folder, autostart. */
 const props = defineProps<{ service: SearchState; mode: 'install' | 'edit' }>();
@@ -67,6 +68,8 @@ async function submit() {
       </div>
 
       <template v-if="!showProgress">
+        <!-- A container here (no native build): DoCatz first and recommended, or the engine already installed. -->
+        <RunInPicker v-if="mode === 'install' && service.inDocatz" v-model="form.container" :kind="service.kind" :name="service.name" :movable="false" />
         <fieldset class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="label-caps mb-1 block">{{ service.features.http ? 'HTTP port' : 'TCP port' }}</span>

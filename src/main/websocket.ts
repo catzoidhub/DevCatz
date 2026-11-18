@@ -13,7 +13,7 @@ import { Cancelled, check, githubAsset, installFrom, INSTALL_STEPS } from './sto
 import { githubLatest, isNewer, packagistLatest, UPDATE_TAIL, upgradeBinaries } from './svcupdate';
 import { dataDir, store, tld } from './store';
 import { exe, isLinux, isWin, killTree, shellCommand } from './platform';
-import { svcCompose, svcComposeFile, svcEngineReady, svcInDocker, svcPull, svcRemove, svcRemoveImage, svcUpCommand, vol, writeSvcCompose } from './svcdocker';
+import { svcPick, svcWhere, svcCompose, svcComposeFile, svcEngineReady, svcInDocker, svcPull, svcRemove, svcRemoveImage, svcUpCommand, vol, writeSvcCompose } from './svcdocker';
 import { forwardFromWsl } from './wslhost';
 
 /**
@@ -647,6 +647,7 @@ export class WsManager {
     this.aborts.set(kind, abort);
     const placed = !existsSync(binaryOf(c));
     const dataExisted = existsSync(c.dataDir);
+    if (dockerOf(kind)) c.container = svcPick(input.container);
     if (dockerOf(kind)) return this.installDocker(c, t, abort, dataExisted, at);
     try {
       await ENGINES[kind].install(binaryDirOf(c), t.report, abort.signal);
@@ -685,14 +686,14 @@ export class WsManager {
     const d = ENGINES[kind].docker!;
     const file = svcComposeFile(binaryDirOf(c));
     try {
-      await svcEngineReady((detail) => t.report({ detail }), abort.signal);
+      await svcEngineReady(svcWhere(c), (detail) => t.report({ detail }), abort.signal);
       check(abort.signal);
       t.report({ step: at('Finding the latest release'), detail: d.image });
       c.version = await d.latest();
       t.report({ title: `Installing ${ENGINES[kind].name} ${c.version} in DoCatz`, step: at('Pulling the image'), detail: imageOf(kind, c.version) });
       mkdirSync(c.dataDir, { recursive: true });
       writeSvcCompose(file, d.compose(c, imageOf(kind, c.version), null));
-      await svcPull(file, 'sockudo', t.report, abort.signal);
+      await svcPull(svcWhere(c), file, 'sockudo', t.report, abort.signal);
       t.report({ step: at('Preparing the data folder'), detail: c.dataDir });
       this.aborts.delete(kind);
       t.report({ step: at('Saving settings'), detail: `wss://${host(c.domain)}` });
@@ -778,18 +779,18 @@ export class WsManager {
     this.aborts.set(kind, abort);
     const file = svcComposeFile(binaryDirOf(c));
     try {
-      await svcEngineReady((detail) => t.report({ detail }), abort.signal);
+      await svcEngineReady(svcWhere(c), (detail) => t.report({ detail }), abort.signal);
       t.report({ step: 1, detail: d.image });
       const v = await d.latest();
       t.report({ step: 2, detail: imageOf(kind, v) });
       const next = { ...c, version: v };
       writeSvcCompose(file, d.compose(next, imageOf(kind, v), null));
-      await svcPull(file, 'sockudo', t.report, abort.signal);
+      await svcPull(svcWhere(c), file, 'sockudo', t.report, abort.signal);
       const wasActive = this.isActive(kind);
       store.setWebsocket(kind, next);
       t.report({ step: 3 });
       if (wasActive) await this.action(kind, 'restart');
-      if (v !== c.version) await svcRemoveImage(imageOf(kind, c.version));
+      if (v !== c.version) await svcRemoveImage(svcWhere(c), imageOf(kind, c.version));
       this.updates.delete(kind);
       this.processes.log(wsId(kind), 'sys', `Updated ${c.version ?? ''} → ${v}`);
       t.report({ title: `Updated ${ENGINES[kind].name} to ${v}` });
@@ -836,7 +837,7 @@ export class WsManager {
     try {
       await this.processes.stop(wsId(kind));
       t.report({ step: 1, detail: binaryOf(c) });
-      if (dockerOf(kind)) await svcRemove(svcComposeFile(binaryDirOf(c)), 'sockudo', imageOf(kind, c.version));
+      if (dockerOf(kind)) await svcRemove(svcWhere(c), svcComposeFile(binaryDirOf(c)), 'sockudo', imageOf(kind, c.version));
       await rm(c.kind === 'reverb' ? join(binaryDirOf(c), 'app') : binaryOf(c), { recursive: true, force: true });
       if (deleteData) {
         t.report({ step: steps.indexOf('Deleting the data folder'), detail: c.dataDir });
@@ -864,15 +865,15 @@ export class WsManager {
     if (action === 'stop' || action === 'restart') {
       await this.processes.stop(id);
       // Ending `compose up` (taskkill on Windows) can leave the container running: stopped for sure.
-      if (d && existsSync(file)) await svcCompose(file, 'sockudo', ['stop']).catch(() => undefined);
+      if (d && existsSync(file)) await svcCompose(svcWhere(c), file, 'sockudo', ['stop']).catch(() => undefined);
     }
     if (action === 'stop') return;
     // Already up (just installed, a second click): leave it. The port check below would call its own port taken.
     if (action === 'start' && this.isActive(kind)) return;
     if (d) {
-      await svcEngineReady((detail) => this.processes.log(id, 'sys', detail));
+      await svcEngineReady(svcWhere(c), (detail) => this.processes.log(id, 'sys', detail));
       // A container left running by a DevCatz that quit or crashed: stopped before `up` attaches again.
-      if (existsSync(file)) await svcCompose(file, 'sockudo', ['stop']).catch(() => undefined);
+      if (existsSync(file)) await svcCompose(svcWhere(c), file, 'sockudo', ['stop']).catch(() => undefined);
     }
     for (let i = 0; i < 10 && (await isPortOpen(c.port)); i++) await new Promise((r) => setTimeout(r, 300));
     for (const port of portsOf(c)) {
@@ -892,7 +893,7 @@ export class WsManager {
       const hook = kind === 'sockudo' ? await this.hookUrl() : null;
       if (hook) await forwardFromWsl(Number(new URL(hook).port));
       writeSvcCompose(file, d.compose(c, imageOf(kind, c.version), hook));
-      this.processes.startMany(id, [{ label: '', command: svcUpCommand(file, 'sockudo'), env: {}, cwd: binaryDirOf(c) }]);
+      this.processes.startMany(id, [{ label: '', command: svcUpCommand(svcWhere(c), file, 'sockudo'), env: {}, cwd: binaryDirOf(c) }]);
       return;
     }
     const bin = binaryOf(c);
