@@ -89,7 +89,7 @@ import { Monitor, type MonitorTarget } from './monitor';
 import * as pythons from './python';
 import * as rubies from './ruby';
 import { rubyJobsCommand } from './runtimes/ruby';
-import type {
+import type { GwWhere,
   AppInfo,
   AppState,
   BuildTarget,
@@ -1810,6 +1810,13 @@ export class Herd extends EventEmitter {
         openapi: [...(this.specFileCache.get(p.id) ?? []), ...(this.openapiUrls.get(p.id) ?? [])],
       };
     });
+    /** bridge.json `where` / `runsIn` of a container (null for a binary), and `docker` = it runs in DoCatz's engine. */
+    const placeOf = (isDocker: boolean, c: { container?: GwWhere } | null | undefined) => {
+      if (!isDocker) return { where: null, runsIn: null };
+      const w = c?.container ?? docker.defaultContainer();
+      // `docker` keeps meaning "runs in DoCatz's engine" (what DoCatz lists as its own).
+      return { where: w, runsIn: docker.whereLabel(w), docker: w === 'docatz' };
+    };
     const gateways: BridgeGateway[] = [
       ...this.whatsapp.state().map((w) => ({
         kind: w.engine,
@@ -1824,6 +1831,7 @@ export class Herd extends EventEmitter {
         webUi: w.url ? w.url + w.dashboardPath : null,
         project: null,
         container: w.docker ? 'devcatz-waha' : null,
+        ...placeOf(w.docker, w.config ?? w.defaults),
         link: `devcatz://gateways/${w.engine}`,
       })),
       ...this.gateways.state().map((g) => ({
@@ -1839,6 +1847,7 @@ export class Herd extends EventEmitter {
         webUi: g.url && g.webPath ? g.url + g.webPath : null,
         project: g.docker ? gwProject(g.kind) : null,
         container: null,
+        ...placeOf(g.docker, g.config ?? g.defaults),
         link: `devcatz://gateways/${g.kind}`,
       })),
     ];
@@ -1858,6 +1867,8 @@ export class Herd extends EventEmitter {
       webUi: null,
       project: s.inDocatz ? svcProject(s.kind as SvcKind) : null,
       container: null,
+      // Installed before the Run in choice: DoCatz.
+      ...placeOf(s.inDocatz, s.config ? { container: s.config.container ?? 'docatz' } : s.defaults),
       link: `devcatz://services/${s.kind}`,
     }));
     // Object storage that runs as containers (TODO §40: Garage, Ceph), in DoCatz unless it runs on the system's engine.
@@ -1876,6 +1887,7 @@ export class Herd extends EventEmitter {
         webUi: s.hasConsole ? (s.urls?.consoleLocal ?? null) : null,
         project: inDocatz ? `devcatz-svc-${s.kind}` : null,
         container: null,
+        ...placeOf(true, { container: s.config?.docker?.container ?? s.defaults.docker?.container }),
         link: `devcatz://storage/${s.kind}`,
       });
     }

@@ -43,6 +43,14 @@ export interface BridgeGateway {
   webUi: string | null;
   project: string | null;
   container: string | null;
+  /**
+   * Where its containers run (2026-11-18): 'docatz', 'system' (the engine DevCatz's Docker tab uses), `ctx:<docker
+   * context>` or 'cli:podman' / 'cli:finch'; null when it is not a container here. `runsIn` is that engine's name
+   * (DoCatz, OrbStack, Kiri, Podman …). `docker` is true only when it runs in DoCatz's engine (what DoCatz lists as
+   * its own); a container elsewhere has `docker: false` with `where` / `runsIn` set.
+   */
+  where: string | null;
+  runsIn: string | null;
   link: string;
 }
 
