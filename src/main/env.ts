@@ -110,8 +110,15 @@ let userPathDirs: string[] | null = null;
 /** Windows: the folders in the user's own Path (registry), lower-cased without trailing slashes; read once, then kept. */
 export async function userPath(): Promise<string[]> {
   if (userPathDirs) return userPathDirs;
-  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "[Environment]::GetEnvironmentVariable('Path', 'User')"], { timeout: 20_000 });
-  userPathDirs = r.stdout.trim().split(';').filter(Boolean).map((d) => d.replace(/[\\/]+$/, '').toLowerCase());
+  // reg.exe answers in milliseconds; PowerShell took up to 31 s to start cold, and the window waited for it (2026-11-18).
+  const r = await run('reg.exe', ['query', 'HKCU\\Environment', '/v', 'Path'], { timeout: 20_000 });
+  const raw = r.stdout.match(/^\s*Path\s+REG_(?:EXPAND_)?SZ\s+(.*)$/im)?.[1]?.trim() ?? '';
+  // REG_EXPAND_SZ keeps %USERPROFILE% and the like: expanded the way Windows does.
+  const expanded = raw.replace(/%([^%]+)%/g, (all, name: string) => {
+    const k = Object.keys(process.env).find((x) => x.toLowerCase() === name.toLowerCase());
+    return k ? (process.env[k] ?? all) : all;
+  });
+  userPathDirs = expanded.split(';').filter(Boolean).map((d) => d.replace(/[\\/]+$/, '').toLowerCase());
   return userPathDirs;
 }
 export const userPathHas = (dir: string): boolean => !!userPathDirs?.includes(dir.replace(/[\\/]+$/, '').toLowerCase());
