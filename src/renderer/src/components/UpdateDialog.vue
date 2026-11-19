@@ -4,6 +4,7 @@ import CatMood from './CatMood.vue';
 import { attempt, herd, state, updateDialog, updateDialogAuto } from '../store';
 import devcatzLogo from '../assets/logos/devcatz.svg';
 import { downloadPlatform } from '../platform';
+import { openCommunity, openDonate } from '../support';
 
 /**
  * DevCatz's update (Catzoid #54): What's New (the notes of every version since the installed one), then the download
@@ -77,6 +78,11 @@ async function skip() {
 const close = () => (updateDialog.value = false);
 /** What's New starts at the newest version's first line, not wherever focus scrolled it. */
 const notesBox = ref<HTMLElement | null>(null);
+/**
+ * Support Catzoid at the end of What's New (Catzoid #94): one quiet line, the same links as Settings → About. Gone once
+ * the corner card is done with (joined, donated, rated or "Don't show again": supportOff).
+ */
+const supportLine = computed(() => !state.value?.settings.supportOff);
 watch(
   () => updateDialog.value && u.value?.version,
   (open) => open && void nextTick(() => notesBox.value && (notesBox.value.scrollTop = 0)),
@@ -126,6 +132,11 @@ const quiet = (off: boolean) => attempt(() => herd.appUpdatePrefs({ dialog: !off
               <button type="button" class="link link-hover" @click="herd.openUrl(`${site}/devcatz/download#versions`)">Read them on the site</button>
             </p>
           </section>
+          <p v-if="supportLine" class="border-t border-base-300/60 pt-3 text-xs opacity-60">
+            Catzoid is free and open source.
+            <button type="button" class="link" @click="openCommunity">Joining the community</button> already helps a lot — or
+            <button type="button" class="link" @click="openDonate">support us</button> if you like.
+          </p>
         </div>
 
         <!-- Download -->
