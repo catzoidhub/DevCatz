@@ -2122,6 +2122,8 @@ export class Herd extends EventEmitter {
     if (!r) return 'none';
     if (r.reachable) return (await isPortOpen(r.port)) ? 'running' : 'stopped';
     if (r.composeFile && r.service) {
+      // DoCatz's engine asleep: nothing runs in it, and compose ps would wake it (§47).
+      if (docker.docatzQuiet()) return 'stopped';
       // The engine the Docker tab uses (DoCatz's context when it runs).
       const [bin, ...compose] = docker.dockerCompose();
       const { code, stdout } = await run(bin, [...compose, '-f', r.composeFile, 'ps', '--all', '--format', '{{.State}}', r.service], {

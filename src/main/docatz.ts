@@ -23,7 +23,7 @@ export const DOCATZ_REPO = 'catzoidhub/DoCatz';
  * (`engine: "running" | "stopped"`). Read at most every few seconds (route updates and status checks are frequent).
  * DOCATZ_BRIDGE points elsewhere, for tests.
  */
-type DocatzBridge = { proxy?: { httpPort?: number; httpsPort?: number }; engine?: string; engineEndpoint?: string; containers?: { project?: string; service?: string; url?: string | null }[] };
+type DocatzBridge = { proxy?: { httpPort?: number; httpsPort?: number }; engine?: string; asleep?: boolean; engineEndpoint?: string; containers?: { project?: string; service?: string; url?: string | null }[] };
 let bridgeCache: { at: number; value: DocatzBridge | null } = { at: 0, value: null };
 function docatzBridge(): DocatzBridge | null {
   if (Date.now() - bridgeCache.at < 5000) return bridgeCache.value;
@@ -80,6 +80,13 @@ export function docatzEngine(): 'running' | 'stopped' | null {
   const e = docatzBridge()?.engine;
   return e === 'running' ? 'running' : e ? 'stopped' : null;
 }
+/**
+ * DoCatz's engine is asleep (Lite's idle sleep, Windows Lite's stopped distro, Linux on-demand: Catzoid #95 level 2,
+ * DoCatz #106 / #107): bridge.json says `asleep: true` with `engine: "running"`. The first connection to its socket or
+ * pipe wakes it, so nothing DevCatz does in the background may touch it then (§47) — only what the user starts.
+ */
+export const docatzAsleep = (): boolean => docatzBridge()?.asleep === true;
+
 const APP_PATHS = catzoidAppPaths('DoCatz');
 const BUNDLE_ID = 'com.mrcatz.docatz';
 

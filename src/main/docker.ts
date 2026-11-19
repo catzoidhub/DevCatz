@@ -9,7 +9,7 @@ import { getShellEnv, hasCommand, run } from './env';
 import { detectStack } from './runtimes';
 import { exePath, isLinux, isMac, isWin, killTree } from './platform';
 import { runAsRootLinux, shq } from './linuxadmin';
-import { docatzEngine, docatzEngineEndpoint, docatzEnvFile, docatzEnvPath } from './docatz';
+import { docatzAsleep, docatzEngine, docatzEngineEndpoint, docatzEnvFile, docatzEnvPath } from './docatz';
 import { store } from './store';
 
 /**
@@ -265,6 +265,11 @@ export async function gatewayEngineReady(where: GwContainer, report: (detail: st
 const bin = () => exePath(cli.bin, getShellEnv());
 /** Compose runs on DoCatz: containers get `https://<service>.<project>.docatz.<tld>` (built by Herd: tld, port). */
 let onDocatzEngine = false;
+/**
+ * The engine DevCatz uses is DoCatz's and it is asleep (bridge.json): background checks (the Docker dot, Redis in
+ * compose, Monitoring's containers) leave its socket alone, since connecting wakes it (§47). Nothing runs in it then.
+ */
+export const docatzQuiet = (): boolean => onDocatzEngine && docatzAsleep();
 let docatzUrl: (service: string, project: string) => string = (s, p) => `https://${s}.${p}.docatz.localhost`;
 export const setDocatzUrl = (fn: typeof docatzUrl) => (docatzUrl = fn);
 /** OrbStack answers: containers get `<service>.<project>.orb.local`. */
@@ -332,10 +337,16 @@ export async function dockerStatus(): Promise<DockerStatus> {
     // OrbStack — the current context): each one's engine and whether it answers, checked together.
     const all = await dockerContexts();
     const current = all.find((c) => c.current)?.name ?? '';
+    const asleep = docatzAsleep();
+    const docatzEp = docatzEngineEndpoint();
     const checked = await Promise.all(
       all.map(async (c) => {
         // A unix socket that is not there: that engine is stopped, no need to ask (and wait).
         const sock = c.endpoint.startsWith('unix://') ? c.endpoint.slice(7) : null;
+        // DoCatz's engine asleep (its context, or the system's socket it uses on Linux): it counts as running, and
+        // asking it would wake it (§47).
+        if (asleep && (c.name === 'docatz' || (!!docatzEp && c.endpoint === docatzEp)))
+          return { ...c, running: true, engine: c.name === 'docatz' ? ('docatz' as DockerEngineId) : engineFromDocker(c.name, c.endpoint, c.description), error: null };
         const info = sock && !existsSync(sock) ? null : await run('docker', ['--context', c.name, 'info', '--format', '{{.OperatingSystem}}'], { timeout: 8000 });
         const running = info?.code === 0;
         return { ...c, running, engine: engineFromDocker(c.name, c.endpoint, `${c.description} ${running ? info!.stdout.trim() : ''}`), error: info && !running ? (info.stderr || info.stdout).trim().split('\n').pop() : null };
@@ -1747,6 +1758,7 @@ export function writeFiles(root: string, files: { path: string; content: string 
 /** `docker compose ps` for the file, with OrbStack URLs. */
 /** The folder of every running compose container on the engine in use, one per container (one call for all sites). */
 export async function runningComposeFolders(): Promise<string[]> {
+  if (docatzQuiet()) return [];
   const r = await run(bin(), [...cli.compose.slice(0, -1), 'ps', '--filter', 'label=com.docker.compose.project.working_dir', '--format', '{{.Label "com.docker.compose.project.working_dir"}}'], { timeout: 5000 }).catch(() => null);
   return r?.code === 0 ? r.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
 }
