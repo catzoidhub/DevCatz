@@ -9,19 +9,21 @@
   <a href="https://catzoid.com/community">Community</a>
 </p>
 
-A local development environment for macOS, Windows and Linux. Drop a project folder in and DevCatz works out its stack, runs it, and serves every site on its own `https://<name>.localhost` with a certificate your browser trusts — next to every runtime, database, storage, search engine, mail catcher, WebSocket server, tunnel and Docker setup it needs. One app instead of a Dock full of them.
+A local development environment for macOS (Apple silicon and Intel), Windows 10 / 11 and Linux. Drop a project folder in and DevCatz works out its stack and framework, runs it, and serves every site on its own `https://<name>.localhost` with a certificate your browser trusts — next to every runtime, database, storage, search engine, mail catcher, WebSocket server, tunnel and Docker setup it needs. Made for web developers who would rather build than set up. One app instead of a Dock full of them.
 
 Part of [Catzoid](https://catzoid.com) — free, open-source developer tools with nine lives. All cats, no catch: no
 account, no Pro tier, nothing locked behind a payment.
 
 ## What it does
 
-- **Sites** — PHP, Node.js / Bun, Python, Ruby, Go and Rust projects detected with their framework (Laravel, Next.js, Django, Rails, Gin …), each on `https://*.localhost`, monorepos and Git worktrees included.
+- **Sites** — PHP, Node.js / Bun, Python, Ruby, Go and Rust projects detected with their framework and its version (Laravel, Next.js, Django, Rails, Gin …), each on `https://*.localhost`, monorepos and Git worktrees included.
 - **Runtimes** — any PHP, Node.js, Bun, Python, Ruby, Go or Rust version per site, installed for you.
-- **Services** — MySQL, MariaDB, PostgreSQL, Redis, Valkey, MongoDB, Elasticsearch; S3-compatible storage; search engines; WebSocket servers; a mail catcher; gateways; tunnels to share a site.
+- **Services** — MySQL, MariaDB, PostgreSQL, Redis, Valkey, MongoDB, Elasticsearch; object storage (MinIO, RustFS, SeaweedFS, Garage, Ceph); search engines; WebSocket servers; a mail catcher; gateways; tunnels to share a site.
+- **Docker** — works with the engine you have: DoCatz (recommended), OrbStack, Docker Desktop, Colima, Rancher Desktop, Kiri, Podman or Finch. **Run in** picks where each gateway and storage container runs.
 - **Per site** — logs, `.env` editing, database links and migrations, the site’s API, Git with AI-written commit messages, Docker files generated from the stack.
-- **AI, optional** — bring your own provider (Claude, OpenAI, Gemini, Ollama …); off until you switch it on.
-- **The family** — databases open in [DBCatz](https://github.com/catzoidhub/DBCatz), sites become [DialCatz](https://github.com/catzoidhub/DialCatz) environments.
+- **Monitoring** — CPU, memory, disk and network of your sites and services, and of the whole Catzoid family when the other cats are installed. Close the window and its memory is freed; your sites keep running from the menu bar or tray.
+- **AI, optional** — bring your own provider (Claude, OpenAI, Gemini, Ollama …); off until you switch it on. With [MCatzP](https://github.com/catzoidhub/MCatzP), your AI assistant can run DevCatz too (267 tools across the Catzoid apps, each change confirmed in the app).
+- **The family** — databases open in [DBCatz](https://github.com/catzoidhub/DBCatz); sites become [DialCatz](https://github.com/catzoidhub/DialCatz) environments, its mock servers get their own `https://<name>.dialcatz.localhost` with **Write to .env**, and WebSocket servers open in DialCatz in one click; [DoCatz](https://github.com/catzoidhub/DoCatz) runs the containers.
 
 ## Install
 
@@ -34,12 +36,12 @@ brew tap catzoidhub/catz && brew trust catzoidhub/catz
 brew install --cask devcatz
 ```
 
-The macOS app is signed and notarized by Apple and updates itself (Settings → About → Check for Updates).
+The macOS app is signed and notarized by Apple and updates itself: What's New opens on its own when an update is out (or Settings → About → Check for Updates). Settings → About is also where you rate DevCatz, under Support Catzoid.
 
 Windows 10 / 11 (x64): `DevCatz-Setup-<version>.exe` from the same page or the
-[latest release](https://github.com/catzoidhub/DevCatz/releases/latest). It is not code-signed yet (see Code signing below).
+[latest release](https://github.com/catzoidhub/DevCatz/releases/latest). It installs for your account only. It is not code-signed yet (see Code signing below).
 
-Linux (x64): `DevCatz-<version>-x64.AppImage` or `DevCatz-<version>-amd64.deb` from the same page or the
+Linux (x64 and ARM64): `DevCatz-<version>-x64.AppImage` / `-arm64.AppImage` or `DevCatz-<version>-amd64.deb` / `-arm64.deb` from the same page or the
 [latest release](https://github.com/catzoidhub/DevCatz/releases/latest). The AppImage offers to install itself into
 `~/Applications` with a menu entry on its first run; the `.deb` suits Ubuntu and Debian. Neither is signed yet.
 
