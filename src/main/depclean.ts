@@ -1,5 +1,7 @@
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync, type Dirent } from 'node:fs';
-import { readdir, stat } from 'node:fs/promises';
+// Electron's own fs: a .asar file is a plain file here. Through node:fs Electron opens every app.asar it meets as a
+// folder and keeps it open for the life of the process, which blocked DialCatz / DoCatz / DBCatz updates on Windows.
+import { promises as ofs } from 'original-fs';
 import { join, relative, sep } from 'node:path';
 import type { DepFolder, ProjectConfig, StackInfo } from '@shared/types';
 import { run } from './env';
@@ -79,7 +81,7 @@ async function walkSize(dir: string): Promise<number> {
     const d = stack.pop()!;
     let entries: Dirent[];
     try {
-      entries = await readdir(d, { withFileTypes: true });
+      entries = await ofs.readdir(d, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -87,7 +89,7 @@ async function walkSize(dir: string): Promise<number> {
       if (e.isSymbolicLink()) continue;
       const p = join(d, e.name);
       if (e.isDirectory()) stack.push(p);
-      else if (e.isFile()) total += await stat(p).then((st) => st.size, () => 0);
+      else if (e.isFile()) total += await ofs.stat(p).then((st) => st.size, () => 0);
     }
   }
   return total;

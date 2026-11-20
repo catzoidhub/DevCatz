@@ -10,6 +10,8 @@ export default defineConfig({
         '@shared': resolve('src/shared'),
       },
     },
+    // Electron's built-in non-asar fs (depclean.ts walkSize): provided by Electron at run time, never bundled.
+    build: { rolldownOptions: { external: ['original-fs'] } },
   },
   preload: {
     resolve: { alias: { '@shared': resolve('src/shared') } },
