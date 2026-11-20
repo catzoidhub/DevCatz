@@ -63,12 +63,15 @@ export class DialCatz {
     return true;
   }
 
-  /** A mock server from a site's OpenAPI file (`spec`: its path in the site folder); false when DialCatz is not installed. */
-  async createMock(siteId: string, spec: string): Promise<boolean> {
+  /**
+   * A mock server from a site's OpenAPI file (`spec`: its path in the site folder; `app`: the folder of the app that
+   * holds it, as bridge.json's site openapi[].app); false when DialCatz is not installed.
+   */
+  async createMock(siteId: string, spec: string, app?: string): Promise<boolean> {
     if (!/^[\w-]{1,64}$/.test(siteId)) throw new Error('Invalid site id');
     const path = await this.locate();
     if (!path) return false;
-    await openCatzoidApp(path, `dialcatz://mock?${new URLSearchParams({ site: siteId, spec })}`);
+    await openCatzoidApp(path, `dialcatz://mock?${new URLSearchParams({ site: siteId, ...(app ? { app } : {}), spec })}`);
     return true;
   }
 

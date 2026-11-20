@@ -4487,7 +4487,7 @@ export class Herd extends EventEmitter {
     const want = specFile.replace(/\\/g, '/');
     const file = specFiles(p, this.stacks.get(p.id)).find((f) => this.specRel(p, f.file).replace(/\\/g, '/') === want);
     if (!file) throw new Error(`${specFile} is not one of this site's OpenAPI files`);
-    return this.dialcatz.createMock(p.id, want);
+    return this.dialcatz.createMock(p.id, want, file.app);
   }
 
   dialcatzOpenMock(key: string): Promise<boolean> {
