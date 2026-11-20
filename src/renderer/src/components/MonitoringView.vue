@@ -111,7 +111,9 @@ const dataOnDisk = computed(() => (latest.value?.entities ?? []).reduce((n, e) =
 const binariesOnDisk = computed(() => (latest.value?.entities ?? []).reduce((n, e) => n + (e.binaries ?? 0), 0));
 
 // ---- table
-type Filter = 'all' | 'site' | 'services' | 'container' | 'devcatz';
+type Filter = 'all' | 'site' | 'services' | 'container' | 'catzoid';
+/** The Catzoid tab: DevCatz itself and the other Catzoid apps installed here (DBCatz, DialCatz, DoCatz). */
+const CATZOID: MonitorKind[] = ['devcatz', 'catzoid'];
 const filter = ref<Filter>('all');
 const showStopped = ref(false);
 type SortKey = 'name' | 'cpu' | 'mem' | 'net' | 'io' | 'disk';
@@ -123,7 +125,7 @@ const rows = computed(() => {
   if (filter.value === 'site') list = list.filter((e) => e.kind === 'site');
   else if (filter.value === 'services') list = list.filter((e) => SERVICES.includes(e.kind));
   else if (filter.value === 'container') list = list.filter((e) => e.kind === 'container');
-  else if (filter.value === 'devcatz') list = list.filter((e) => e.kind === 'devcatz');
+  else if (filter.value === 'catzoid') list = list.filter((e) => CATZOID.includes(e.kind));
   if (!showStopped.value) list = list.filter((e) => e.active);
   const by: Record<SortKey, (e: MonitorEntity) => number | string> = {
     name: (e) => e.name.toLowerCase(),
@@ -148,7 +150,7 @@ const counts = computed(() => {
     site: on((e) => e.kind === 'site'),
     services: on((e) => SERVICES.includes(e.kind)),
     container: on((e) => e.kind === 'container'),
-    devcatz: on((e) => e.kind === 'devcatz'),
+    catzoid: on((e) => CATZOID.includes(e.kind)),
   };
 });
 const expanded = ref<string | null>(null);
@@ -163,7 +165,8 @@ const KIND_LABEL: Record<MonitorKind, string> = {
   whatsapp: 'WhatsApp',
   gateway: 'Gateway',
   container: 'Container',
-  devcatz: 'DevCatz',
+  devcatz: 'Catzoid',
+  catzoid: 'Catzoid',
 };
 const KIND_COLOR: Record<MonitorKind, string> = {
   site: 'var(--c-projects)',
@@ -176,8 +179,9 @@ const KIND_COLOR: Record<MonitorKind, string> = {
   gateway: 'var(--c-whatsapp)',
   container: 'oklch(65% 0.13 240)',
   devcatz: 'var(--c-monitoring)',
+  catzoid: 'var(--c-monitoring)',
 };
-/** Every service with an official mark shows it (databases, storage, search, WebSocket, WhatsApp, gateways, DevCatz). */
+/** Every service with an official mark shows it (databases, storage, search, WebSocket, WhatsApp, gateways, the Catzoid apps). */
 const logoOf = (e: MonitorEntity) => monitorLogo(e, state.value?.databases ?? []);
 /** A site's main framework (Laravel, Next.js, Rails …), the same mark as in the site list (TODO §36). */
 /** A runtime's own processes (PHP-FPM pools, php-cgi workers on Windows): the icon of Runtimes → PHP, in its tile. */
@@ -280,7 +284,7 @@ const minutesShown = 10;
               { id: 'site', label: 'Sites' },
               { id: 'services', label: 'Services' },
               { id: 'container', label: 'Containers' },
-              { id: 'devcatz', label: 'DevCatz' },
+              { id: 'catzoid', label: 'Catzoid' },
             ] as { id: Filter; label: string }[]"
             :key="f.id"
             role="tab"

@@ -98,6 +98,11 @@ export class DoCatz {
   /** Where DoCatz was last found (see locate). */
   private found: string | null = APP_PATHS.find((p) => existsSync(p)) ?? null;
 
+  /** Where DoCatz is installed (the .app, the .exe, the AppImage), null when it is not: Monitoring measures it. */
+  installedPath(): string | null {
+    return this.found;
+  }
+
   /** Where DoCatz is: the usual folders, the app that opens docatz:// links, then Spotlight by bundle id. */
   async locate(): Promise<string | null> {
     const path = await findCatzoidApp('DoCatz', 'docatz', BUNDLE_ID);

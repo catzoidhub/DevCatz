@@ -19,6 +19,9 @@ import natsLogo from './assets/logos/nats.png';
 import gowaLogo from './assets/logos/gowa.png';
 import wahaLogo from './assets/logos/waha.png';
 import devcatzLogo from './assets/logos/devcatz.svg';
+import dbcatzLogo from './assets/logos/dbcatz.png';
+import dialcatzLogo from './assets/logos/dialcatz.png';
+import docatzLogo from './assets/logos/docatz.png';
 import { DB_LOGO } from './db';
 import { GW_LOGO } from './gateways';
 
@@ -50,6 +53,8 @@ export function monitorLogo(e: MonitorEntity, databases: DbServiceState[]): stri
       return pick(GW_LOGO);
     case 'devcatz':
       return DEVCATZ_LOGO;
+    case 'catzoid':
+      return pick({ dbcatz: dbcatzLogo, dialcatz: dialcatzLogo, docatz: docatzLogo });
     default:
       return null;
   }

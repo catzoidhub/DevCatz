@@ -26,6 +26,11 @@ export class DialCatz {
   /** Where DialCatz was last found (see locate). */
   private found: string | null = APP_PATHS.find((p) => existsSync(p)) ?? null;
 
+  /** Where DialCatz is installed (the .app, the .exe, the AppImage), null when it is not: Monitoring measures it. */
+  installedPath(): string | null {
+    return this.found;
+  }
+
   /** Where DialCatz is: the usual folders, the app that opens dialcatz:// links, then Spotlight by bundle id. */
   async locate(): Promise<string | null> {
     const path = await findCatzoidApp('DialCatz', 'dialcatz', BUNDLE_ID);

@@ -54,6 +54,11 @@ export class DbCatz {
   /** Where DBCatz was last found (see locate). */
   private found: string | null = APP_PATHS.find((p) => existsSync(p)) ?? null;
 
+  /** Where DBCatz is installed (the .app, the .exe, the AppImage), null when it is not: Monitoring measures it. */
+  installedPath(): string | null {
+    return this.found;
+  }
+
   /**
    * Finds DBCatz wherever it lives — /Applications, ~/Applications, or any
    * other folder (a build output, Downloads): the usual places first, then the

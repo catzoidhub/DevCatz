@@ -2731,7 +2731,7 @@ export type DbServiceInput = Omit<DbServiceConfig, 'id' | 'bootstrapped'>;
  * What the monitor measures. New kinds of services (WebSocket servers, search
  * engines) register their processes the same way and show up on their own.
  */
-export type MonitorKind = 'site' | 'php' | 'database' | 'storage' | 'websocket' | 'search' | 'whatsapp' | 'gateway' | 'container' | 'devcatz';
+export type MonitorKind = 'site' | 'php' | 'database' | 'storage' | 'websocket' | 'search' | 'whatsapp' | 'gateway' | 'container' | 'devcatz' | 'catzoid';
 
 /** One point: CPU %, memory bytes, network and disk rates (bytes/s). */
 export interface MonitorPoint {

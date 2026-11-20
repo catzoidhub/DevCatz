@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, statfsSync, writeFileSync } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, readlink } from 'node:fs/promises';
 import { cpus, loadavg, totalmem } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import type { MonitorEntity, MonitorKind, MonitorPoint, MonitorRange, MonitorSnapshot, MonitorSystem, MonitorUpdate } from '@shared/types';
 import { words } from '@shared/platform';
 import { sizeOf as walkSizeOf } from './depclean';
@@ -47,6 +47,11 @@ export interface MonitorTarget {
   binDirs?: string[];
   /** Sites: the project folder (matches compose containers to their site; its size is not measured). */
   path?: string;
+  /**
+   * Another Catzoid app (DBCatz, DialCatz, DoCatz): its processes are found by executable path each sample, not
+   * started by DevCatz. An entry is a file (exact match) or a folder ending in a path separator (anything inside it).
+   */
+  exe?: string[];
   link: MonitorEntity['link'];
 }
 
@@ -377,6 +382,30 @@ class LinuxSampler {
   }
 }
 
+/** A process path against a target's entry: the file itself, or anything inside a folder (entry ending in a separator). */
+function exeMatch(path: string, entry: string): boolean {
+  const a = isWin ? path.toLowerCase() : path;
+  const b = isWin ? entry.toLowerCase() : entry;
+  return /[\\/]$/.test(b) ? a.startsWith(b) : a === b;
+}
+
+/** DevCatz's own install: the .app bundle on a Mac, the program folder elsewhere. */
+function ownExe(): string[] {
+  const exe = process.execPath;
+  const app = /^(.*?\.app)\//.exec(exe);
+  return [app ? `${app[1]}/` : dirname(exe) + sep];
+}
+
+/**
+ * What Monitoring matches for another Catzoid app installed at `path` (companion.ts findCatzoidApp): the .app bundle,
+ * the .exe's folder, the AppImage file (its runtime is the parent of the app it mounts) or a .deb's /opt folder.
+ */
+export function catzoidExe(path: string): string[] {
+  if (isWin) return [dirname(path) + sep];
+  if (isLinux) return /\.AppImage$/i.test(path) ? [path] : [dirname(path) + '/'];
+  return [`${path.replace(/\/$/, '')}/`];
+}
+
 export class Monitor {
   private timer: NodeJS.Timeout | null = null;
   private live = false;
@@ -409,6 +438,8 @@ export class Monitor {
   private winLast: WinSample | null = null;
   private prevAdapters: { at: number; rx: number; tx: number } | null = null;
   private adapterRate = { netIn: 0, netOut: 0 };
+  /** pid → executable path, for the targets found by path (other Catzoid apps); refreshed every 15 s (30 s on Windows). */
+  private exes: { at: number; list: [number, string][] } = { at: 0, list: [] };
 
   /** Updates go to the window while the page is open, and to the menu bar line. */
   onSample: (u: MonitorUpdate, live: boolean) => void = () => undefined;
@@ -621,6 +652,37 @@ export class Monitor {
       }
     }
     this.sockets = out;
+  }
+
+  /**
+   * Every process's executable path: `ps` on macOS (comm is the full path), /proc/<pid>/exe on Linux (this user's
+   * processes), Get-Process on Windows (slower, so every 30 s).
+   */
+  private async exeList(procs: Map<number, Proc>): Promise<[number, string][]> {
+    if (Date.now() - this.exes.at < (isWin ? 30_000 : 15_000)) return this.exes.list;
+    const list: [number, string][] = [];
+    if (isWin) {
+      const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-Process | Where-Object Path | ForEach-Object { "$($_.Id) $($_.Path)" }'], { timeout: 20_000 });
+      for (const line of r.stdout.split(/\r?\n/)) {
+        const m = /^(\d+) (.+)$/.exec(line.trim());
+        if (m) list.push([Number(m[1]), m[2]]);
+      }
+    } else if (isLinux) {
+      await Promise.all(
+        [...procs.keys()].map(async (pid) => {
+          const p = await readlink(`/proc/${pid}/exe`).catch(() => null);
+          if (p) list.push([pid, p.replace(/ \(deleted\)$/, '')]);
+        }),
+      );
+    } else {
+      const r = await run('ps', ['-A', '-o', 'pid=,comm='], { timeout: 10_000 });
+      for (const line of r.stdout.split('\n')) {
+        const m = /^\s*(\d+) (.+)$/.exec(line);
+        if (m) list.push([Number(m[1]), m[2]]);
+      }
+    }
+    this.exes = { at: Date.now(), list };
+    return list;
   }
 
   /** Data folder sizes, refreshed every 5 minutes in the background (du can take a while). */
@@ -885,8 +947,14 @@ export class Monitor {
       }
     };
     const targets = this.targets();
-    for (const t of targets) for (const pid of t.pids) claim(pid, t.id);
+    const own = ownExe();
+    const exes = targets.some((t) => t.exe?.length) ? await this.exeList(procs).catch(() => [] as [number, string][]) : [];
+    const byExe = (paths: string[]) => exes.filter(([, p]) => paths.some((x) => exeMatch(p, x))).map(([pid]) => pid);
+    for (const t of targets) if (!t.exe) for (const pid of t.pids) claim(pid, t.id);
     claim(process.pid, 'devcatz');
+    // DevCatz's own processes that are not its children (the crash reporter).
+    for (const pid of byExe(own)) claim(pid, 'devcatz');
+    for (const t of targets) if (t.exe) for (const pid of [...t.pids, ...byExe(t.exe)]) claim(pid, t.id);
 
     const sums = new Map<string, Omit<MonitorPoint, 't'> & { processes: number }>();
     const sock = new Map<string, { ports: Set<number>; conns: number }>();
@@ -950,6 +1018,8 @@ export class Monitor {
     const system = await this.system(netIn, netOut);
     const total: MonitorPoint = { t: now, cpu: 0, mem: 0, netIn: 0, netOut: 0, diskRead: 0, diskWrite: 0 };
     for (const e of entities) {
+      // "Everything DevCatz runs": the other Catzoid apps are rows of their own, not part of it.
+      if (e.kind === 'catzoid') continue;
       total.cpu += e.cpu;
       total.mem += e.mem;
       total.netIn += e.netIn;

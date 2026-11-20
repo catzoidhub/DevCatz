@@ -86,7 +86,7 @@ import { Reports } from './reports';
 import { Reviews } from './reviews';
 import { AppUpdater } from './updater';
 import { browsersState, editorIcons, validBrowser } from './browsers';
-import { Monitor, type MonitorTarget } from './monitor';
+import { Monitor, catzoidExe, type MonitorTarget } from './monitor';
 import * as pythons from './python';
 import * as rubies from './ruby';
 import { rubyJobsCommand } from './runtimes/ruby';
@@ -5449,6 +5449,28 @@ export class Herd extends EventEmitter {
         dataDirs: [g.config.dataDir],
         binDirs: g.docker ? [] : [this.gateways.binDir(g.kind)],
         link: { section: 'whatsapp', id: g.kind },
+      });
+    }
+    // The other Catzoid apps, when installed (user, 2026-11-20): the app, its helpers, DoCatz's engine.
+    const lite = join(homedir(), '.docatz');
+    for (const a of [
+      { name: 'DBCatz', path: this.dbcatz.installedPath(), detail: 'Database client' },
+      { name: 'DialCatz', path: this.dialcatz.installedPath(), detail: 'API client' },
+      { name: 'DoCatz', path: this.docatz.installedPath(), detail: existsSync(lite) ? 'Containers · app and DoCatz Lite engine' : 'Containers' },
+    ]) {
+      if (!a.path) continue;
+      const bin = isWin ? dirname(a.path) : isLinux && !/\.AppImage$/i.test(a.path) ? dirname(a.path) : a.path;
+      out.push({
+        id: `app:${a.name.toLowerCase()}`,
+        kind: 'catzoid',
+        name: a.name,
+        detail: a.detail,
+        active: false,
+        pids: [],
+        exe: [...catzoidExe(a.path), ...(a.name === 'DoCatz' ? [lite + sep] : [])],
+        dataDirs: [join(app.getPath('appData'), a.name), ...(a.name === 'DoCatz' && existsSync(lite) ? [lite] : [])],
+        binDirs: [bin],
+        link: null,
       });
     }
     return out;
