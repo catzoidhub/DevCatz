@@ -5,7 +5,7 @@ import type { ProjectState, SiteOpenApi } from '@shared/types';
 import ConfirmDialog from './ConfirmDialog.vue';
 import DialCatzButton from './DialCatzButton.vue';
 import CatMood from './CatMood.vue';
-import { attempt, herd, notify } from '../store';
+import { attempt, herd, notify, navRequest, state } from '../store';
 
 /**
  * Overview → API (OpenAPI): where the site's API is described — a spec file in the project (openapi.yaml,
@@ -35,6 +35,16 @@ const laravel = computed(() => props.site.stack.apps.some((a) => a.framework ===
 const importable = computed(() => laravel.value || !!info.value?.specs.length);
 const notYet = computed(() => (importable.value ? null : info.value ? 'Nothing to import yet: this site has no OpenAPI document (add one below)' : 'Looking for the API…'));
 
+/** DialCatz's mock server of one of these files (API tab → Create mock server), while it runs. */
+const mockOf = (file: string) => state.value?.mocks.find((m) => m.siteId === props.site.id && m.specFile === rel(file).replaceAll('\\', '/')) ?? null;
+const creatingMock = ref<string | null>(null);
+async function createMock(file: string) {
+  creatingMock.value = file;
+  const ok = await attempt(() => herd.dialcatzCreateMock(props.site.id, rel(file).replaceAll('\\', '/')));
+  if (ok === false) notify('warning', 'DialCatz is not installed: Open in DialCatz above downloads and installs it');
+  else if (ok) notify('info', `DialCatz starts a mock server from ${rel(file)}; it shows up here and under Mock servers`);
+  setTimeout(() => (creatingMock.value = null), 4000);
+}
 const rel = (file: string) => (file.startsWith(props.site.path) && /[\\/]/.test(file[props.site.path.length] ?? '') ? file.slice(props.site.path.length + 1) : file);
 const appName = (dir: string) => props.site.stack.apps.find((a) => a.dir === dir)?.name ?? dir;
 
@@ -136,6 +146,12 @@ async function add() {
             <button v-if="s.url ?? s.docUrl" class="btn btn-ghost btn-xs" :title="s.url ?? s.docUrl" @click="herd.openUrl((s.url ?? s.docUrl)!)">Open URL</button>
             <template v-if="s.file">
               <button class="btn btn-ghost btn-xs" @click="herd.openapiReveal(site.id, s.file!)">{{ words.revealIn }}</button>
+              <button v-if="mockOf(s.file!)" class="btn btn-ghost btn-xs text-success" :title="mockOf(s.file!)!.url" @click="navRequest = { section: 'projects', id: `mock:${mockOf(s.file!)!.key}` }">
+                <span class="status status-success status-xs" />Mock server running · Open
+              </button>
+              <button v-else class="btn btn-ghost btn-xs" :disabled="creatingMock === s.file" title="DialCatz imports this file (or uses the collection that follows it) and starts a mock server that answers with its examples; DevCatz gives it a domain" @click="createMock(s.file!)">
+                <span v-if="creatingMock === s.file" class="loading loading-spinner loading-xs" />Create mock server
+              </button>
               <button v-if="s.ignored === false" class="btn btn-ghost btn-xs" @click="ignore(s.file!)">Add to .gitignore</button>
               <button v-else-if="s.ignored" class="btn btn-ghost btn-xs" @click="unignore(s.file!)">Remove from .gitignore</button>
               <button v-if="s.ignored && s.tracked" class="btn btn-ghost btn-xs" title="Already committed, so .gitignore alone does not take it out of the repository" @click="removing = { kind: 'untrack', file: s.file! }">Stop tracking in Git</button>

@@ -31,6 +31,8 @@ export interface Route {
   running: boolean;
   /** The site's scheme; requests on the other one are redirected (GET/HEAD only). */
   secure: boolean;
+  /** Served on HTTP and HTTPS alike, no redirect (an API's mock: clients call the scheme they were given). */
+  anyScheme?: boolean;
   /** Pass the original Host header (object storage: S3 signatures cover it). */
   keepHost?: boolean;
   /** `/` redirects here (RustFS serves its console under /rustfs/console/). */
@@ -193,7 +195,7 @@ export class Proxy {
     }
     const route = this.route(req);
     // Send browsers to the scheme the site is configured for, on the host they asked for (a subdomain stays a subdomain).
-    if (route && route.secure !== secure && (req.method === 'GET' || req.method === 'HEAD')) {
+    if (route && !route.anyScheme && route.secure !== secure && (req.method === 'GET' || req.method === 'HEAD')) {
       const host = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/\.$/, '').toLowerCase() || route.domain;
       res.writeHead(302, { location: this.urlBase(route.secure, host) + (req.url ?? '/'), 'cache-control': 'no-store' });
       return res.end();

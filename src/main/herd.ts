@@ -79,6 +79,7 @@ import { ENGINES, StorageManager, binaryDirOf as storageBinaryDirOf, s3Region, s
 import { DB_DOMAIN_LABEL, DbServiceManager, dbProcessId } from './dbservices';
 import { DbCatz } from './dbcatz';
 import { DialCatz } from './dialcatz';
+import { DialcatzMocks, label } from './dialcatzmocks';
 import { DoCatz, docatzContainerUrl, docatzHttpsPort, docatzProxyPort } from './docatz';
 import { onSharedChange, sharedDomains, writeShared, type SharedDomains } from './shared';
 import { Reports } from './reports';
@@ -345,6 +346,8 @@ export class Herd extends EventEmitter {
   readonly dbcatz = new DbCatz();
   /** DialCatz, the API client: opened at a site by dialcatz:// links, installed from its release when missing. */
   readonly dialcatz = new DialCatz();
+  /** DialCatz's running mock servers (its bridge.json), served as <slug>.dialcatz.<tld>. */
+  readonly mocks = new DialcatzMocks();
   /** DoCatz, the container manager: opened at a compose project by docatz:// links, installed from its release when missing. */
   readonly docatz = new DoCatz();
   /** DevCatz's own updates (Catzoid #54). */
@@ -451,6 +454,11 @@ export class Herd extends EventEmitter {
     this.dbcatz.onChange = () => this.changed();
     void this.dbcatz.locate();
     this.dialcatz.onChange = () => this.changed();
+    this.mocks.own = () => store.settings.mockDomains ?? {};
+    this.mocks.onChange = () => {
+      this.updateRoutes();
+      this.changed();
+    };
     // DoCatz's names go through DevCatz's proxy on :443 when names without a port are on (docatzRoute), else to DoCatz's own port.
     // The name DoCatz gives the container (users may rename it there), else <service>.<project>.docatz.<tld> with each
     // part made a DNS label the way DoCatz does (domains.ts label()): a raw work_app gave a name with an underscore,
@@ -529,6 +537,7 @@ export class Herd extends EventEmitter {
     if (sharedTld && sharedTld !== tld()) await this.setTld(sharedTld).catch((e: Error) => console.warn('shared default domain:', e.message));
     this.domainsReady = true;
     this.publishDomains();
+    this.mocks.start();
     onSharedChange((sh) => void this.followSharedDomains(sh.domains ?? {}));
     // DoCatz started or stopped (its proxy port in its bridge.json): its names follow (docatzRoute).
     let docatzPort = docatzProxyPort();
@@ -2028,6 +2037,7 @@ export class Herd extends EventEmitter {
   async shutdown(): Promise<void> {
     for (const t of this.timers) clearInterval(t);
     for (const w of this.watchers) w.close();
+    this.mocks.stop();
     await this.processes.stopAll();
     this.monitor.stop();
     await this.storage.stopAll();
@@ -4437,7 +4447,7 @@ export class Herd extends EventEmitter {
       .filter((p) => p.reverb && this.stacks.get(p.id)?.apps.some((a) => a.framework === 'laravel'))
       .map((p) => ({ domain: this.reverbDomain(p), port: this.reverbPort(p), projectName: `${p.name} Reverb`, running: this.processes.isActive(p.id), secure: true }));
     // Object storage domains (minio.localhost, console.minio.localhost …) and WebSocket servers (ws.localhost …).
-    this.proxy.setRoutes([...routes, ...reverb, ...this.storage.routes(), ...this.ws.routes(), ...this.search.routes(), ...this.mail.routes(), ...this.whatsapp.routes(), ...this.gateways.routes(), ...this.docatzRoute()]);
+    this.proxy.setRoutes([...routes, ...reverb, ...this.storage.routes(), ...this.ws.routes(), ...this.search.routes(), ...this.mail.routes(), ...this.whatsapp.routes(), ...this.gateways.routes(), ...this.docatzRoute(), ...this.mockRoutes()]);
   }
 
   /**
@@ -4448,6 +4458,43 @@ export class Herd extends EventEmitter {
   private docatzRoute(): Route[] {
     const port = docatzProxyPort();
     return port ? [{ domain: `docatz.${tld()}`, port, projectName: 'DoCatz', running: true, secure: true, keepHost: true }] : [];
+  }
+
+  /** A mock server's own name (`<name>.dialcatz.<tld>`), or DialCatz's slug again with null. */
+  mockSetDomain(key: string, name: string | null): void {
+    const mock = this.mocks.list().find((m) => m.key === key);
+    if (!mock) throw new Error('This mock server is not running in DialCatz any more');
+    const own = { ...(store.settings.mockDomains ?? {}) };
+    if (name === null || !name.trim() || label(name) === mock.defaultSlug) delete own[key];
+    else {
+      const l = label(name.trim().replace(new RegExp(`\\.dialcatz\\.${tld().replace(/\./g, '\\.')}$`), ''));
+      if (!l || l !== name.trim().toLowerCase().replace(new RegExp(`\\.dialcatz\\.${tld().replace(/\./g, '\\.')}$`), '')) throw new Error('Domain name: lowercase letters, digits and hyphens');
+      if (this.mocks.list().some((m) => m.key !== key && m.slug === l)) throw new Error(`${l}.dialcatz.${tld()} is another mock server's`);
+      own[key] = l;
+    }
+    store.updateSettings({ mockDomains: own });
+    this.mocks.apply();
+  }
+
+  /** API tab → Create mock server: only for an OpenAPI file DevCatz found in the site. */
+  dialcatzCreateMock(siteId: string, specFile: string): Promise<boolean> {
+    const p = this.find(siteId);
+    if (!p) throw new Error('This site is gone');
+    const want = specFile.replace(/\\/g, '/');
+    const file = specFiles(p, this.stacks.get(p.id)).find((f) => this.specRel(p, f.file).replace(/\\/g, '/') === want);
+    if (!file) throw new Error(`${specFile} is not one of this site's OpenAPI files`);
+    return this.dialcatz.createMock(p.id, want);
+  }
+
+  dialcatzOpenMock(key: string): Promise<boolean> {
+    const mock = this.mocks.list().find((m) => m.key === key);
+    if (!mock) throw new Error('This mock server is not running in DialCatz any more');
+    return this.dialcatz.openMock(mock.workspaceId, mock.collectionId);
+  }
+
+  /** DialCatz's mock servers (DialCatz #94): <slug>.dialcatz.<tld> → 127.0.0.1:<port>, HTTP and HTTPS without a redirect. */
+  private mockRoutes(): Route[] {
+    return this.mocks.list().map((m) => ({ domain: `${m.slug}.dialcatz.${tld()}`, port: m.port, projectName: `${m.name} (mock server)`, running: true, secure: true, anyScheme: true }));
   }
 
   /**
@@ -4469,6 +4516,7 @@ export class Herd extends EventEmitter {
     if (svc) return `the DevCatz service ${svc.projectName}`;
     if (store.settings.dbDomain && `${store.settings.dbDomain}.${tld()}` === d) return 'the DB domain (Settings → Database)';
     if (d === `docatz.${tld()}` || d.endsWith(`.docatz.${tld()}`)) return 'DoCatz (its containers)';
+    if (d === `dialcatz.${tld()}` || d.endsWith(`.dialcatz.${tld()}`)) return "DialCatz's mock servers";
     return null;
   }
 
@@ -5570,6 +5618,11 @@ export class Herd extends EventEmitter {
       databases: this.dbs.state(),
       dbcatz: this.dbcatz.state(),
       dialcatz: this.dialcatz.state(),
+      mocks: this.mocks.list().map((m) => {
+        const domain = `${m.slug}.dialcatz.${tld()}`;
+        const custom = !!store.settings.mockDomains?.[m.key];
+        return { key: m.key, name: m.name, domain, slug: m.slug, defaultSlug: m.defaultSlug, custom, url: `https://${domain}${this.portSuffix(true)}`, httpUrl: `http://${domain}${this.portSuffix(false)}`, port: m.port, workspaceId: m.workspaceId, collectionId: m.collectionId, startedAt: m.startedAt, siteId: m.siteId, specFile: m.specFile };
+      }),
       docatz: this.docatz.state(),
       appUpdate: this.updater.state(),
       toolTask: this.toolTask,

@@ -989,6 +989,11 @@ export interface Settings {
    * '' = none (clients use 127.0.0.1). It resolves to this Mac; services differ by port.
    */
   dbDomain: string;
+  /**
+   * DialCatz's mock servers: the user's own name per mock (`<workspaceId>/<collectionId>` → label), used instead of
+   * DialCatz's slug in `<name>.dialcatz.<default domain>` whenever that mock runs.
+   */
+  mockDomains?: Record<string, string>;
   /** Monitoring: seconds between samples while the Monitoring page is open. */
   monitorLiveInterval: number;
   /** Monitoring: keep sampling (every 15 s) while the page is closed, for the 1-hour history and alerts. */
@@ -1678,6 +1683,30 @@ export interface McatzpInstallProgress {
   total: number;
 }
 
+export interface DialcatzMockState {
+  /** `<workspaceId>/<collectionId>` (settings.mockDomains, mockSetDomain, dialcatzOpenMock). */
+  key: string;
+  name: string;
+  domain: string;
+  /** The label before .dialcatz.<tld>, and DialCatz's own one (shown as the default). */
+  slug: string;
+  defaultSlug: string;
+  /** The user named it (settings.mockDomains). */
+  custom: boolean;
+  /** https://<domain> (with the HTTPS port while clean URLs are off). */
+  url: string;
+  /** http://<domain>: served too, no redirect. */
+  httpUrl: string;
+  /** Where DialCatz serves it: 127.0.0.1:<port>. */
+  port: number;
+  workspaceId: string;
+  collectionId: string;
+  startedAt: number | null;
+  /** Started from a DevCatz site's OpenAPI file (API tab → Create mock server): the site, and the file's path in it. */
+  siteId: string | null;
+  specFile: string | null;
+}
+
 export interface AppState {
   /** A question from an MCP client waiting for the user (MCatzP), the oldest first. */
   mcatzpAsk: McatzpAsk | null;
@@ -1778,6 +1807,11 @@ export interface AppState {
   dbcatz: DbCatzState;
   /** DialCatz, the API client: installed, and its Download & Install progress. */
   dialcatz: DbCatzState;
+  /**
+   * DialCatz's mock servers running now (DialCatz #94), each with a local name `<slug>.dialcatz.<default domain>` that
+   * DevCatz serves on HTTP and HTTPS. Empty when DialCatz is not installed or runs none.
+   */
+  mocks: DialcatzMockState[];
   docatz: DbCatzState;
   /** DevCatz's own update (Catzoid #54). */
   appUpdate: AppUpdateState;
@@ -2989,6 +3023,15 @@ export interface HerdApi {
   mcatzpAnswer(id: string, answer: 'deny' | 'once' | 'session', typed?: string): Promise<void>;
   /** Opens DialCatz's import for a site (dialcatz://open?site=<id>); false when DialCatz is not installed. */
   dialcatzOpen(siteId: string): Promise<boolean>;
+  /** Opens a running mock server's collection in DialCatz (dialcatz://open?workspace=…&collection=…&mock=1); false when DialCatz is not installed. */
+  dialcatzOpenMock(key: string): Promise<boolean>;
+  /**
+   * API tab → Create mock server: DialCatz (dialcatz://mock?site=…&spec=…) imports that OpenAPI file of the site, or
+   * reuses the collection that follows it, and starts its mock; false when DialCatz is not installed.
+   */
+  dialcatzCreateMock(siteId: string, specFile: string): Promise<boolean>;
+  /** A mock server's own name, `<name>.dialcatz.<tld>` (null = DialCatz's slug again); kept for that mock. */
+  mockSetDomain(key: string, name: string | null): Promise<void>;
   /** Downloads the latest DialCatz release, installs it to /Applications and opens the site; progress in state.dialcatz.task. */
   dialcatzInstall(siteId: string): Promise<void>;
   dialcatzCancelInstall(): Promise<void>;
@@ -3568,7 +3611,7 @@ export interface HerdApi {
 export const API_METHODS: (keyof HerdApi)[] = [
   'mcatzpSetup', 'mcatzpInstall', 'mcatzpUninstall', 'mcatzpInstallCancel', 'mcatzpApprovals', 'mcatzpTargets', 'mcatzpAddToClient', 'mcatzpRemoveFromClient',
   'getState', 'getLogs', 'clearLogs', 'pickFolder', 'inspectFolder', 'linkProject', 'parkFolder', 'unparkFolder', 'parkRestore', 'missingRemove', 'missingLocate', 'missingLocateApply',
-  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateNotes', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'ratingSend', 'ratingRefresh', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
+  'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateNotes', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'ratingSend', 'ratingRefresh', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzOpenMock', 'dialcatzCreateMock', 'mockSetDomain', 'dialcatzInstall', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'pickEditor', 'siteRun', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
   'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',

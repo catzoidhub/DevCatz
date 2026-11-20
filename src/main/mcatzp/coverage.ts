@@ -249,6 +249,9 @@ export const MCATZP_COVERAGE = {
   dbcatzOpen: 'tool: open_in_dbcatz',
   // tool: open_in_dialcatz
   dialcatzOpen: 'tool: open_in_dialcatz',
+  dialcatzOpenMock: 'later: window action (open a mock server in DialCatz)',
+  dialcatzCreateMock: 'later: window action (a mock server from a site\'s OpenAPI file, in DialCatz)',
+  mockSetDomain: 'later: change (a mock server\'s own domain)',
   // tool: open_in_docatz
   docatzOpen: 'tool: open_in_docatz',
   docatzOpenGateway: 'tool: open_in_docatz',

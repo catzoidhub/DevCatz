@@ -31,6 +31,7 @@ import StorageView from './components/StorageView.vue';
 import AskDevCatz from './components/AskDevCatz.vue';
 import { aiOn } from './ai';
 import StatusDot from './components/StatusDot.vue';
+import MockView from './components/MockView.vue';
 import PopMenu from './components/PopMenu.vue';
 import { groupByType, sortList, useListView } from './listview';
 import { ICONS, STAR } from './icons';
@@ -139,6 +140,9 @@ const ready = ref(false);
 
 const projects = computed(() => state.value?.projects ?? []);
 const current = computed(() => projects.value.find((p) => p.id === selected.value) ?? null);
+/** A DialCatz mock server picked in the sidebar (`mock:<key>`); null once it stopped. */
+const mockKey = computed(() => (selected.value?.startsWith('mock:') ? selected.value.slice(5) : null));
+const currentMock = computed(() => (mockKey.value ? (state.value?.mocks.find((m) => m.key === mockKey.value) ?? null) : null));
 /** Runtime updates waiting: a dot on the Runtimes rail item. */
 /**
  * Updates waiting in each rail section (runtimes and their tools, servers, tunnel tools): a blue dot on the section,
@@ -445,6 +449,7 @@ const settingsFocus = ref<string | null>(null);
 watch(navRequest, (r) => {
   if (!r) return;
   section.value = r.section;
+  if (r.section === 'projects' && r.id) selected.value = r.id;
   if (r.section === 'settings') settingsFocus.value = r.id ?? null;
   if (r.section === 'websocket') wsFocus.value = r.id ?? null;
   if (r.section === 'mail') mailFocus.value = r.id ?? null;
@@ -594,6 +599,11 @@ async function parkFromDialog() {
 
 /** A linked site whose folder is gone stays in the list (dimmed); its page and right-click offer Locate… and Remove. */
 type Missing = AppState['missingSites'][number];
+/** A mock server's URL to the clipboard (DialCatz #94). */
+async function copyMock(url: string) {
+  await navigator.clipboard.writeText(url).catch(() => undefined);
+  notify('success', `${url} copied`);
+}
 const currentMissing = computed(() => (current.value ? null : (state.value?.missingSites.find((m) => m.id === selected.value) ?? null)));
 /** Locate… picked a folder that looks like another project: which way to use it (DevCatz's dialog, not the system's). */
 const locateAsk = ref<{ id: string; path: string; name: string } | null>(null);
@@ -815,6 +825,25 @@ async function park() {
             <button class="btn btn-sm justify-start" @click="park"><svg class="size-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS.folder" /></svg>Park a folder</button>
           </div>
         </li>
+        <!-- DialCatz's mock servers (DialCatz #94): only while some run; started and stopped in DialCatz. -->
+        <template v-if="state?.mocks.length">
+          <li class="menu-title mt-2 flex-row items-center gap-1 px-3 py-1 text-xs" title="Started in DialCatz (Spec → Mock server…); DevCatz gives each its own domain">
+            <span class="flex-1 truncate">Mock servers</span>
+            <span class="sec-count is-live"><span class="status status-success status-xs" />{{ state.mocks.length }}</span>
+          </li>
+          <li v-for="m in state.mocks" :key="m.domain">
+            <a :class="{ 'menu-active': selected === `mock:${m.key}` }" :title="`${m.url} → 127.0.0.1:${m.port}, from DialCatz`" @click="selected = `mock:${m.key}`">
+              <StatusDot status="running" />
+              <div class="min-w-0 flex-1">
+                <div class="truncate font-medium">{{ m.name }}</div>
+                <div class="truncate text-xs opacity-60">{{ m.domain }} · from DialCatz</div>
+              </div>
+              <button class="btn btn-ghost btn-xs btn-square shrink-0 opacity-60" title="Copy the URL" @click.stop="copyMock(m.url)">
+                <svg class="size-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 0 1 8.5 2h3.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 17 6.622V12.5a1.5 1.5 0 0 1-1.5 1.5h-1v-3.379a3 3 0 0 0-.879-2.121L10.5 5.379A3 3 0 0 0 8.379 4.5H7v-1Z" /><path d="M4.5 6A1.5 1.5 0 0 0 3 7.5v9A1.5 1.5 0 0 0 4.5 18h7a1.5 1.5 0 0 0 1.5-1.5v-5.879a1.5 1.5 0 0 0-.44-1.06L9.44 6.439A1.5 1.5 0 0 0 8.378 6H4.5Z" /></svg>
+              </button>
+            </a>
+          </li>
+        </template>
       </ul>
 
     </aside>
@@ -846,6 +875,11 @@ async function park() {
             <button class="btn btn-sm" @click="removeMissing(currentMissing)">Remove</button>
           </div>
         </div>
+      </div>
+      <MockView v-else-if="currentMock" :key="currentMock.key" :mock="currentMock" />
+      <div v-else-if="mockKey" class="drag flex flex-1 flex-col items-center justify-center gap-1 text-sm opacity-60">
+        This mock server stopped in DialCatz.
+        <span class="text-xs">Start it again there (Spec → Mock server…) and it comes back with the same domain.</span>
       </div>
       <div v-else class="drag flex flex-1 items-center justify-center opacity-60">Select a site</div>
     </main>

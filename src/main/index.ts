@@ -864,6 +864,9 @@ function api(): HerdApi {
       if (!herd.find(String(siteId))) throw new Error('This site is gone');
       return herd.dialcatz.open(String(siteId));
     },
+    dialcatzOpenMock: (key) => herd.dialcatzOpenMock(String(key)),
+    dialcatzCreateMock: (siteId, specFile) => herd.dialcatzCreateMock(String(siteId), String(specFile)),
+    mockSetDomain: async (key, name) => herd.mockSetDomain(String(key), typeof name === 'string' ? name : null),
     dialcatzInstall: (siteId) => {
       if (!herd.find(String(siteId))) throw new Error('This site is gone');
       return herd.dialcatz.install(String(siteId));

@@ -55,6 +55,23 @@ export class DialCatz {
     return true;
   }
 
+  /** Opens a mock server's collection in DialCatz (its Mock server panel); false when DialCatz is not installed. */
+  async openMock(workspaceId: string, collectionId: string): Promise<boolean> {
+    const path = await this.locate();
+    if (!path) return false;
+    await openCatzoidApp(path, `dialcatz://open?${new URLSearchParams({ workspace: workspaceId, collection: collectionId, mock: '1' })}`);
+    return true;
+  }
+
+  /** A mock server from a site's OpenAPI file (`spec`: its path in the site folder); false when DialCatz is not installed. */
+  async createMock(siteId: string, spec: string): Promise<boolean> {
+    if (!/^[\w-]{1,64}$/.test(siteId)) throw new Error('Invalid site id');
+    const path = await this.locate();
+    if (!path) return false;
+    await openCatzoidApp(path, `dialcatz://mock?${new URLSearchParams({ site: siteId, spec })}`);
+    return true;
+  }
+
   /** Downloads the latest DialCatz release, installs it to /Applications and opens the site there. */
   async install(siteId: string): Promise<void> {
     if (this.task && !this.task.done && !this.task.error) return;
