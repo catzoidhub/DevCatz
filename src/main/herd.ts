@@ -261,6 +261,8 @@ export class Herd extends EventEmitter {
   });
   /** Public tunnels; notifications are wired by index.ts. */
   notifyHook: (title: string, body: string) => void = () => undefined;
+  /** Windows: the port proxy's IP Helper service was found stopped (shown as a notification that opens Settings). */
+  onPortProxyStopped: () => void = () => undefined;
   /** WhatsApp gateways (GOWA / WAHA) on 127.0.0.1 and <label>.<tld>. */
   readonly whatsapp: WaManager = new WaManager({
     projects: () => this.projects,
@@ -5289,6 +5291,8 @@ export class Herd extends EventEmitter {
     const stopped = isWin && !ok && cleanUrlsInstalled() ? !(await winPortProxyRunning()) : false;
     if (ok === this.cleanUrls && stopped === this.portProxyStopped) return;
     if (ok !== this.cleanUrls) console.warn(`names without a port ${ok ? 'answer again' : 'stopped answering'}${stopped ? ' (Windows IP Helper service stopped)' : ''}`);
+    // Said once when it happens, not only in Settings (nobody opens Settings for a site that "cannot be reached").
+    if (stopped && !this.portProxyStopped) this.onPortProxyStopped();
     this.cleanUrls = ok;
     this.portProxyStopped = stopped;
     this.updateRoutes();

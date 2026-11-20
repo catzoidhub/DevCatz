@@ -1454,6 +1454,15 @@ app.whenReady().then(async () => {
   herd.notifyHook = (title, body) => {
     if (Notification.isSupported()) new Notification({ title, body }).show();
   };
+  herd.onPortProxyStopped = () => {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({
+      title: 'URLs without a port stopped answering',
+      body: `Windows' IP Helper service has stopped. Sites use their :${store.settings.httpsPort} address meanwhile; click to start it again.`,
+    });
+    n.on('click', () => showWindow('settings:project'));
+    n.show();
+  };
   herd.onMail = (m) => {
     if (!store.settings.mailNotify || !Notification.isSupported()) return;
     const n = new Notification({ title: `${m.siteName ?? 'Mail'}: ${m.subject || '(no subject)'}`, body: `From ${m.from?.address ?? 'unknown'} · caught by DevCatz`, silent: true });
