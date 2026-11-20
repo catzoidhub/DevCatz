@@ -953,6 +953,9 @@ function api(): HerdApi {
     uninstallResolver: () => herd.uninstallResolver(),
     restartDns: () => herd.restartDns(),
     quitApp: async () => void quit('window'),
+    appMenu: async (x, y) => {
+      if (win && !win.isDestroyed()) Menu.getApplicationMenu()?.popup({ window: win, x: Math.round(Number(x)), y: Math.round(Number(y)) });
+    },
     startAll: async () => herd.startAll(),
     stopAll: () => herd.stopAll(),
     takePendingNav: async () => {
@@ -1355,71 +1358,99 @@ app.whenReady().then(async () => {
   // Check for Updates… sits right under it and reads "Update Available…" while one waits (#54); Help → Report a Bug…
   // / Send Feedback… (#65).
   let menuKey = '';
+  const go = (target: string) => () => showWindow(target);
+  /**
+   * The app's commands, the same on every platform: the macOS menu bar, and on Windows / Linux the ☰ button at the top
+   * of the rail (appMenuPopup), where there is no menu bar. Shortcuts the window already handles itself (Back, Forward,
+   * Ask) are shown, not registered, so one key press does not act twice.
+   */
+  const commands = (): Electron.MenuItemConstructorOptions[] => {
+    const update = herd.updater.pending() ? 'Update Available…' : 'Check for Updates…';
+    const shown = (label: string, accelerator: string, target: string): Electron.MenuItemConstructorOptions => ({ label, accelerator, registerAccelerator: false, click: go(target) });
+    const sections: [string, string][] = [
+      ['Projects', 'projects'],
+      ['Runtimes', 'runtimes'],
+      ['Database', 'database'],
+      ['Object Storage', 'storage'],
+      ['WebSocket', 'websocket'],
+      ['Search Engine', 'search'],
+      ['Git', 'git'],
+      ['Mail', 'mail'],
+      ['Gateways', 'whatsapp'],
+      ['Expose', 'expose'],
+      ['Monitoring', 'monitoring'],
+    ];
+    const site: Electron.MenuItemConstructorOptions[] = [
+      { label: 'Create New Site…', accelerator: 'CmdOrCtrl+N', click: go('new-site') },
+      { type: 'separator' },
+      { label: 'Start All Sites', click: () => herd.startAll() },
+      { label: 'Stop All Sites', click: () => void herd.stopAll() },
+    ];
+    const goMenu: Electron.MenuItemConstructorOptions = {
+      label: 'Go',
+      submenu: [
+        shown('Back', 'CmdOrCtrl+[', 'history:back'),
+        shown('Forward', 'CmdOrCtrl+]', 'history:forward'),
+        { type: 'separator' },
+        ...sections.map(([label, id], i): Electron.MenuItemConstructorOptions => ({ label, ...(i < 9 ? { accelerator: `CmdOrCtrl+${i + 1}` } : {}), click: go(id) })),
+        { type: 'separator' },
+        shown('Ask DevCatz…', 'CmdOrCtrl+K', 'ask'),
+      ],
+    };
+    const help: Electron.MenuItemConstructorOptions = {
+      role: 'help',
+      submenu: [
+        { label: 'DevCatz Docs', click: () => void openWeb(`${siteBase()}/docs`) },
+        { label: 'Report a Bug…', click: go('report:bug') },
+        { label: 'Send Feedback…', click: go('report:idea') },
+        { label: 'Support Catzoid', click: go('support') },
+        ...(isWin || isLinux
+          ? ([{ type: 'separator' }, { label: update, click: go('update:check') }, { label: `About ${app.name}`, click: go('settings:about') }] as Electron.MenuItemConstructorOptions[])
+          : []),
+      ],
+    };
+    if (isWin || isLinux)
+      return [
+        {
+          label: 'File',
+          submenu: [...site, { type: 'separator' }, { label: 'Settings', accelerator: 'Ctrl+,', click: go('settings') }, { type: 'separator' }, { label: 'Quit DevCatz', accelerator: 'Ctrl+Q', click: () => void quit('menu') }],
+        },
+        { role: 'editMenu' },
+        { role: 'viewMenu' },
+        goMenu,
+        help,
+      ];
+    return [
+      {
+        label: app.name,
+        submenu: [
+          { label: `About ${app.name}`, click: go('settings:about') },
+          { label: update, click: go('update:check') },
+          { type: 'separator' },
+          { label: 'Settings…', accelerator: 'Cmd+,', click: go('settings') },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      },
+      { label: 'File', submenu: site },
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      goMenu,
+      { role: 'windowMenu' },
+      help,
+    ];
+  };
   const appMenu = () => {
     const key = String(herd.updater.pending());
     if (key === menuKey) return;
     menuKey = key;
-    // Windows and Linux: no menu bar in the window (the page has its own controls); the same items stay on Alt /
-    // shortcuts. The macOS app menu (Services, Hide …) means nothing there.
-    if (isWin || isLinux) {
-      Menu.setApplicationMenu(
-        Menu.buildFromTemplate([
-          {
-            label: 'File',
-            submenu: [
-              { label: 'Settings', accelerator: 'Ctrl+,', click: () => showWindow('settings') },
-              { type: 'separator' },
-              { label: 'Quit DevCatz', accelerator: 'Ctrl+Q', click: () => void quit('menu') },
-            ],
-          },
-          { role: 'editMenu' },
-          { role: 'viewMenu' },
-          {
-            role: 'help',
-            submenu: [
-              { label: `About ${app.name}`, click: () => showWindow('settings:about') },
-              { label: herd.updater.pending() ? 'Update Available…' : 'Check for Updates…', click: () => showWindow('update:check') },
-              { type: 'separator' },
-              { label: 'Report a Bug…', click: () => showWindow('report:bug') },
-              { label: 'Send Feedback…', click: () => showWindow('report:idea') },
-              { label: 'DevCatz Docs', click: () => void openWeb(`${siteBase()}/docs`) },
-            ],
-          },
-        ]),
-      );
-      return;
-    }
-    Menu.setApplicationMenu(
-      Menu.buildFromTemplate([
-        {
-          label: app.name,
-          submenu: [
-            { label: `About ${app.name}`, click: () => showWindow('settings:about') },
-            { label: herd.updater.pending() ? 'Update Available…' : 'Check for Updates…', click: () => showWindow('update:check') },
-            { type: 'separator' },
-            { role: 'services' },
-            { type: 'separator' },
-            { role: 'hide' },
-            { role: 'hideOthers' },
-            { role: 'unhide' },
-            { type: 'separator' },
-            { role: 'quit' },
-          ],
-        },
-        { role: 'editMenu' },
-        { role: 'viewMenu' },
-        { role: 'windowMenu' },
-        {
-          role: 'help',
-          submenu: [
-            { label: 'Report a Bug…', click: () => showWindow('report:bug') },
-            { label: 'Send Feedback…', click: () => showWindow('report:idea') },
-            { type: 'separator' },
-            { label: 'DevCatz Docs', click: () => void openWeb(`${siteBase()}/docs`) },
-          ],
-        },
-      ]),
-    );
+    Menu.setApplicationMenu(Menu.buildFromTemplate(commands()));
   };
   appMenu();
   herd.on('change', appMenu);

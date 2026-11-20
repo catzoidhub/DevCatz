@@ -667,6 +667,7 @@ export const MCATZP_COVERAGE = {
   docatzInstallGateway: 'not a tool',
   revealCa: 'not a tool',
   quitApp: 'not a tool',
+  appMenu: 'not a tool',
   takePendingNav: 'not a tool',
   dbOpenBinaries: 'not a tool',
   monitorLive: 'not a tool',

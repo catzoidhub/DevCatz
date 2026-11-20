@@ -39,7 +39,7 @@ import { ICONS, STAR } from './icons';
 import { siteStatus, stackTag, isDesktopSite, runtimeLabel, withVersion } from './runtimes';
 import { backIndex, backList, canBack, canForward, forwardList, goBack, goForward, goTo, navApply, navPrune, navVisit, type NavEntry } from './nav';
 import type { AppState, ProjectState } from '@shared/types';
-import { isWin, WIN_SECTIONS } from './platform';
+import { isLinux, isWin, WIN_SECTIONS } from './platform';
 import GitConnectButton from './components/GitConnectButton.vue';
 
 const PANELS = ['node', 'bun', 'go', 'rust', 'php', 'python', 'ruby'];
@@ -513,7 +513,12 @@ function navigate(target: string) {
     return;
   }
   // Menu bar targets all live in Projects.
-  if (['settings', 'storage', 'database', 'websocket', 'search', 'git', 'mail', 'whatsapp', 'expose', 'monitoring'].includes(target)) {
+  if (target === 'ask') {
+    if (askOn.value) askOpen.value = true;
+    else navigate('settings:ai');
+    return;
+  }
+  if (['projects', 'runtimes', 'settings', 'storage', 'database', 'websocket', 'search', 'git', 'mail', 'whatsapp', 'expose', 'monitoring'].includes(target)) {
     section.value = target as AppSection;
     return;
   }
@@ -660,6 +665,11 @@ function missingIn(sec: Section, i: number): Missing[] {
   return sec.key === 'rest' ? list.filter((m) => !grouped.has(m.id) && !favs.value.has(m.id)) : [];
 }
 
+function openAppMenu(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  void herd.appMenu(r.left, r.bottom + 4);
+}
+
 async function park() {
   const dir = await herd.pickFolder();
   if (dir) parking.value = dir;
@@ -670,8 +680,13 @@ async function park() {
   <div v-if="ready && state" class="flex h-full text-sm">
     <!-- Section rail: Projects, Database, Object Storage. The top stays free for the window's traffic lights. -->
     <nav class="flex w-24 shrink-0 flex-col items-center gap-1 border-r border-base-300/60 bg-base-200/60 pb-3 backdrop-blur-xl">
-      <!-- The window's close / minimise / full-screen buttons sit here, centred in the rail (main/index.ts). -->
-      <div class="drag h-14 w-full shrink-0" />
+      <!-- macOS: the window's close / minimise / full-screen buttons sit here, centred in the rail (main/index.ts).
+           Windows / Linux: no menu bar, so ☰ opens the app's menu here (as in DoCatz and DialCatz). -->
+      <div class="drag flex h-14 w-full shrink-0 items-end justify-center pb-1">
+        <button v-if="isWin || isLinux" class="no-drag btn btn-ghost btn-xs btn-square" title="Menu: every DevCatz command and its shortcut" aria-label="Menu" @click="openAppMenu">
+          <svg viewBox="0 0 20 20" class="size-4" fill="currentColor"><path d="M3 5a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1Zm0 5a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1Zm1 4a1 1 0 1 0 0 2h12a1 1 0 1 0 0-2H4Z" /></svg>
+        </button>
+      </div>
       <!-- Scrolls (no bar) when the window is too short for every section. -->
       <div class="rail-scroll no-scrollbar flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto pb-3">
         <button

@@ -3132,6 +3132,8 @@ export interface HerdApi {
   setLaunchAtLogin(on: boolean): Promise<void>;
   /** Stops every dev server and exits the app. */
   quitApp(): Promise<void>;
+  /** Windows / Linux: the app's menu (every command and its shortcut) as a pop-up at the rail's ☰ button. */
+  appMenu(x: number, y: number): Promise<void>;
   startAll(): Promise<void>;
   stopAll(): Promise<void>;
   /** Navigation requested from the menu bar before the window was ready (e.g. `new-site`). */
@@ -3619,7 +3621,7 @@ export const API_METHODS: (keyof HerdApi)[] = [
   'removeProject', 'updateProject', 'aboutInfo', 'envKeyGenerate', 'siteRuntimeNeeds', 'runtimePick', 'appUpdateCheck', 'appUpdateNotes', 'appUpdateDownload', 'appUpdateCancel', 'appUpdateRestart', 'appUpdateSkip', 'appUpdateInstallOnQuit', 'appUpdatePrefs', 'reportPreview', 'reportSend', 'ratingSend', 'ratingRefresh', 'captureWindow', 'reportError', 'setCrashReports', 'crashAskDismiss', 'uninstallPlan', 'uninstall', 'openapiReveal', 'siteOpenApi', 'addOpenApi', 'createOpenApi', 'openapiRemoveFile', 'openapiRemoveGenerator', 'openapiIgnore', 'openapiUnignore', 'openapiUntrack', 'mcatzpAnswer', 'mcatzpActivity', 'mcatzpClearActivity', 'mcatzpRevoke', 'dialcatzOpen', 'dialcatzOpenMock', 'dialcatzCreateMock', 'mockSetDomain', 'dialcatzInstall', 'dialcatzOpenWs', 'dialcatzOpenSiteWs', 'dialcatzCancelInstall', 'dialcatzDismiss', 'docatzOpen',
   'docatzOpenGateway', 'docatzInstallGateway', 'docatzInstall', 'docatzCancelInstall', 'docatzDismiss', 'dbImportList', 'dbImportOne', 'domainOwner', 'buildTargets', 'buildSite', 'appPortEnv', 'freePortFor', 'gitignoreRead', 'gitignoreSave', 'setAppSubdomain', 'siteDeps', 'depsReport', 'freeDeps', 'restartApp', 'sitePortUse', 'setSitePort', 'envFiles', 'envRead', 'envWrite', 'envCreate', 'envMerge', 'rescan', 'refreshRuntimes', 'start', 'stop', 'restart', 'openUrl', 'openFolder',
   'openEditor', 'pickEditor', 'siteRun', 'openTerminal', 'db', 'updateSettings', 'trustCa', 'untrustCa', 'revealCa',
-  'setLaunchAtLogin', 'quitApp', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',
+  'setLaunchAtLogin', 'quitApp', 'appMenu', 'startAll', 'stopAll', 'takePendingNav', 'getScreenshot', 'refreshScreenshot', 'redisDetails', 'redisWriteEnv',
   'installDeps', 'depCommands', 'depRun', 'nodeRemote', 'nodeInstall', 'nodeUninstall', 'nodeSetDefault', 'shimPathSet',
   'bunRemote', 'bunInstall', 'bunUninstall', 'bunSetDefault',
   'goRemote', 'goInstall', 'goUninstall', 'goSetDefault', 'rustInstall', 'rustRemote', 'rustToolchainInstall', 'rustToolchainUninstall', 'rustSetDefault', 'rustTargetAdd', 'rustToolInstall', 'rustInstallLinker', 'rustToolsCheck', 'rustToolUninstall', 'toolsState', 'toolInstall', 'toolUninstall', 'repairElectron', 'installCancel', 'uvInstall', 'pythonRemote', 'pythonInstall', 'pythonUninstall', 'pythonSetDefault', 'rvInstall', 'rubyRemote', 'rubyInstall', 'rubyUninstall', 'rubySetDefault', 'rubyBuildToolsInstall',
