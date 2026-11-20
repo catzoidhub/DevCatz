@@ -1,6 +1,6 @@
 {
  "app": "DevCatz",
- "version": "1.2.32",
+ "version": "1.2.33",
  "packages": [
   {
    "name": "@anthropic-ai/sdk",
