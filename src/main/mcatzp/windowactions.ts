@@ -66,6 +66,12 @@ export function windowChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
     if (w) return { name: w.name, open: () => api.waOpenData(w.engine as WaEngine) };
     throw new Error(`No service ${String(ref)} (list_services shows them)`);
   };
+  /** A running DialCatz mock server by its key or domain (list_mocks). */
+  const mock = async (ref: unknown) => {
+    const m = (await state()).mocks.find((x) => x.key === ref || x.domain === ref);
+    if (!m) throw new Error(`No mock server ${String(ref)} is running (see list_mocks)`);
+    return m;
+  };
   const INSTALLED = (found: boolean, app: string) => ok({ opened: found, ...(found ? {} : { note: `${app} is not installed: install_catzoid_app installs it` }) });
 
   return [
@@ -113,6 +119,23 @@ export function windowChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
             const p = await site(a.site);
             return { title: `Open ${p.name} in DialCatz?`, facts: [], page: `api:${p.id}` };
           }, async (a) => INSTALLED(await api.dialcatzOpen((await site(a.site)).id), 'DialCatz')),
+          act('create_mock_server', 'Create a mock server', "Has DialCatz start a mock server from one of the site's OpenAPI files (site_openapi): it reuses the collection that follows the file, or asks the user to import it. DevCatz then serves it on its own domain, such as shop-api.dialcatz.test (list_mocks).", { site: SITE, spec: S("The OpenAPI file's path in the site folder, as site_openapi shows it.", 500) }, ['site', 'spec'], async (a) => {
+            const p = await site(a.site);
+            return { title: `Create a mock server from ${String(a.spec)}?`, facts: [{ label: 'Site', value: p.name }, { label: 'In', value: 'DialCatz, which starts it' }], page: `api:${p.id}` };
+          }, async (a) => INSTALLED(await api.dialcatzCreateMock((await site(a.site)).id, String(a.spec)), 'DialCatz')),
+          act('open_mock_in_dialcatz', 'Open a mock server in DialCatz', "Opens a running mock server's collection and its Mock server panel in DialCatz (stop it or change its port there).", { mock: S('A key or domain from list_mocks.') }, ['mock'], async (a) => {
+            const m = await mock(a.mock);
+            return { title: `Open ${m.name} in DialCatz?`, facts: [{ label: 'Domain', value: m.domain }], page: `site:mock:${m.key}` };
+          }, async (a) => INSTALLED(await api.dialcatzOpenMock((await mock(a.mock)).key), 'DialCatz')),
+          act('set_mock_domain', "Change a mock server's domain", "Sets the name before .dialcatz. (shop in shop.dialcatz.test) for a running mock server, kept for that mock whenever it runs; empty goes back to DialCatz's own name.", { mock: S('A key or domain from list_mocks.'), name: { type: 'string', maxLength: 50, pattern: '^[a-z0-9-]*$' } }, ['mock', 'name'], async (a) => {
+            const m = await mock(a.mock);
+            const tld = m.domain.slice(m.domain.indexOf('.dialcatz.') + 1);
+            return { title: `Serve ${m.name} on ${String(a.name) || m.defaultSlug}.${tld}?`, facts: [{ label: 'Now', value: m.domain }], page: `site:mock:${m.key}` };
+          }, async (a) => {
+            const m = await mock(a.mock);
+            await api.mockSetDomain(m.key, String(a.name) || null);
+            return ok({ mock: m.name, domain: (await state()).mocks.find((x) => x.key === m.key)?.domain ?? null });
+          }),
           act('open_in_docatz', 'Open in DoCatz', "Opens a site's compose file, or a gateway, in DoCatz.", { site: SITE, file: S('A compose file.', 500), gateway: S('A gateway kind instead of a site.', 60) }, [], async (a) => {
             if (typeof a.gateway === 'string') return { title: `Open ${a.gateway} in DoCatz?`, facts: [], page: `gateways:${a.gateway}` };
             const p = await site(a.site);
