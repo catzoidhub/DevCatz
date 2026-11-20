@@ -933,6 +933,7 @@ function api(): HerdApi {
     revealCa: async () => shell.showItemInFolder(herd.certs.caPath),
     installCleanUrls: () => herd.installCleanUrls(),
     uninstallCleanUrls: () => herd.uninstallCleanUrls(),
+    startPortProxy: () => herd.startPortProxy(),
     setTld: (next, dryRun) => herd.setTld(next, dryRun),
     installResolver: () => herd.installResolver(),
     uninstallResolver: () => herd.uninstallResolver(),

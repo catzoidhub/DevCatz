@@ -170,6 +170,21 @@ function installWin(httpsPort: number, httpPort: number, ipv4: { https: boolean;
   return runAsAdminWin(lines.join('\n')).finally(refreshWinRules);
 }
 
+/** Windows: whether the IP Helper service, which runs the port proxy rules, is running. */
+export async function winPortProxyRunning(): Promise<boolean> {
+  if (!isWin) return true;
+  const r = await run('sc.exe', ['query', 'iphlpsvc'], { timeout: 10_000 });
+  return /STATE\s*:\s*\d+\s+RUNNING/i.test(r.stdout);
+}
+
+/**
+ * Windows: starts the IP Helper service again (administrator approval). It crashed three times on a PC on
+ * 2026-11-18 and Windows stopped restarting it: the rules stayed, every name without a port went dark.
+ */
+export function startWinPortProxy() {
+  return runAsAdminWin('Set-Service iphlpsvc -StartupType Automatic\nStart-Service iphlpsvc');
+}
+
 function uninstallWin() {
   if (!winRules.length) return Promise.resolve({ ok: true, message: '' });
   return runAsAdminWin(winRules.map(winDelete).join('\n')).finally(refreshWinRules);

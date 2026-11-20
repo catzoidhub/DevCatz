@@ -636,6 +636,7 @@ export const MCATZP_COVERAGE = {
   uninstallResolver: 'never: system security, needs an administrator (user, 2026-11-04)',
   installCleanUrls: 'never: system security, needs an administrator (user, 2026-11-04)',
   uninstallCleanUrls: 'never: system security, needs an administrator (user, 2026-11-04)',
+  startPortProxy: 'never: system security, needs an administrator (user, 2026-11-04)',
   // never: the app itself (user, 2026-11-04)
   uninstallPlan: 'never: the app itself (user, 2026-11-04)',
   uninstall: 'never: the app itself (user, 2026-11-04)',
