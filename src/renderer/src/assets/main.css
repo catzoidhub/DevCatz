@@ -243,11 +243,20 @@ pre,
   opacity: 0.5;
 }
 
-/* Primary buttons carry the brand gradient. */
+/* Primary buttons carry the brand gradient, the same in dark as in light (user, 2026-11-20): the light theme's violet
+   with white text, not dark mode's paler violet with dark text. */
+:root {
+  --btn-primary-from: oklch(63% 0.2 283);
+  --btn-primary-to: oklch(62% 0.2 305);
+  --btn-primary-ink: oklch(98% 0.01 283);
+}
 .btn-primary:not(.btn-outline):not(.btn-ghost):not(.btn-soft):not(.btn-link) {
-  background-image: var(--accent-gradient);
+  --btn-color: var(--btn-primary-from);
+  --btn-fg: var(--btn-primary-ink);
+  color: var(--btn-primary-ink);
+  background-image: linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
   border-color: transparent;
-  box-shadow: 0 1px 2px oklch(from var(--color-primary) l c h / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.18);
+  box-shadow: 0 1px 2px oklch(from var(--btn-primary-from) l c h / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.18);
 }
 .btn-primary:not(.btn-outline):not(.btn-ghost):not(.btn-soft):not(.btn-link):hover {
   filter: brightness(1.05);
@@ -255,8 +264,8 @@ pre,
 /* Disabled or busy: the gradient stays under it, so keep the label in its own colour and fade the whole
    button. daisyUI's grey disabled text would vanish on the violet. */
 .btn-primary:not(.btn-outline):not(.btn-ghost):not(.btn-soft):not(.btn-link):is(:disabled, [disabled], .btn-disabled) {
-  --btn-fg: var(--color-primary-content);
-  color: var(--color-primary-content);
+  --btn-fg: var(--btn-primary-ink);
+  color: var(--btn-primary-ink);
   opacity: 0.55;
   box-shadow: none;
   filter: none;
