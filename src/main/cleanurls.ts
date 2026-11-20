@@ -271,9 +271,12 @@ export function cleanUrlsCoverIpv4(): boolean {
   }
 }
 
-/** Checks the forward end to end: https://[::1]/ must be answered by our proxy. */
-export async function cleanUrlsWorking(): Promise<boolean> {
-  if (isWin) await refreshWinRules();
+/**
+ * Checks the forward end to end: https://[::1]/ must be answered by our proxy. `rules: false` skips reading Windows'
+ * rules again (netsh, ~50 ms): the 30-second recheck reads them only when the forward does not answer.
+ */
+export async function cleanUrlsWorking(rules = true): Promise<boolean> {
+  if (isWin && rules) await refreshWinRules();
   return new Promise((resolve) => {
     const req = request(
       { host: '::1', port: 443, path: PING_PATH, servername: 'localhost', rejectUnauthorized: false, timeout: 1500 },

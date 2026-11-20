@@ -5287,7 +5287,9 @@ export class Herd extends EventEmitter {
     // Not while names without a port are being turned on / off (that run checks them itself).
     if (this.setupTask?.what === 'urls' && !this.setupTask.task.done && !this.setupTask.task.error) return;
     if (!cleanUrlsInstalled() && !this.cleanUrls) return;
-    const ok = await cleanUrlsWorking();
+    // Light while it works: one local HTTPS request; Windows' rules (netsh) and the service (sc) only when it does not.
+    let ok = await cleanUrlsWorking(false);
+    if (!ok) ok = await cleanUrlsWorking(true);
     const stopped = isWin && !ok && cleanUrlsInstalled() ? !(await winPortProxyRunning()) : false;
     if (ok === this.cleanUrls && stopped === this.portProxyStopped) return;
     if (ok !== this.cleanUrls) console.warn(`names without a port ${ok ? 'answer again' : 'stopped answering'}${stopped ? ' (Windows IP Helper service stopped)' : ''}`);
