@@ -1900,7 +1900,11 @@ export class Herd extends EventEmitter {
         link: `devcatz://storage/${s.kind}`,
       });
     }
-    writeBridge(sites, gateways, services);
+    const mocks = this.mocks.list().map((m) => {
+      const domain = `${m.slug}.dialcatz.${tld()}`;
+      return { workspaceId: m.workspaceId, collectionId: m.collectionId, domain, url: `https://${domain}${this.portSuffix(true)}` };
+    });
+    writeBridge(sites, gateways, services, mocks);
   }
 
   /** A spec file DevCatz found for this site (Overview → API → Show in Finder only reveals those). */

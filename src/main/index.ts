@@ -1216,6 +1216,7 @@ async function quit(reason: string): Promise<void> {
  *                               ?action=start|stop|restart runs that (DoCatz's DevCatz Services group, Windows)
  *   devcatz://services/<kind>   Typesense, Sonic or Sockudo (Windows: they run in DoCatz); same options
  *   devcatz://storage/<kind>    Storage at that engine (Garage, Ceph run in DoCatz); ?action=start|stop|restart
+ *   devcatz://mocks?workspace=<id>&collection=<id>  a DialCatz mock server's page (DialCatz's "Open in DevCatz")
  *   devcatz://<section>          a rail section (database, storage, …)
  */
 function handleLink(raw: string): void {
@@ -1247,6 +1248,14 @@ function handleLink(raw: string): void {
         return;
       }
       return showWindow(`storage:${id}`);
+    }
+    // DialCatz's Mock server panel → Open in DevCatz: that mock's page (the list of mocks when it is not served).
+    if (u.hostname === 'mocks') {
+      const ws = u.searchParams.get('workspace') ?? '';
+      const col = u.searchParams.get('collection') ?? '';
+      const key = `${ws}/${col}`;
+      if (/^[\w-]{1,64}$/.test(ws) && /^[\w-]{1,64}$/.test(col) && herd.mocks.list().some((m) => m.key === key)) return showWindow(`site:mock:${key}`);
+      return showWindow('projects');
     }
     if (u.hostname === 'services') {
       if (!isSvcKind(id)) return showWindow('search');

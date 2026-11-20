@@ -65,7 +65,17 @@ export const bridgeFile = () => join(app.getPath('userData'), 'bridge.json');
 
 let last = '';
 let timer: ReturnType<typeof setTimeout> | null = null;
-let written: { sites: BridgeSite[]; gateways: BridgeGateway[]; services: BridgeGateway[] } | null = null;
+/**
+ * DialCatz's mock servers as DevCatz serves them (DialCatz's Mock server panel shows the domain and "Open in DevCatz",
+ * devcatz://mocks?workspace=…&collection=…), keyed by the ids in DialCatz's own bridge.json `mocks`.
+ */
+export interface BridgeMock {
+  workspaceId: string;
+  collectionId: string;
+  domain: string;
+  url: string;
+}
+let written: { sites: BridgeSite[]; gateways: BridgeGateway[]; services: BridgeGateway[]; dialcatzMocks: BridgeMock[] } | null = null;
 let mcatzp: BridgeEntry | null = null;
 
 function writeFile(): void {
@@ -82,11 +92,11 @@ function writeFile(): void {
 }
 
 /** Writes bridge.json (debounced, only when it changed). */
-export function writeBridge(sites: BridgeSite[], gateways: BridgeGateway[] = [], services: BridgeGateway[] = []): void {
-  const body = JSON.stringify([sites, gateways, services]);
+export function writeBridge(sites: BridgeSite[], gateways: BridgeGateway[] = [], services: BridgeGateway[] = [], dialcatzMocks: BridgeMock[] = []): void {
+  const body = JSON.stringify([sites, gateways, services, dialcatzMocks]);
   if (body === last) return;
   last = body;
-  written = { sites, gateways, services };
+  written = { sites, gateways, services, dialcatzMocks };
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
