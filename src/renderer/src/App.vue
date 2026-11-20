@@ -32,6 +32,7 @@ import AskDevCatz from './components/AskDevCatz.vue';
 import { aiOn } from './ai';
 import StatusDot from './components/StatusDot.vue';
 import MockView from './components/MockView.vue';
+import dialcatzLogo from './assets/logos/dialcatz.png';
 import PopMenu from './components/PopMenu.vue';
 import { groupByType, sortList, useListView } from './listview';
 import { ICONS, STAR } from './icons';
@@ -599,6 +600,24 @@ async function parkFromDialog() {
 
 /** A linked site whose folder is gone stays in the list (dimmed); its page and right-click offer Locate… and Remove. */
 type Missing = AppState['missingSites'][number];
+/** The mock servers' card at the bottom of the sidebar: open or folded to its header (remembered per window). */
+const mocksOpen = ref(
+  (() => {
+    try {
+      return localStorage.getItem('mrcatz-herd.mocks.open') !== '0';
+    } catch {
+      return true;
+    }
+  })(),
+);
+function toggleMocks() {
+  mocksOpen.value = !mocksOpen.value;
+  try {
+    localStorage.setItem('mrcatz-herd.mocks.open', mocksOpen.value ? '1' : '0');
+  } catch {
+    /* storage unavailable */
+  }
+}
 /** A mock server's URL to the clipboard (DialCatz #94). */
 async function copyMock(url: string) {
   await navigator.clipboard.writeText(url).catch(() => undefined);
@@ -825,27 +844,39 @@ async function park() {
             <button class="btn btn-sm justify-start" @click="park"><svg class="size-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS.folder" /></svg>Park a folder</button>
           </div>
         </li>
-        <!-- DialCatz's mock servers (DialCatz #94): only while some run; started and stopped in DialCatz. -->
-        <template v-if="state?.mocks.length">
-          <li class="menu-title mt-2 flex-row items-center gap-1 px-3 py-1 text-xs" title="Started in DialCatz (Spec → Mock server…); DevCatz gives each its own domain">
-            <span class="flex-1 truncate">Mock servers</span>
-            <span class="sec-count is-live"><span class="status status-success status-xs" />{{ state.mocks.length }}</span>
-          </li>
-          <li v-for="m in state.mocks" :key="m.domain">
-            <a :class="{ 'menu-active': selected === `mock:${m.key}` }" :title="`${m.url} → 127.0.0.1:${m.port}, from DialCatz`" @click="selected = `mock:${m.key}`">
-              <StatusDot status="running" />
+      </ul>
+
+      <!--
+        DialCatz's mock servers (DialCatz #94), apart from the sites: a small card docked at the bottom of the sidebar,
+        only while some run (started and stopped in DialCatz). Folds to its header; its list scrolls on its own.
+      -->
+      <section v-if="state?.mocks.length" class="mx-2 mb-2 shrink-0 overflow-hidden rounded-box border border-base-300/70 bg-base-100/70 shadow-sm">
+        <button
+          type="button"
+          class="flex w-full items-center gap-1.5 px-2.5 py-2 text-left transition-colors hover:bg-base-content/5"
+          :title="mocksOpen ? 'Hide the mock servers' : 'Show the mock servers'"
+          @click="toggleMocks"
+        >
+          <img :src="dialcatzLogo" alt="" class="size-4 shrink-0 drop-shadow-sm" draggable="false" />
+          <span class="min-w-0 flex-1 truncate text-[11px] font-semibold">Mock Servers <span class="font-normal opacity-55">(DialCatz)</span></span>
+          <span class="sec-count is-live" :title="`${state.mocks.length} running`">{{ state.mocks.length }}</span>
+          <svg class="size-3 shrink-0 opacity-50 transition-transform" :class="{ 'rotate-180': !mocksOpen }" viewBox="0 0 20 20" fill="currentColor"><path d="M5.2 7.2a.75.75 0 0 1 1.06 0L10 10.94l3.74-3.74a.75.75 0 1 1 1.06 1.06l-4.27 4.27a.75.75 0 0 1-1.06 0L5.2 8.26a.75.75 0 0 1 0-1.06Z" /></svg>
+        </button>
+        <ul v-if="mocksOpen" class="menu menu-sm max-h-44 w-full flex-nowrap overflow-y-auto border-t border-base-300/60 p-1">
+          <li v-for="m in state.mocks" :key="m.key" class="group">
+            <a :class="{ 'menu-active': selected === `mock:${m.key}` }" :title="`${m.url} → 127.0.0.1:${m.port}`" @click="selected = `mock:${m.key}`">
+              <span class="status status-success status-xs shrink-0" />
               <div class="min-w-0 flex-1">
-                <div class="truncate font-medium">{{ m.name }}</div>
-                <div class="truncate text-xs opacity-60">{{ m.domain }} · from DialCatz</div>
+                <div class="truncate text-xs font-medium">{{ m.name }}</div>
+                <div class="truncate font-mono text-[10px] opacity-55">{{ m.domain }}</div>
               </div>
-              <button class="btn btn-ghost btn-xs btn-square shrink-0 opacity-60" title="Copy the URL" @click.stop="copyMock(m.url)">
+              <button class="btn btn-ghost btn-xs btn-square shrink-0 opacity-0 transition-opacity group-hover:opacity-60 focus:opacity-60" title="Copy the URL" @click.stop="copyMock(m.url)">
                 <svg class="size-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 0 1 8.5 2h3.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 17 6.622V12.5a1.5 1.5 0 0 1-1.5 1.5h-1v-3.379a3 3 0 0 0-.879-2.121L10.5 5.379A3 3 0 0 0 8.379 4.5H7v-1Z" /><path d="M4.5 6A1.5 1.5 0 0 0 3 7.5v9A1.5 1.5 0 0 0 4.5 18h7a1.5 1.5 0 0 0 1.5-1.5v-5.879a1.5 1.5 0 0 0-.44-1.06L9.44 6.439A1.5 1.5 0 0 0 8.378 6H4.5Z" /></svg>
               </button>
             </a>
           </li>
-        </template>
-      </ul>
-
+        </ul>
+      </section>
     </aside>
 
     <!-- Main -->
