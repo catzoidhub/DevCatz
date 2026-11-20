@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ProjectState, RealtimeLib, WsKind } from '@shared/types';
 import StatusDot from './StatusDot.vue';
 import WsEnvWriter from './WsEnvWriter.vue';
+import DialCatzButton from './DialCatzButton.vue';
 import BroadcastCard from './BroadcastCard.vue';
 import { attempt, herd, navRequest, state } from '../store';
 
@@ -151,6 +152,7 @@ const statusOf = (s: string) => (s === 'running' ? 'running' : s === 'starting' 
           <code class="selectable min-w-0 flex-1 truncate rounded-md bg-base-200/70 px-2 py-1 text-xs">{{ endpoint }}</code>
           <input v-model="path" class="input input-xs w-36 font-mono" title="Path of the WebSocket endpoint" spellcheck="false" @keydown.enter="savePath" />
           <button class="btn btn-xs" :disabled="check.state === 'checking'" @click="path !== (p.wsPath || defaultPath) ? savePath() : test()">Test connection</button>
+          <DialCatzButton :site-id="p.id" site-ws="own" />
         </div>
         <div v-if="check.detail" class="text-xs" :class="check.state === 'fail' ? 'text-error' : 'opacity-60'">{{ check.detail }}</div>
       </div>
@@ -182,6 +184,8 @@ const statusOf = (s: string) => (s === 'running' ? 'running' : s === 'starting' 
             <span v-if="reverbCheck === 'ok'" class="badge badge-success badge-soft badge-sm">connected</span>
             <span v-else-if="reverbCheck === 'fail'" class="badge badge-error badge-soft badge-sm">not reachable</span>
             <span v-else-if="reverbCheck === 'checking'" class="loading loading-spinner loading-xs" />
+            <span class="flex-1" />
+            <DialCatzButton :site-id="p.id" site-ws="reverb" />
           </div>
           <WsEnvWriter :key="p.id + 'reverb'" source="site-reverb" :site-id="p.id" label="Reverb" />
         </template>

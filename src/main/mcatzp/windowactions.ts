@@ -132,6 +132,10 @@ export function windowChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
             if (!s?.installed || !s.urls) throw new Error(`${s?.name ?? String(a.server)} is not installed (see list_services)`);
             return { title: `Open ${s.name} in DialCatz?`, facts: [{ label: 'Address', value: s.urls.ws }], page: 'websocket' };
           }, async (a) => INSTALLED(await api.dialcatzOpenWs(String(a.server) as WsKind), 'DialCatz')),
+          act('open_site_socket_in_dialcatz', "Open a site's socket server in DialCatz", "Opens a new WebSocket tab in DialCatz for a site's socket server, ready to connect: own = the site's own server (Socket.IO, ws, Channels …) on its domain, reverb = the Laravel Reverb it runs (Pusher protocol, the secret from DialCatz's REVERB_APP_SECRET variable, never sent in the link).", { site: SITE, server: { type: 'string', enum: ['own', 'reverb'] } }, ['site', 'server'], async (a) => {
+            const p = await site(a.site);
+            return { title: `Open ${p.name}'s ${a.server === 'reverb' ? 'Reverb' : 'socket server'} in DialCatz?`, facts: [{ label: 'Site', value: p.domain }], page: `site:${p.id}` };
+          }, async (a) => INSTALLED(await api.dialcatzOpenSiteWs((await site(a.site)).id, a.server === 'reverb' ? 'reverb' : 'own'), 'DialCatz')),
           act('set_mock_domain', "Change a mock server's domain", "Sets the name before .dialcatz. (shop in shop.dialcatz.test) for a running mock server, kept for that mock whenever it runs; empty goes back to DialCatz's own name.", { mock: S('A key or domain from list_mocks.'), name: { type: 'string', maxLength: 50, pattern: '^[a-z0-9-]*$' } }, ['mock', 'name'], async (a) => {
             const m = await mock(a.mock);
             const tld = m.domain.slice(m.domain.indexOf('.dialcatz.') + 1);

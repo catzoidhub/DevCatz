@@ -251,6 +251,7 @@ export const MCATZP_COVERAGE = {
   dialcatzOpen: 'tool: open_in_dialcatz',
   dialcatzOpenMock: 'tool: open_mock_in_dialcatz',
   dialcatzOpenWs: 'tool: open_websocket_in_dialcatz',
+  dialcatzOpenSiteWs: 'tool: open_site_socket_in_dialcatz',
   dialcatzCreateMock: 'tool: create_mock_server',
   mockSetDomain: 'tool: set_mock_domain',
   // tool: open_in_docatz

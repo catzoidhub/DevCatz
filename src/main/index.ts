@@ -871,10 +871,14 @@ function api(): HerdApi {
       // `ws:<kind>`: opens that WebSocket server's tab once installed (WebSocket page → Open in DialCatz).
       const ws = /^ws:(\w+)$/.exec(String(siteId));
       if (ws) return herd.dialcatz.install(herd.dialcatzWsLink(ws[1] as WsKind));
+      // `site-ws:<site>:own|reverb`: a site's socket server (its WebSocket tab).
+      const sw = /^site-ws:([\w-]{1,64}):(own|reverb)$/.exec(String(siteId));
+      if (sw) return herd.dialcatz.install(herd.dialcatzSiteWsLink(sw[1], sw[2] as 'own' | 'reverb'));
       if (!herd.find(String(siteId))) throw new Error('This site is gone');
       return herd.dialcatz.install(String(siteId));
     },
     dialcatzOpenWs: (kind) => herd.dialcatzOpenWs(String(kind) as WsKind),
+    dialcatzOpenSiteWs: (siteId, which) => herd.dialcatzOpenSiteWs(String(siteId), which === 'reverb' ? 'reverb' : 'own'),
     dialcatzCancelInstall: async () => herd.dialcatz.cancelInstall(),
     dialcatzDismiss: async () => herd.dialcatz.dismiss(),
     docatzOpen: (siteId, file) => herd.docatz.open(String(siteId), herd.composePath(String(siteId), typeof file === 'string' ? file : null)),

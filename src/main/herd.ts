@@ -4508,6 +4508,35 @@ export class Herd extends EventEmitter {
     });
   }
 
+  /**
+   * A site's socket server as a DialCatz WebSocket tab: its own server (Socket.IO, ws, Channels …) on the site's domain
+   * through the proxy, the path from the WebSocket tab; or the Reverb it runs (Pusher, its .env's app key, the secret as
+   * {{REVERB_APP_SECRET}}, which DialCatz's site import copies from the .env).
+   */
+  dialcatzSiteWsLink(siteId: string, which: 'own' | 'reverb'): string {
+    const p = this.project(siteId);
+    if (which === 'reverb') {
+      if (!p.reverb) throw new Error(`${p.name} does not run Reverb (its WebSocket tab: Run with the site)`);
+      const key = readEnvFiles(join(p.path, '.env')).REVERB_APP_KEY;
+      if (!key) throw new Error(`${p.name}'s .env has no REVERB_APP_KEY yet: write the Reverb lines first (WebSocket tab)`);
+      return this.dialcatz.wsLink({ url: `wss://${this.reverbDomain(p)}${this.portSuffix(true)}/app/${key}`, mode: 'pusher', secretVar: 'REVERB_APP_SECRET', name: `${p.name} · Reverb` });
+    }
+    const libs = detectRealtime(p.path).libs.filter((l) => l.role === 'server' && l.protocol !== 'reverb');
+    if (!libs.length) throw new Error(`${p.name} has no socket server of its own`);
+    const socketio = libs.some((l) => l.protocol === 'socketio');
+    const path = p.wsPath || (socketio ? '/socket.io/' : libs.some((l) => l.protocol === 'channels') ? '/ws/' : '/');
+    const secure = p.secure !== false;
+    return this.dialcatz.wsLink({
+      url: `${secure ? 'wss' : 'ws'}://${p.domain}${this.portSuffix(secure)}${path}`,
+      mode: socketio ? 'socketio' : 'raw',
+      name: `${p.name} · ${libs.map((l) => l.name).join(' + ')}`,
+    });
+  }
+
+  dialcatzOpenSiteWs(siteId: string, which: 'own' | 'reverb'): Promise<boolean> {
+    return this.dialcatz.openLink(this.dialcatzSiteWsLink(siteId, which));
+  }
+
   dialcatzOpenWs(kind: WsKind): Promise<boolean> {
     return this.dialcatz.openLink(this.dialcatzWsLink(kind));
   }

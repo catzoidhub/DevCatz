@@ -313,6 +313,7 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.wsUninstall(re
               <button v-else class="btn btn-sm" :disabled="!!busy || site.status === 'stopping'" @click="siteAct(site, 'stop')">Stop</button>
               <button class="btn btn-sm" :disabled="!!busy || !siteUp(site)" @click="siteAct(site, 'restart')">Restart</button>
               <button class="btn btn-sm" @click="emit('openSite', site.id)">Open site</button>
+              <DialCatzButton :site-id="site.id" site-ws="own" />
             </div>
           </div>
         </header>
