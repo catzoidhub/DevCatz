@@ -868,9 +868,13 @@ function api(): HerdApi {
     dialcatzCreateMock: (siteId, specFile) => herd.dialcatzCreateMock(String(siteId), String(specFile)),
     mockSetDomain: async (key, name) => herd.mockSetDomain(String(key), typeof name === 'string' ? name : null),
     dialcatzInstall: (siteId) => {
+      // `ws:<kind>`: opens that WebSocket server's tab once installed (WebSocket page → Open in DialCatz).
+      const ws = /^ws:(\w+)$/.exec(String(siteId));
+      if (ws) return herd.dialcatz.install(herd.dialcatzWsLink(ws[1] as WsKind));
       if (!herd.find(String(siteId))) throw new Error('This site is gone');
       return herd.dialcatz.install(String(siteId));
     },
+    dialcatzOpenWs: (kind) => herd.dialcatzOpenWs(String(kind) as WsKind),
     dialcatzCancelInstall: async () => herd.dialcatz.cancelInstall(),
     dialcatzDismiss: async () => herd.dialcatz.dismiss(),
     docatzOpen: (siteId, file) => herd.docatz.open(String(siteId), herd.composePath(String(siteId), typeof file === 'string' ? file : null)),

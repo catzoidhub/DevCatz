@@ -80,10 +80,37 @@ export class DialCatz {
     return true;
   }
 
-  /** Downloads the latest DialCatz release, installs it to /Applications and opens the site there. */
-  async install(siteId: string): Promise<void> {
+  /**
+   * A WebSocket tab in DialCatz, ready for Connect (DialCatz's dialcatz://ws link): raw, Socket.IO or Pusher (Reverb,
+   * Sockudo), with channels to join and the app secret only as a {{VARIABLE}} name: never the value in a link.
+   */
+  wsLink(o: { url: string; mode: 'raw' | 'socketio' | 'pusher'; channels?: string[]; secretVar?: string; name?: string }): string {
+    if (!/^wss?:\/\/\S+$/.test(o.url)) throw new Error('Not a ws:// or wss:// address');
+    const q = new URLSearchParams({ url: o.url, mode: o.mode });
+    for (const c of o.channels ?? []) {
+      if (!/^[\w\-=@,.;]{1,164}$/.test(c)) throw new Error(`Invalid channel name: ${c}`);
+      q.append('channel', c);
+    }
+    if (o.secretVar) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(o.secretVar)) throw new Error('Invalid variable name');
+      q.set('secret', `{{${o.secretVar}}}`);
+    }
+    if (o.name) q.set('name', o.name.slice(0, 80));
+    return `dialcatz://ws?${q}`;
+  }
+
+  /** Opens a dialcatz:// link (wsLink …); false when DialCatz is not installed. */
+  async openLink(link: string): Promise<boolean> {
+    const path = await this.locate();
+    if (!path) return false;
+    await openCatzoidApp(path, link);
+    return true;
+  }
+
+  /** Downloads the latest DialCatz release, installs it to /Applications and opens it at `link` (a site, a WebSocket tab). */
+  async install(siteIdOrLink: string): Promise<void> {
     if (this.task && !this.task.done && !this.task.error) return;
-    const link = this.link(siteId);
+    const link = siteIdOrLink.startsWith('dialcatz://') ? siteIdOrLink : this.link(siteIdOrLink);
     const steps = installSteps('DialCatz');
     const set = (p: Partial<TaskProgress>) => {
       this.task = { ...(this.task as TaskProgress), ...p };

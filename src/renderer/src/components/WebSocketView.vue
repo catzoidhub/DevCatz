@@ -12,6 +12,7 @@ import WsForm from './WsForm.vue';
 import WsEnvWriter from './WsEnvWriter.vue';
 import WsTestClient from './WsTestClient.vue';
 import Sparkline from './Sparkline.vue';
+import DialCatzButton from './DialCatzButton.vue';
 import PopMenu, { type MenuItem } from './PopMenu.vue';
 import { attempt, herd, notify, state, svcInstallRequest, uninstallRequest } from '../store';
 import docatzLogo from '../assets/logos/docatz.png';
@@ -396,6 +397,8 @@ const uninstallRun = (deleteData: boolean, typed: string) => herd.wsUninstall(re
             <button v-else class="btn btn-sm" :disabled="!!busy || selected.status === 'stopping'" @click="act(selected, 'stop')">Stop</button>
             <button class="btn btn-sm" :disabled="!!busy || !active(selected)" @click="act(selected, 'restart')">Restart</button>
             <button v-if="selected.urls.admin" class="btn btn-sm" :disabled="!active(selected)" @click="herd.openUrl(selected.urls.admin)">Admin</button>
+            <!-- Mercure is Server-Sent Events: a GET request in DialCatz, not a WebSocket tab. -->
+            <DialCatzButton v-if="selected.kind !== 'mercure'" :ws="selected.kind" />
             <PopMenu :items="moreItems" align="end" :width="220">
               <button class="btn btn-sm">More ▾</button>
             </PopMenu>

@@ -4490,6 +4490,28 @@ export class Herd extends EventEmitter {
     return this.dialcatz.createMock(p.id, want, file.app);
   }
 
+  /**
+   * A WebSocket server here as a DialCatz WebSocket tab (DialCatz's dialcatz://ws): Reverb and Sockudo speak Pusher
+   * (the app secret goes as the .env variable name DevCatz writes, its value stays in DialCatz's environment);
+   * Centrifugo and NATS as raw WebSocket. Mercure is Server-Sent Events: a GET request in DialCatz, no WebSocket tab.
+   */
+  dialcatzWsLink(kind: WsKind): string {
+    const s = this.ws.state().find((x) => x.kind === kind);
+    if (!s?.installed || !s.urls) throw new Error(`${s?.name ?? kind} is not installed`);
+    if (kind === 'mercure') throw new Error('Mercure is Server-Sent Events, not WebSocket: make a GET request to its hub in DialCatz');
+    const pusher = kind === 'reverb' || kind === 'sockudo';
+    return this.dialcatz.wsLink({
+      url: s.urls.ws,
+      mode: pusher ? 'pusher' : 'raw',
+      ...(pusher ? { secretVar: kind === 'reverb' ? 'REVERB_APP_SECRET' : 'PUSHER_APP_SECRET' } : {}),
+      name: s.name,
+    });
+  }
+
+  dialcatzOpenWs(kind: WsKind): Promise<boolean> {
+    return this.dialcatz.openLink(this.dialcatzWsLink(kind));
+  }
+
   dialcatzOpenMock(key: string): Promise<boolean> {
     const mock = this.mocks.list().find((m) => m.key === key);
     if (!mock) throw new Error('This mock server is not running in DialCatz any more');

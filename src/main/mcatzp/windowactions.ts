@@ -127,6 +127,11 @@ export function windowChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
             const m = await mock(a.mock);
             return { title: `Open ${m.name} in DialCatz?`, facts: [{ label: 'Domain', value: m.domain }], page: `site:mock:${m.key}` };
           }, async (a) => INSTALLED(await api.dialcatzOpenMock((await mock(a.mock)).key), 'DialCatz')),
+          act('open_websocket_in_dialcatz', 'Open a WebSocket server in DialCatz', "Opens a new WebSocket tab in DialCatz for a WebSocket server here, ready to connect. Reverb and Sockudo use the Pusher protocol, with the app secret taken from the REVERB_APP_SECRET / PUSHER_APP_SECRET variable of DialCatz's environment (never sent in the link); Centrifugo and NATS use plain WebSocket. Mercure is Server-Sent Events: not available here.", { server: { type: 'string', enum: ['reverb', 'sockudo', 'centrifugo', 'nats'] } }, ['server'], async (a) => {
+            const s = (await state()).websockets.find((x) => x.kind === a.server);
+            if (!s?.installed || !s.urls) throw new Error(`${s?.name ?? String(a.server)} is not installed (see list_services)`);
+            return { title: `Open ${s.name} in DialCatz?`, facts: [{ label: 'Address', value: s.urls.ws }], page: 'websocket' };
+          }, async (a) => INSTALLED(await api.dialcatzOpenWs(String(a.server) as WsKind), 'DialCatz')),
           act('set_mock_domain', "Change a mock server's domain", "Sets the name before .dialcatz. (shop in shop.dialcatz.test) for a running mock server, kept for that mock whenever it runs; empty goes back to DialCatz's own name.", { mock: S('A key or domain from list_mocks.'), name: { type: 'string', maxLength: 50, pattern: '^[a-z0-9-]*$' } }, ['mock', 'name'], async (a) => {
             const m = await mock(a.mock);
             const tld = m.domain.slice(m.domain.indexOf('.dialcatz.') + 1);

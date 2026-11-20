@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { words } from '@shared/platform';
 import { computed, ref } from 'vue';
+import type { WsKind } from '@shared/types';
 import TaskStepper from './TaskStepper.vue';
 import { attempt, herd, state } from '../store';
 import dialcatzLogo from '../assets/logos/dialcatz.png';
@@ -11,18 +12,28 @@ import dialcatzLogo from '../assets/logos/dialcatz.png';
  * OpenAPI). Looks like "Open in DBCatz", with DialCatz's logo. When DialCatz is not installed, a dialog offers
  * Download & Install — the latest release from GitHub, verified, copied to /Applications — and then opens the site.
  */
-const props = withDefaults(defineProps<{ siteId: string; label?: string; /** Why it cannot import yet (the button is off). */ disabledReason?: string | null }>(), { label: 'Open in DialCatz', disabledReason: null });
+const props = withDefaults(
+  defineProps<{
+    siteId?: string;
+    /** A WebSocket server instead of a site: DialCatz opens a WebSocket tab for it, ready for Connect. */
+    ws?: WsKind;
+    label?: string;
+    /** Why it cannot import yet (the button is off). */
+    disabledReason?: string | null;
+  }>(),
+  { siteId: '', ws: undefined, label: 'Open in DialCatz', disabledReason: null },
+);
 const asking = ref(false);
 const installed = computed(() => state.value?.dialcatz.installed ?? null);
 const task = computed(() => state.value?.dialcatz.task ?? null);
 const installing = computed(() => !!task.value && !task.value.done && !task.value.error);
 
 async function open() {
-  const ok = await attempt(() => herd.dialcatzOpen(props.siteId));
+  const ok = await attempt(() => (props.ws ? herd.dialcatzOpenWs(props.ws) : herd.dialcatzOpen(props.siteId)));
   if (ok === false) asking.value = true;
 }
 async function install() {
-  await attempt(() => herd.dialcatzInstall(props.siteId));
+  await attempt(() => herd.dialcatzInstall(props.ws ? `ws:${props.ws}` : props.siteId));
 }
 function close() {
   if (installing.value) return;
@@ -33,7 +44,7 @@ function close() {
 
 <template>
   <!-- The tooltip sits on a wrapper: a disabled button shows none. -->
-  <span class="inline-flex" :title="disabledReason ?? (installed === false ? `DialCatz is not installed on this ${words.computer}: click to download and install it` : 'Open this site in DialCatz: an environment for it and its routes, to call its API')">
+  <span class="inline-flex" :title="disabledReason ?? (installed === false ? `DialCatz is not installed on this ${words.computer}: click to download and install it` : ws ? 'Open this server in DialCatz: a WebSocket tab for it, ready to connect' : 'Open this site in DialCatz: an environment for it and its routes, to call its API')">
     <button type="button" class="btn btn-sm gap-2" :disabled="!!disabledReason" @click="open">
       <img :src="dialcatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ label }}
     </button>
@@ -53,7 +64,7 @@ function close() {
         </div>
         <TaskStepper v-if="task" :task="task" cancellable dismissable @cancel="herd.dialcatzCancelInstall()" @dismiss="close" />
         <p v-else class="rounded-box bg-base-200/60 px-3 py-2 text-xs opacity-70">
-          Download & Install fetches the latest release from GitHub (checksum verified), <template v-if="words.computer === 'PC'">runs its installer (just for you, no administrator rights)</template><template v-else>puts <span class="font-mono">DialCatz.app</span> in Applications</template> and opens it at this site.
+          Download & Install fetches the latest release from GitHub (checksum verified), <template v-if="words.computer === 'PC'">runs its installer (just for you, no administrator rights)</template><template v-else>puts <span class="font-mono">DialCatz.app</span> in Applications</template> and opens it at this {{ ws ? 'server' : 'site' }}.
         </p>
 
         <div class="modal-action">
