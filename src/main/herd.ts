@@ -16,8 +16,10 @@ import {
   installResolver,
   refreshNrpt,
   resolverStatus,
+  startWinPortProxy,
   uninstallCleanUrls,
   uninstallResolver,
+  winPortProxyRunning,
 } from './cleanurls';
 import { DB_TASK_LABELS, dbStatus, runDbAction, stream } from './database';
 import { detectPackageManager, readEnvFiles, readJson, readText, runScriptCommand, slugify, type PackageJson } from './detect';
@@ -211,6 +213,8 @@ export class Herd extends EventEmitter {
   private dbTasks = new Map<string, string>();
   private caTrusted = false;
   private cleanUrls = false;
+  /** Windows: the port proxy's IP Helper service stopped while its rules are installed. */
+  private portProxyStopped = false;
   private cleanHttp = false;
   private watchers: FSWatcher[] = [];
   private timers: NodeJS.Timeout[] = [];
@@ -258,6 +262,8 @@ export class Herd extends EventEmitter {
   });
   /** Public tunnels; notifications are wired by index.ts. */
   notifyHook: (title: string, body: string) => void = () => undefined;
+  /** Windows: the port proxy's IP Helper service was found stopped (shown as a notification that opens Settings). */
+  onPortProxyStopped: () => void = () => undefined;
   /** WhatsApp gateways (GOWA / WAHA) on 127.0.0.1 and <label>.<tld>. */
   readonly whatsapp: WaManager = new WaManager({
     projects: () => this.projects,
@@ -551,6 +557,9 @@ export class Herd extends EventEmitter {
       }, 10_000),
     );
     this.timers.push(setInterval(() => void this.pollPorts(), 1500));
+    // Names without a port: checked again every 30 s (the forwarder can stop after the start, e.g. Windows' IP Helper).
+    this.timers.push(setInterval(() => void this.recheckCleanUrls().catch(() => undefined), 30_000));
+    if (isWin && !this.cleanUrls && cleanUrlsInstalled()) void this.recheckCleanUrls().catch(() => undefined);
     void this.pollPorts();
     this.timers.push(setInterval(() => void this.pollDatabases(), 5000));
     this.timers.push(setInterval(() => void this.pollDocker(), 10_000));
@@ -5365,6 +5374,39 @@ export class Herd extends EventEmitter {
     }, 'Names without a port are on');
   }
 
+  /** Windows: the IP Helper service that runs the forwarding stopped; started again behind the administrator prompt. */
+  async startPortProxy(): Promise<boolean> {
+    const r = await startWinPortProxy();
+    if (!r.ok) throw new Error(/-128|^Cancelled$/.test(r.message) ? 'Cancelled' : r.message);
+    await this.recheckCleanUrls();
+    if (!this.cleanUrls) throw new Error('IP Helper runs again, but https://<site>.localhost does not answer yet: try again in a moment');
+    return true;
+  }
+
+  /**
+   * The forwarding is checked again every 30 s, not only at start: when it stops answering (Windows' IP Helper crashed
+   * on a PC, 2026-11-18) the addresses go back to :<port> at once instead of pointing at nothing, and come back
+   * without the port when it answers again.
+   */
+  private async recheckCleanUrls(): Promise<void> {
+    // Not while names without a port are being turned on / off (that run checks them itself).
+    if (this.setupTask?.what === 'urls' && !this.setupTask.task.done && !this.setupTask.task.error) return;
+    if (!cleanUrlsInstalled() && !this.cleanUrls) return;
+    // Light while it works: one local HTTPS request; Windows' rules (netsh) and the service (sc) only when it does not.
+    let ok = await cleanUrlsWorking(false);
+    if (!ok) ok = await cleanUrlsWorking(true);
+    const stopped = isWin && !ok && cleanUrlsInstalled() ? !(await winPortProxyRunning()) : false;
+    if (ok === this.cleanUrls && stopped === this.portProxyStopped) return;
+    if (ok !== this.cleanUrls) console.warn(`names without a port ${ok ? 'answer again' : 'stopped answering'}${stopped ? ' (Windows IP Helper service stopped)' : ''}`);
+    // Said once when it happens, not only in Settings (nobody opens Settings for a site that "cannot be reached").
+    if (stopped && !this.portProxyStopped) this.onPortProxyStopped();
+    this.cleanUrls = ok;
+    this.portProxyStopped = stopped;
+    this.updateRoutes();
+    this.publishDomains();
+    this.changed();
+  }
+
   uninstallCleanUrls(): Promise<boolean> {
     const steps = [
       isWin ? 'Remove the forwarding of ports 443 and 80 — administrator approval' : 'Remove the two port forwarders — your administrator password',
@@ -5621,6 +5663,7 @@ export class Herd extends EventEmitter {
         configured: cleanUrlsInstalled(),
         ipv4: cleanUrlsCoverIpv4(),
         ipv4Available: this.ipv4Free,
+        serviceStopped: this.portProxyStopped,
       },
       domain: {
         tld: tld(),

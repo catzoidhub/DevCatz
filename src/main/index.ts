@@ -948,6 +948,7 @@ function api(): HerdApi {
     revealCa: async () => shell.showItemInFolder(herd.certs.caPath),
     installCleanUrls: () => herd.installCleanUrls(),
     uninstallCleanUrls: () => herd.uninstallCleanUrls(),
+    startPortProxy: () => herd.startPortProxy(),
     setTld: (next, dryRun) => herd.setTld(next, dryRun),
     installResolver: () => herd.installResolver(),
     uninstallResolver: () => herd.uninstallResolver(),
@@ -1509,6 +1510,15 @@ app.whenReady().then(async () => {
   };
   herd.notifyHook = (title, body) => {
     if (Notification.isSupported()) new Notification({ title, body }).show();
+  };
+  herd.onPortProxyStopped = () => {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({
+      title: 'URLs without a port stopped answering',
+      body: `Windows' IP Helper service has stopped. Sites use their :${store.settings.httpsPort} address meanwhile; click to start it again.`,
+    });
+    n.on('click', () => showWindow('settings:project'));
+    n.show();
   };
   herd.onMail = (m) => {
     if (!store.settings.mailNotify || !Notification.isSupported()) return;

@@ -170,6 +170,21 @@ function installWin(httpsPort: number, httpPort: number, ipv4: { https: boolean;
   return runAsAdminWin(lines.join('\n')).finally(refreshWinRules);
 }
 
+/** Windows: whether the IP Helper service, which runs the port proxy rules, is running. */
+export async function winPortProxyRunning(): Promise<boolean> {
+  if (!isWin) return true;
+  const r = await run('sc.exe', ['query', 'iphlpsvc'], { timeout: 10_000 });
+  return /STATE\s*:\s*\d+\s+RUNNING/i.test(r.stdout);
+}
+
+/**
+ * Windows: starts the IP Helper service again (administrator approval). It crashed three times on a PC on
+ * 2026-11-18 and Windows stopped restarting it: the rules stayed, every name without a port went dark.
+ */
+export function startWinPortProxy() {
+  return runAsAdminWin('Set-Service iphlpsvc -StartupType Automatic\nStart-Service iphlpsvc');
+}
+
 function uninstallWin() {
   if (!winRules.length) return Promise.resolve({ ok: true, message: '' });
   return runAsAdminWin(winRules.map(winDelete).join('\n')).finally(refreshWinRules);
@@ -256,9 +271,12 @@ export function cleanUrlsCoverIpv4(): boolean {
   }
 }
 
-/** Checks the forward end to end: https://[::1]/ must be answered by our proxy. */
-export async function cleanUrlsWorking(): Promise<boolean> {
-  if (isWin) await refreshWinRules();
+/**
+ * Checks the forward end to end: https://[::1]/ must be answered by our proxy. `rules: false` skips reading Windows'
+ * rules again (netsh, ~50 ms): the 30-second recheck reads them only when the forward does not answer.
+ */
+export async function cleanUrlsWorking(rules = true): Promise<boolean> {
+  if (isWin && rules) await refreshWinRules();
   return new Promise((resolve) => {
     const req = request(
       { host: '::1', port: 443, path: PING_PATH, servername: 'localhost', rejectUnauthorized: false, timeout: 1500 },

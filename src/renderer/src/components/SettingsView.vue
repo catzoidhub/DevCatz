@@ -112,6 +112,16 @@ async function cleanUrls(on: boolean) {
   if (on) await attempt(() => herd.installCleanUrls());
   else await attempt(() => herd.uninstallCleanUrls());
 }
+/** Windows: the IP Helper service (the port proxy) stopped; started again behind the administrator prompt. */
+const startingPortProxy = ref(false);
+async function startPortProxy() {
+  startingPortProxy.value = true;
+  try {
+    if (await attempt(() => herd.startPortProxy())) notify('success', 'IP Helper runs again: URLs without a port answer again');
+  } finally {
+    startingPortProxy.value = false;
+  }
+}
 const emit = defineEmits<{ close: [] }>();
 
 // ---- Object Storage tab
@@ -465,7 +475,16 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
           Covers <code>[::1]</code>{{ s.cleanUrls.ipv4 ? ' and 127.0.0.1' : '' }}.
           <template v-if="!s.cleanUrls.ipv4 && s.cleanUrls.ipv4Available">127.0.0.1:443 is free now: disable and enable again to cover IPv4 too.</template>
         </p>
-        <p v-if="s.cleanUrls.configured && !s.cleanUrls.installed" class="text-xs text-warning">
+        <div v-if="s.cleanUrls.serviceStopped" role="alert" class="alert alert-warning alert-soft text-sm">
+          <span class="flex-1">
+            Windows' IP Helper service has stopped (Windows gives up after it crashes three times), so URLs without a port do not answer.
+            Sites, storage and services show their <code>:{{ s.settings.httpsPort }}</code> address until it runs again.
+          </span>
+          <button class="btn btn-sm" :disabled="startingPortProxy" @click="startPortProxy">
+            <span v-if="startingPortProxy" class="loading loading-spinner loading-xs" />Start IP Helper…
+          </button>
+        </div>
+        <p v-else-if="s.cleanUrls.configured && !s.cleanUrls.installed" class="text-xs text-warning">
           The forwarder is installed but not answering. Make sure the proxy is listening; after changing the proxy ports, disable and enable it again.
         </p>
         <div class="flex gap-2">
