@@ -878,8 +878,11 @@ export class WebTools {
     }
     const php = rt;
     const env = { ...getShellEnv(), ...php.env, ...(isWin ? {} : { PHP_CLI_SERVER_WORKERS: '4' }) };
+    // Windows' PHP loads mysqli only when asked (DevCatz's defaults turn on pdo_mysql for sites): phpMyAdmin needs it,
+    // so it is loaded for this process alone when the DLL is there.
+    const mysqli = isWin && existsSync(join(dirname(php.bin), 'ext', 'php_mysqli.dll')) ? ['-d', 'extension=mysqli'] : [];
     // phpMyAdmin 5.2 still raises deprecation notices on PHP 8.4+: they stay out of its pages.
-    const args = ['-d', 'display_errors=0', '-d', 'log_errors=0', '-d', 'error_reporting=24575', '-d', 'memory_limit=512M', '-d', 'upload_max_filesize=512M', '-d', 'post_max_size=512M', '-d', 'max_execution_time=600', '-S', `127.0.0.1:${c.port}`, '-t', id === 'phpmyadmin' ? this.appPath(id) : this.dir(id, 'app')];
+    const args = [...mysqli, '-d', 'display_errors=0', '-d', 'log_errors=0', '-d', 'error_reporting=24575', '-d', 'memory_limit=512M', '-d', 'upload_max_filesize=512M', '-d', 'post_max_size=512M', '-d', 'max_execution_time=600', '-S', `127.0.0.1:${c.port}`, '-t', id === 'phpmyadmin' ? this.appPath(id) : this.dir(id, 'app')];
     const r = this.spawnTracked(id, id, null, c.port, php.bin, args, env);
     await this.waitUp(c.port, r.child, TOOLS[id].name);
     return r;
@@ -921,9 +924,18 @@ export class WebTools {
       const user = encodeURIComponent(s.user || 'postgres');
       const pass = s.password ? `:${encodeURIComponent(s.password)}` : '';
       const env = { ...getShellEnv(), PGWEB_DATABASE_URL: `postgres://${user}${pass}@127.0.0.1:${s.port}/${encodeURIComponent(db ?? 'postgres')}?sslmode=disable` };
-      const r = this.spawnTracked(key, id, s.id, port, c.external?.path ?? this.dir(id, 'app', isWin ? 'pgweb.exe' : 'pgweb'), ['--bind=127.0.0.1', `--listen=${port}`, '--skip-open'], env, db);
-      await this.waitUp(port, r.child, TOOLS[id].name);
-      return r;
+      // pgweb quits when its first connection fails, and a PostgreSQL that has just started still answers "the database
+      // system is starting up" for a while (a minute after an unclean stop, on a slow machine): try again, up to ~60 s.
+      for (let attempt = 1; ; attempt++) {
+        const r = this.spawnTracked(key, id, s.id, port, c.external?.path ?? this.dir(id, 'app', isWin ? 'pgweb.exe' : 'pgweb'), ['--bind=127.0.0.1', `--listen=${port}`, '--skip-open'], env, db);
+        try {
+          await this.waitUp(port, r.child, TOOLS[id].name);
+          return r;
+        } catch (err) {
+          if (attempt >= 30 || r.child.exitCode === null) throw err;
+          await new Promise((res) => setTimeout(res, 2000));
+        }
+      }
     }
     // mongo-express: every database of the service (admin view), no basic auth (127.0.0.1 behind DevCatz's proxy).
     const rt = this.deps.runtime('node', c.runtime);
