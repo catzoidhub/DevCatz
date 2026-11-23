@@ -91,6 +91,20 @@ function detectServer(pkg: PackageJson): string | null {
   return null;
 }
 
+/**
+ * A dev script that only rebuilds a library while its files change (`tsup --watch`, `tsc -w`, `rollup -c -w` …): it
+ * opens no port. Such a workspace package (shared contracts, types, a UI kit) is a library, even when the root .env
+ * has a PORT for the real server.
+ */
+const BUILD_WATCHER = /^\s*(?:(?:npx|bunx|pnpm\s+exec|yarn)\s+)?(?:tsup|tsc|tsdown|rollup|unbuild|esbuild|babel|swc|microbundle|pkgroll|vite\s+build|webpack(?!\s+serve))\b/;
+const SERVER_LIBS = ['fastify', 'hono', 'koa', 'express', '@hapi/hapi', 'elysia', 'h3', 'socket.io', 'ws', '@nestjs/core', 'restify', 'polka'];
+export function isBuildWatcherLibrary(pkg: PackageJson, script: string | null): boolean {
+  const cmd = script ? pkg.scripts?.[script] : undefined;
+  if (!cmd || !BUILD_WATCHER.test(cmd) || /&&|;|\|\||\bconcurrently\b|\bnodemon\b|\bnode\s/.test(cmd)) return false;
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  return !SERVER_LIBS.some((d) => deps[d]);
+}
+
 function detectFramework(pkg: PackageJson): Framework {
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
   if (deps.nuxt) return 'nuxt';
@@ -308,6 +322,12 @@ function detectNodeStack(root: string, domain: string): StackInfo {
       continue;
     }
     const framework = detectFramework(pkg);
+    // A library rebuilt by its watcher (packages/contracts with `tsup --watch`): no port, no domain, no port clash; it
+    // still runs with the root dev script.
+    if (monorepo && framework === 'node' && !electronScript && isBuildWatcherLibrary(pkg, script)) {
+      libs.push({ dir: relative(root, dir), name: pkg.name ?? basename(dir), build: Boolean(pkg.scripts?.build), dev: script === 'dev' });
+      continue;
+    }
     if (electronScript) {
       // A desktop app: its window is the app, so no port to wait for or to manage (electron-vite's renderer dev
       // server only works inside that window, with its preload).

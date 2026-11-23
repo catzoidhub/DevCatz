@@ -192,3 +192,24 @@ describe('Ruby', () => {
     expect(stack.apps.map((a) => [a.dir, a.library ?? a.framework]).sort()).toEqual([['api', 'roda'], ['web', 'vite']]);
   });
 });
+
+describe('workspace libraries', () => {
+  // polygon-monorepo (2026-11-23): packages/contracts with `tsup --watch` took the root .env PORT of the API and was
+  // reported as a second app on that port.
+  const MONO = {
+    'package.json': JSON.stringify({ name: 'mono', private: true, workspaces: ['apps/*', 'packages/*'], scripts: { dev: 'turbo run dev' } }),
+    '.env': 'PORT=4308\n',
+    'apps/api/package.json': JSON.stringify({ name: '@m/api', scripts: { 'start:dev': 'nest start --watch' }, dependencies: { '@nestjs/core': '^11' } }),
+    'apps/api/src/main.ts': 'await app.listen(process.env.PORT ?? 4308);\n',
+  };
+  test('a build watcher is a library: no port, no clash', () => {
+    const { stack } = detect({ ...MONO, 'packages/contracts/package.json': JSON.stringify({ name: '@m/contracts', scripts: { dev: 'tsup --watch', build: 'tsup' }, dependencies: { zod: '^3' } }) });
+    expect(stack.apps.map((a) => a.name)).toEqual(['@m/api']);
+    expect(stack.libs?.some((l) => l.name === '@m/contracts' && l.dev)).toBe(true);
+    expect(stack.warnings.some((w) => w.includes('both use port'))).toBe(false);
+  });
+  test('a watcher that also serves stays an app', () => {
+    const { stack } = detect({ ...MONO, 'packages/mock/package.json': JSON.stringify({ name: '@m/mock', scripts: { dev: 'tsup --watch --onSuccess "node dist/index.js"' }, dependencies: { express: '^5' } }), 'packages/mock/src/index.ts': 'app.listen(process.env.MOCK_PORT ?? 4400);\n' });
+    expect(stack.apps.some((a) => a.name === '@m/mock')).toBe(true);
+  });
+});
