@@ -681,7 +681,12 @@ function pgWindowsCommand(c: DbServiceConfig, root: string, data: string): strin
     `while ($true) {`,
     `  $fs = [IO.File]::Open($log, 'Open', 'Read', 'ReadWrite'); [void]$fs.Seek($pos, 'Begin'); $sr = New-Object IO.StreamReader($fs)`,
     `  $t = $sr.ReadToEnd(); $pos = $fs.Position; $sr.Close(); if ($t) { [Console]::Out.Write($t) }`,
-    `  if (-not (Test-Path $pidFile)) { break }; Start-Sleep -Milliseconds 700`,
+    // Stopped cleanly: postmaster.pid is gone. Killed (Task Manager, a crash, a forced shutdown): the file stays behind,
+    // so the PID on its first line must still be a live process, or DevCatz would show it running for ever.
+    `  if (-not (Test-Path $pidFile)) { break }`,
+    `  $pp = 0; [void][int]::TryParse(((Get-Content $pidFile -TotalCount 1 -ErrorAction SilentlyContinue) -as [string]), [ref]$pp)`,
+    `  if ($pp -gt 0 -and -not (Get-Process -Id $pp -ErrorAction SilentlyContinue)) { [Console]::Out.WriteLine('PostgreSQL (pid ' + $pp + ') is no longer running'); exit 1 }`,
+    `  Start-Sleep -Milliseconds 700`,
     `}`,
   ].join('\n');
   return `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}`;
