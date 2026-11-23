@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WebToolsSettings from './WebToolsSettings.vue';
 import TaskStepper from './TaskStepper.vue';
 import { confirmCleanUrls, confirmResolver, confirmTrustCa } from '../confirms';
 import { currentOS, words } from '@shared/platform';
@@ -678,6 +679,9 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
         <p v-else class="text-xs opacity-60">No database services yet; create them on the Database page (rail).</p>
       </div>
     </div>
+
+    <!-- Database: web tools (phpMyAdmin, Adminer, pgweb) -->
+    <WebToolsSettings v-if="tab === 'database'" />
 
     <!-- Database: builds -->
     <div v-if="tab === 'database'" class="card">

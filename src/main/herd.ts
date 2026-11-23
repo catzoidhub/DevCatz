@@ -26,7 +26,7 @@ import { detectPackageManager, readEnvFiles, readJson, readText, runScriptComman
 import { readCargo } from './runtimes/rust';
 import { detectStack, isLinkableDir, isProjectDir } from './runtimes';
 import { getShellEnv, hasCommand, isListening, isPortOpen, portOwner, run, setUserPath } from './env';
-import { isLinux, isWin, joinPath, pathKey, samePath, shellCommand, splitPath } from './platform';
+import { exe, isLinux, isWin, joinPath, pathKey, samePath, shellCommand, splitPath } from './platform';
 import { lookup } from 'node:dns/promises';
 import { ProcessManager } from './processes';
 import { captureScreenshot, screenshotTime } from './screenshots';
@@ -37,6 +37,8 @@ import * as rusts from './rust';
 import * as tools from './tools';
 import { cancellable } from './cancel';
 import * as phps from './php';
+import { WebTools } from './webtools';
+import type { DbOpenTool } from '@shared/types';
 import { phpInFolder, phpVersion } from './phpsystem';
 import * as phpext from './phpext';
 import { detectRealtime } from './realtime';
@@ -350,6 +352,23 @@ export class Herd extends EventEmitter {
   readonly ai = new DevCatzAi(this);
   /** DBCatz, the database viewer app: gets DevCatz's services through services.json, opened by dbcatz:// links. */
   readonly dbcatz = new DbCatz();
+  /** phpMyAdmin, Adminer, pgweb (TODO §48): web tools next to DBCatz, at their own name under the default domain. */
+  readonly webTools: WebTools = new WebTools({
+    services: () => this.dbs.state(),
+    isActive: (id) => this.dbs.isActive(id),
+    runtime: (kind, version) => {
+      if (kind === 'php') {
+        const inst = this.installedPhps.find((i) => i.version === version) ?? this.installedPhps.find((i) => i.version === store.settings.phpDefault) ?? this.installedPhps[0];
+        return inst ? { version: inst.version, bin: inst.php, binDir: inst.binDir, env: phps.iniEnv(inst.version) } : null;
+      }
+      const n = this.installedNodes.find((i) => i.version === version) ?? this.installedNodes.find((i) => i.version === store.settings.nodeDefault) ?? this.installedNodes[0];
+      if (!n) return null;
+      const key = pathKey(getShellEnv());
+      return { version: n.version, bin: join(n.binDir, exe('node')), binDir: n.binDir, env: { [key]: joinPath([n.binDir, ...splitPath(getShellEnv()[key])]) } };
+    },
+    domainOwner: (host) => this.domainOwner(host),
+    urlOf: (host) => `https://${host}${this.portSuffix(true)}`,
+  });
   /** DialCatz, the API client: opened at a site by dialcatz:// links, installed from its release when missing. */
   readonly dialcatz = new DialCatz();
   /** DialCatz's running mock servers (its bridge.json), served as <slug>.dialcatz.<tld>. */
@@ -459,6 +478,10 @@ export class Herd extends EventEmitter {
     this.dbs.onChange = () => this.changed();
     this.dbcatz.onChange = () => this.changed();
     void this.dbcatz.locate();
+    this.webTools.onChange = () => {
+      this.updateRoutes();
+      this.changed();
+    };
     this.dialcatz.onChange = () => this.changed();
     this.mocks.own = () => store.settings.mockDomains ?? {};
     this.mocks.onChange = () => {
@@ -570,6 +593,8 @@ export class Herd extends EventEmitter {
     this.ws.autoStart();
     this.search.autoStart();
     this.storage.autoStart();
+    // phpMyAdmin / Adminer answer at their address from the start (the PHP list is read by then).
+    this.timers.push(setTimeout(() => void this.webTools.startInstalled(), 5000));
     this.monitor.start();
     // Runtime updates: shortly after launch, then every 6 hours.
     this.timers.push(setTimeout(() => void this.autoCheckUpdates(), 30_000));
@@ -626,6 +651,28 @@ export class Herd extends EventEmitter {
 
   private async autoCheckUpdates(): Promise<void> {
     if (store.settings.updateNotifications) await this.checkUpdates().catch(() => undefined);
+    await this.webToolsCheckUpdates().catch(() => undefined);
+  }
+
+  /** What Open uses for a database service: the last one picked (DBCatz or a web tool). */
+  dbSetOpenWith(serviceId: string, tool: DbOpenTool): void {
+    if (!this.dbs.state().some((d) => d.id === serviceId)) throw new Error('No such database service');
+    store.updateSettings({ dbOpenWith: { ...(store.settings.dbOpenWith ?? {}), [serviceId]: tool } });
+    this.changed();
+  }
+
+  /** phpMyAdmin / Adminer / pgweb: newer releases (a dot on Database), a notification once per new version. */
+  onNewWebToolUpdates: (list: { id: string; name: string; from: string; to: string }[]) => void = () => undefined;
+  async webToolsCheckUpdates(): Promise<string[]> {
+    const failed = await this.webTools.checkUpdates();
+    if (!store.settings.updateNotifications) return failed;
+    const told = new Set(store.notifiedUpdates);
+    const fresh = this.webTools.pendingUpdates().filter((u) => !told.has(`webtool:${u.id}@${u.to}`));
+    if (fresh.length) {
+      store.setNotifiedUpdates([...told, ...fresh.map((u) => `webtool:${u.id}@${u.to}`)]);
+      this.onNewWebToolUpdates(fresh);
+    }
+    return failed;
   }
 
   /** Fetches every runtime's release list (only for runtimes that are installed). */
@@ -2066,6 +2113,7 @@ export class Herd extends EventEmitter {
     for (const w of this.hotWatchers.values()) w.close();
     for (const id of [...this.hotWatchers.keys()]) this.removeHotFile(id);
     await this.fpm.stopAll();
+    this.webTools.stopAll();
   }
 
   private async pollPorts(): Promise<void> {
@@ -2122,6 +2170,8 @@ export class Herd extends EventEmitter {
 
   private async pollDatabases(): Promise<void> {
     let dirty = false;
+    // pgweb stops with its PostgreSQL service.
+    this.webTools.prune();
     await Promise.all(
       this.projects.map(async (p) => {
         const state = this.state(p);
@@ -4460,7 +4510,7 @@ export class Herd extends EventEmitter {
       .filter((p) => p.reverb && this.stacks.get(p.id)?.apps.some((a) => a.framework === 'laravel'))
       .map((p) => ({ domain: this.reverbDomain(p), port: this.reverbPort(p), projectName: `${p.name} Reverb`, running: this.processes.isActive(p.id), secure: true }));
     // Object storage domains (minio.localhost, console.minio.localhost …) and WebSocket servers (ws.localhost …).
-    this.proxy.setRoutes([...routes, ...reverb, ...this.storage.routes(), ...this.ws.routes(), ...this.search.routes(), ...this.mail.routes(), ...this.whatsapp.routes(), ...this.gateways.routes(), ...this.docatzRoute(), ...this.mockRoutes()]);
+    this.proxy.setRoutes([...routes, ...reverb, ...this.storage.routes(), ...this.ws.routes(), ...this.search.routes(), ...this.mail.routes(), ...this.whatsapp.routes(), ...this.gateways.routes(), ...this.docatzRoute(), ...this.mockRoutes(), ...this.webTools.routes()]);
   }
 
   /**
@@ -5452,6 +5502,8 @@ export class Herd extends EventEmitter {
       const names = f.sites.map((id) => this.find(id)?.name ?? id);
       out.push({ id: `php:${f.version}`, kind: 'php', name: `${words.phpServer} ${f.version}`, detail: names.join(', ') || 'no sites', active: true, pids: [f.pid], dataDirs: [], link: null });
     }
+    // phpMyAdmin / Adminer / pgweb while they run.
+    out.push(...this.webTools.monitorTargets());
     for (const d of this.dbs.state()) {
       if (d.pending) continue;
       out.push({
@@ -5737,6 +5789,7 @@ export class Herd extends EventEmitter {
       searchEngines: this.search.state(),
       databases: this.dbs.state(),
       dbcatz: this.dbcatz.state(),
+      webTools: this.webTools.state(),
       dialcatz: this.dialcatz.state(),
       mocks: this.mocks.list().map((m) => {
         const domain = `${m.slug}.dialcatz.${tld()}`;

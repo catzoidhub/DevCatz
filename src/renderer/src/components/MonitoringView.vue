@@ -118,7 +118,7 @@ const filter = ref<Filter>('all');
 const showStopped = ref(false);
 type SortKey = 'name' | 'cpu' | 'mem' | 'net' | 'io' | 'disk';
 const sortKey = ref<SortKey>('cpu');
-const SERVICES: MonitorKind[] = ['php', 'database', 'storage', 'websocket', 'search'];
+const SERVICES: MonitorKind[] = ['php', 'database', 'webtool', 'storage', 'websocket', 'search'];
 const rows = computed(() => {
   void tick.value;
   let list = latest.value?.entities ?? [];
@@ -159,6 +159,7 @@ const KIND_LABEL: Record<MonitorKind, string> = {
   site: 'Site',
   php: words.phpServer,
   database: 'Database',
+  webtool: 'Web tool',
   storage: 'Storage',
   websocket: 'WebSocket',
   search: 'Search',
@@ -172,6 +173,7 @@ const KIND_COLOR: Record<MonitorKind, string> = {
   site: 'var(--c-projects)',
   php: 'oklch(62% 0.13 275)',
   database: 'var(--c-database)',
+  webtool: 'var(--c-database)',
   storage: 'var(--c-storage)',
   websocket: 'var(--c-websocket)',
   search: 'var(--c-search)',

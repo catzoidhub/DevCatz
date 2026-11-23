@@ -5,7 +5,7 @@ import { attempt, herd, state } from '../store';
 import { DB_LOGO, isActive } from '../db';
 import StatusDot from './StatusDot.vue';
 import DbEnvWriter from './DbEnvWriter.vue';
-import DbCatzButton from './DbCatzButton.vue';
+import DbOpenButton from './DbOpenButton.vue';
 
 /** Site Database tab: the DevCatz database service this site uses (start/stop, viewer, .env lines). */
 const props = defineProps<{ project: ProjectState }>();
@@ -56,7 +56,7 @@ async function act(action: 'start' | 'stop') {
             <button v-if="!isActive(linked)" class="btn btn-primary btn-sm" :disabled="busy" @click="act('start')">Start</button>
             <button v-else class="btn btn-sm" :disabled="busy || linked.status === 'stopping'" @click="act('stop')">Stop</button>
           </template>
-          <DbCatzButton :conn-id="`svc:${linked.id}`" :database="project.stack.database?.database ?? undefined" />
+          <DbOpenButton :service-id="linked.id" :database="project.stack.database?.database ?? undefined" />
           <button class="btn btn-sm" @click="showEnv = !showEnv">{{ showEnv ? 'Hide .env lines' : '.env lines…' }}</button>
         </div>
         <div v-if="linked.error" class="text-xs text-error">{{ linked.error }}</div>

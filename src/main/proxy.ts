@@ -37,6 +37,8 @@ export interface Route {
   keepHost?: boolean;
   /** `/` redirects here (RustFS serves its console under /rustfs/console/). */
   rootRedirect?: string;
+  /** Called on every request it gets (pgweb's idle stop counts from the last one). */
+  used?: () => void;
   /** Paths DevCatz answers itself on this domain instead of forwarding (e.g. WAHA's dashboard bootstrap). */
   pages?: Record<string, (req: IncomingMessage, res: ServerResponse) => void>;
   /** The site's OpenAPI file at a project-relative path, served by DevCatz (the API tab's Open URL). */
@@ -194,6 +196,7 @@ export class Proxy {
       return res.end('ok');
     }
     const route = this.route(req);
+    route?.used?.();
     // Send browsers to the scheme the site is configured for, on the host they asked for (a subdomain stays a subdomain).
     if (route && !route.anyScheme && route.secure !== secure && (req.method === 'GET' || req.method === 'HEAD')) {
       const host = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/\.$/, '').toLowerCase() || route.domain;

@@ -12,6 +12,8 @@ import { loadShellEnv, run } from './env';
 import { Herd } from './herd';
 import { setStatusPageIcon } from './proxy';
 import { store } from './store';
+import { WEB_TOOL_IDS } from './webtools';
+import type { WebToolId } from '@shared/types';
 import { screenshotDataUrl } from './screenshots';
 import { HerdTray } from './tray';
 import { asWhere, dockerStatus, startEngine } from './docker';
@@ -155,6 +157,12 @@ function loginState() {
 let pendingNav: string | null = null;
 
 /** Shows the window, optionally at `sites`, `settings`, `new-site` or `site:<id>`. */
+/** A web tool id from the renderer (anything else is refused). */
+function webToolId(v: unknown): WebToolId {
+  if (typeof v === 'string' && (WEB_TOOL_IDS as string[]).includes(v)) return v as WebToolId;
+  throw new Error('Unknown web tool');
+}
+
 function showWindow(target?: string): void {
   const fresh = !win || win.isDestroyed();
   if (fresh) createWindow();
@@ -653,6 +661,34 @@ function api(): HerdApi {
     dbcatzInstall: (connId, database) => herd.dbcatz.install(connId, database),
     dbcatzCancelInstall: async () => herd.dbcatz.cancelInstall(),
     dbcatzDismiss: async () => herd.dbcatz.dismiss(),
+    webToolInstall: async (id, opts, open) => {
+      const t = webToolId(id);
+      await herd.webTools.install(t, { domain: String(opts?.domain ?? ''), port: Number(opts?.port), runtime: typeof opts?.runtime === 'string' ? opts.runtime : null });
+      if (open?.serviceId) {
+        herd.dbSetOpenWith(String(open.serviceId), t);
+        await openWeb(await herd.webTools.open(t, String(open.serviceId), typeof open.database === 'string' && open.database ? open.database : undefined));
+      }
+    },
+    webToolCancel: async (id) => {
+      herd.webTools.cancel(webToolId(id));
+      herd.webTools.dismiss(webToolId(id));
+    },
+    webToolUpdate: (id) => herd.webTools.update(webToolId(id)),
+    webToolUninstall: async (id) => herd.webTools.uninstall(webToolId(id)),
+    webToolConfigure: (id, opts) => herd.webTools.configure(webToolId(id), { domain: String(opts?.domain ?? ''), port: Number(opts?.port), runtime: typeof opts?.runtime === 'string' ? opts.runtime : null }),
+    webToolCheck: (id, opts) => herd.webTools.check(webToolId(id), { domain: String(opts?.domain ?? ''), port: Number(opts?.port) }),
+    webToolOpen: async (id, serviceId, database) => {
+      const t = webToolId(id);
+      await openWeb(await herd.webTools.open(t, String(serviceId), typeof database === 'string' && database ? database : undefined));
+    },
+    webToolsCheckUpdates: () => herd.webToolsCheckUpdates(),
+    webToolStart: (id, serviceId) => herd.webTools.start(webToolId(id), typeof serviceId === 'string' ? serviceId : undefined),
+    webToolSetAutoStop: async (id, on, minutes) => herd.webTools.setAutoStop(webToolId(id), on === true, typeof minutes === 'number' ? minutes : undefined),
+    webToolStop: async (id, serviceId) => herd.webTools.stopRunning(webToolId(id), typeof serviceId === 'string' ? serviceId : undefined),
+    dbSetOpenWith: async (serviceId, tool) => {
+      if (tool !== 'dbcatz') webToolId(tool);
+      herd.dbSetOpenWith(String(serviceId), tool);
+    },
     monitorSnapshot: () => herd.monitor.snapshot(),
     monitorLive: async (on) => herd.monitor.setLive(on),
     monitorHistory: async (range) => herd.monitor.rangeHistory(range),
@@ -1532,6 +1568,12 @@ app.whenReady().then(async () => {
   gitHosts.setAccountsListener(() => herd.emit('change'));
   // DevCatz 1.0.0's own Git accounts → the shared store (once; DialCatz then sees them too).
   void gitHosts.moveLocalAccounts().catch((e: Error) => console.warn(`Git accounts: ${e.message}`));
+  herd.onNewWebToolUpdates = (list) => {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title: list.length === 1 ? `${list[0].name} update available` : `${list.length} web tool updates available`, body: list.map((u) => `${u.name} ${u.from} → ${u.to}`).join('\n') });
+    n.on('click', () => showWindow('database'));
+    n.show();
+  };
   herd.onNewToolUpdates = (list) => {
     if (!Notification.isSupported()) return;
     const body = list.map((u) => `${u.label} ${u.from} → ${u.to}`).join('\n');

@@ -247,6 +247,19 @@ export const MCATZP_COVERAGE = {
   storageOpenData: 'tool: open_data_folder',
   // tool: open_in_dbcatz
   dbcatzOpen: 'tool: open_in_dbcatz',
+  // web database tools (TODO §48)
+  webToolOpen: 'tool: open_in_web_tool',
+  dbSetOpenWith: 'tool: open_in_web_tool',
+  webToolInstall: 'tool: install_web_tool',
+  webToolCancel: 'tool: cancel_install',
+  webToolUpdate: 'tool: update_web_tool',
+  webToolConfigure: 'tool: configure_web_tool',
+  webToolUninstall: 'tool: uninstall_web_tool',
+  webToolsCheckUpdates: 'tool: check_updates',
+  webToolCheck: 'not a tool',
+  webToolStart: 'tool: start_web_tool',
+  webToolStop: 'tool: stop_web_tool',
+  webToolSetAutoStop: 'tool: configure_web_tool',
   // tool: open_in_dialcatz
   dialcatzOpen: 'tool: open_in_dialcatz',
   dialcatzOpenMock: 'tool: open_mock_in_dialcatz',

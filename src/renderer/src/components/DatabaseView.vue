@@ -11,6 +11,8 @@ import DbServiceForm from './DbServiceForm.vue';
 import DbRemoveDialog from './DbRemoveDialog.vue';
 import DbEnvWriter from './DbEnvWriter.vue';
 import DbCatzButton from './DbCatzButton.vue';
+import DbOpenButton from './DbOpenButton.vue';
+import WebToolsCard from './WebToolsCard.vue';
 import { DB_LOGO, isActive } from '../db';
 import DbImportDialog from './DbImportDialog.vue';
 import { attempt, dbGroupRequest, herd, notify, state, uninstallRequest } from '../store';
@@ -386,7 +388,7 @@ const sourceOf = (engine: DbEngine) => engineInfo.value.find((e) => e.engine ===
             </button>
             <button class="btn btn-sm" :disabled="!!busy || !isActive(selected)" @click="act(selected, 'restart')">Restart</button>
           </template>
-          <DbCatzButton :conn-id="`svc:${selected.id}`" />
+          <DbOpenButton :service-id="selected.id" />
         </div>
         <div role="tablist" class="seg no-drag mt-3">
           <a v-for="t in ['overview', 'connection', 'logs'] as Tab[]" :key="t" role="tab" class="seg-item" :class="{ 'is-active': tab === t }" @click="tab = t">{{ t }}</a>
@@ -464,11 +466,14 @@ const sourceOf = (engine: DbEngine) => engineInfo.value.find((e) => e.engine ===
           </div>
         </template>
 
-        <div v-else-if="tab === 'connection'" class="card">
-          <div class="card-body p-4">
-            <DbEnvWriter :key="selected.id" :service="selected" />
+        <template v-else-if="tab === 'connection'">
+          <div class="card">
+            <div class="card-body p-4">
+              <DbEnvWriter :key="selected.id" :service="selected" />
+            </div>
           </div>
-        </div>
+          <WebToolsCard :service="selected" />
+        </template>
 
         <div v-else class="h-[30rem]">
           <LogView v-if="selected.engine !== 'sqlite'" :key="selected.id" :project-id="`db:${selected.id}`" />

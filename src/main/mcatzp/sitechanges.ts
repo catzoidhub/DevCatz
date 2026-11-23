@@ -175,7 +175,7 @@ export function siteChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
         }),
         global('update_runtime', 'Update a runtime', 'Installs the newer patch release of an installed runtime (see list_updates).', { runtime: { type: 'string', enum: ['node', 'bun', 'go', 'php'] }, from: VERSION }, ['runtime', 'from'], 'runtimes', (a) => ({ title: `Update ${String(a.runtime)} ${String(a.from)}?`, facts: [] }), async (a, ctx) => inBackground(api, ctx, api.runtimeUpdate(a.runtime as RuntimeKind, String(a.from)), () => api.installCancel(String(a.runtime)), { runtime: a.runtime }, 'Updated', 'Still updating: list_updates shows it; only cancel_install stops it', () => null)),
         global('check_updates', 'Check for updates', 'Asks for new versions of runtimes, tools and services; then list_updates shows them.', {}, [], 'runtimes', () => ({ title: 'Check for updates now?', facts: [{ label: 'Note', value: 'Goes online for each runtime and service' }] }), async () => {
-          await Promise.allSettled([api.checkUpdates(), api.servicesCheckUpdates(), api.gwCheckUpdates(), api.waCheckUpdates(), api.exposeCheckUpdates(), api.rustToolsCheck()]);
+          await Promise.allSettled([api.checkUpdates(), api.servicesCheckUpdates(), api.gwCheckUpdates(), api.waCheckUpdates(), api.exposeCheckUpdates(), api.rustToolsCheck(), api.webToolsCheckUpdates()]);
           return ok({ result: 'Checked: list_updates shows them' });
         }),
         global('refresh_runtimes', 'Look for runtimes again', 'Looks again for installed runtimes, and for sites in parked folders.', {}, [], 'runtimes', () => ({ title: 'Look for runtimes and sites again?', facts: [] }), async () => {

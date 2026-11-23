@@ -155,6 +155,7 @@ const sectionUpdates = computed<Partial<Record<AppSection, number>>>(() => {
   const count = (list: { update: string | null }[]) => list.filter((x) => x.update).length;
   return {
     runtimes: s.updates.list.length + s.toolUpdates.length,
+    database: count(s.webTools),
     storage: count(s.storage),
     websocket: count(s.websockets),
     search: count(s.searchEngines),

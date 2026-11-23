@@ -189,7 +189,7 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
       const log = await api.gitLog(p.id, typeof search === 'string' ? search : '', typeof skip === 'number' ? skip : 0);
       return reply(log.map((c) => ({ sha: c.sha, author: c.author, date: c.date, subject: c.subject, refs: c.refs })));
     }),
-    ...(!scopes.services ? [] : [read('list_services', 'List services', 'The services DevCatz runs and whether they are up: databases, search engines, WebSocket servers, object storage, gateways, the mail catcher. No passwords or keys.', OBJECT(), async () => {
+    ...(!scopes.services ? [] : [read('list_services', 'List services', 'The services DevCatz runs and whether they are up: databases, search engines, WebSocket servers, object storage, gateways, the mail catcher, and the web database tools (phpMyAdmin, Adminer, pgweb) with what Open uses per database. No passwords or keys.', OBJECT(), async () => {
       const s = await state();
       const svc = (x: { kind: string; name: string; installed: boolean; status: string; error: string | null; task: TaskProgress | null; config: { version?: string | null } | null }) => ({ kind: x.kind, name: x.name, installed: x.installed, status: taskProgress(x.task) ? 'installing' : x.status, progress: taskProgress(x.task), error: x.task?.error ?? x.error, version: x.config?.version ?? null });
       return reply({
@@ -200,6 +200,8 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
         gateways: s.gateways.map(svc),
         whatsapp: s.whatsapp.map((w) => svc({ ...w, kind: w.engine })),
         mail: { running: s.mail.running, count: s.mail.count, unread: s.mail.unread },
+        webTools: s.webTools.map((t) => ({ id: t.id, name: t.name, opens: t.engines, installed: t.installed, version: t.version, update: t.update, address: t.installed ? t.url : null, port: t.port, runsOn: t.runtime ? `${t.runtime === 'php' ? 'PHP' : 'Node.js'} ${t.runtimeVersion ?? '(none installed)'}` : null, status: taskProgress(t.task) ? 'installing' : t.running.length ? 'running' : t.installed ? 'stopped' : 'not installed', progress: taskProgress(t.task), error: t.task?.error ?? null, running: t.running.map((r) => ({ service: r.serviceId, address: r.url, port: r.port })) })),
+        openWith: s.settings.dbOpenWith ?? {},
       });
     }),
     read('list_db_engines', 'List database engines', 'The database engines DevCatz can run, their default port, the versions already on this computer, and anything missing to install them.', OBJECT(), async () => {
@@ -411,6 +413,8 @@ export function changeActions(api: HerdApi, scopes: Scopes): ChangeAction[] {
             if (gw) return stop(gw.name, () => api.gwCancelInstall(gw.kind));
             const wa = s.whatsapp.find((x) => taskProgress(x.task) && same(x.engine, x.name));
             if (wa) return stop(wa.name, () => api.waCancelInstall(wa.engine));
+            const wt = s.webTools.find((x) => taskProgress(x.task) && same(x.id, x.name));
+            if (wt) return stop(wt.name, () => api.webToolCancel(wt.id));
             throw new Error(`Nothing called ${String(what)} is being installed`);
           },
         },

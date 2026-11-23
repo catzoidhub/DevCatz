@@ -146,3 +146,7 @@ Kiri, runkiri.com — the code is Apache-2.0, the name and logo are not covered 
 Simple Icons 16.36.0 (zedindustries) — Zed, Settings → MCatzP.
 - garage.png — https://garagehq.deuxfleurs.fr/icons/favicon.svg (the PNG inside, 180 px; Garage, Deuxfleurs)
 - ceph.png — https://ceph.io/assets/favicons/android-chrome-192x192.png (Ceph)
+- phpmyadmin.png — https://github.com/phpmyadmin/data/blob/master/logo_fav_512.png, scaled to 128 px (phpMyAdmin)
+- adminer.svg — https://github.com/vrana/adminer/blob/master/adminer/static/logo.svg (Adminer, Jakub Vrána)
+- pgweb.png — https://github.com/sosedoff/pgweb/blob/main/static/img/icon.png, scaled to 128 px (pgweb, Dan Sosedoff)
+- rediscommander.png — the mark of https://github.com/joeferner/redis-commander/blob/master/web/static/images/RedisCommandLogo.png (left 40 px, scaled to 96 px; Redis Commander)

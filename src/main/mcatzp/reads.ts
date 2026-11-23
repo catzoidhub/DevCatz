@@ -163,7 +163,7 @@ export function moreReads(api: HerdApi, scopes: Scopes): ActionDef[] {
         { ...(read('list_herd_sites', 'Laravel Herd sites', 'The sites Laravel Herd has, for importing.', OBJECT(), async () => plain(await api.herdSites()))), platforms: ['darwin', 'win32'] as Platform[] },
         read('list_updates', 'List updates', 'Updates DevCatz knows of for runtimes, tools and services.', OBJECT(), async () => {
           const s = await state();
-          return plain({ runtimes: s.updates.list, tools: s.toolUpdates, checkedAt: s.updates.checkedAt, error: s.updates.error });
+          return plain({ runtimes: s.updates.list, tools: s.toolUpdates, webTools: s.webTools.filter((t) => t.update).map((t) => ({ id: t.id, name: t.name, from: t.version, to: t.update })), checkedAt: s.updates.checkedAt, error: s.updates.error });
         }),
         read('deps_report', 'Disk used by dependencies', 'The dependency folders of the shared sites, their size and last use.', OBJECT(), async () => plain((await api.depsReport()).filter((d) => scopes.site(d.siteId)))),
         read('monitor_snapshot', 'Monitoring now', "CPU, memory and processes of DevCatz's sites and services right now, command lines masked.", OBJECT(), async () => masked(await api.monitorSnapshot())),

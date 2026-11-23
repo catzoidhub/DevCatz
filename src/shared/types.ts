@@ -994,6 +994,10 @@ export interface Settings {
    * DialCatz's slug in `<name>.dialcatz.<default domain>` whenever that mock runs.
    */
   mockDomains?: Record<string, string>;
+  /** Web database tools (TODO §48): what is installed, at which name and port. */
+  webTools?: Partial<Record<WebToolId, WebToolConfig>>;
+  /** What Open on a database service uses, per service id: the last one picked (DBCatz when unset). */
+  dbOpenWith?: Record<string, DbOpenTool>;
   /** Monitoring: seconds between samples while the Monitoring page is open. */
   monitorLiveInterval: number;
   /** Monitoring: keep sampling (every 15 s) while the page is closed, for the 1-hour history and alerts. */
@@ -1815,6 +1819,8 @@ export interface AppState {
    * DevCatz serves on HTTP and HTTPS. Empty when DialCatz is not installed or runs none.
    */
   mocks: DialcatzMockState[];
+  /** phpMyAdmin, Adminer, pgweb (TODO §48). */
+  webTools: WebToolState[];
   docatz: DbCatzState;
   /** DevCatz's own update (Catzoid #54). */
   appUpdate: AppUpdateState;
@@ -2643,6 +2649,68 @@ export interface DbServiceConfig {
   bootstrapped?: boolean;
 }
 
+// ------------------------------------------------------------ web database tools (TODO §48)
+
+export type WebToolId = 'phpmyadmin' | 'adminer' | 'pgweb' | 'rediscommander';
+/** What Open on a database service uses: DBCatz, or one of the web tools. */
+export type DbOpenTool = 'dbcatz' | WebToolId;
+
+export interface WebToolConfig {
+  version: string;
+  /** Its name under the default domain: `adminer` → adminer.<tld>. */
+  domain: string;
+  /** 127.0.0.1 port; pgweb: the first one (one process per PostgreSQL service). */
+  port: number;
+  /** pgweb: the port of each service's process, by service id. */
+  ports?: Record<string, number>;
+  /** The PHP (phpMyAdmin, Adminer) or Node.js (Redis Commander) version it runs on; the default when unset or gone. */
+  runtime?: string;
+  /** pgweb: stop a service's pgweb after `autoStopMinutes` without a request (on unless set to false). */
+  autoStop?: boolean;
+  /** pgweb: minutes unused before it stops (default 30). */
+  autoStopMinutes?: number;
+}
+
+export interface WebToolRun {
+  /** pgweb: the PostgreSQL service it shows; null for phpMyAdmin / Adminer (every service). */
+  serviceId: string | null;
+  name: string;
+  port: number;
+  url: string;
+  pid: number | null;
+}
+
+export interface WebToolState {
+  id: WebToolId;
+  name: string;
+  description: string;
+  /** The engines it opens. */
+  engines: DbEngine[];
+  installed: boolean;
+  version: string | null;
+  /** Newer release, or null. */
+  update: string | null;
+  /** Its name under the default domain (`adminer`), the full host and the address to open. */
+  domain: string;
+  host: string;
+  url: string;
+  port: number;
+  /** For the install form: the name and a free port. */
+  defaults: { domain: string; port: number };
+  /** What it runs on: PHP (phpMyAdmin, Adminer), Node.js (Redis Commander), nothing (pgweb, one program). */
+  runtime: 'php' | 'node' | null;
+  /** The version it runs on (installed) or would run on (the default); null without a runtime or none installed. */
+  runtimeVersion: string | null;
+  /** pgweb: stops after `autoStopMinutes` unused; null for the others (they stay on). */
+  autoStop: boolean | null;
+  autoStopMinutes: number;
+  /** Why it cannot be installed or opened now (no PHP yet), or null. */
+  blocked: string | null;
+  running: WebToolRun[];
+  task: TaskProgress | null;
+  sourceUrl: string;
+}
+
 /** A server build on disk that instances run from. */
 export interface DbBinary {
   engine: DbEngine;
@@ -2734,7 +2802,7 @@ export type DbServiceInput = Omit<DbServiceConfig, 'id' | 'bootstrapped'>;
  * What the monitor measures. New kinds of services (WebSocket servers, search
  * engines) register their processes the same way and show up on their own.
  */
-export type MonitorKind = 'site' | 'php' | 'database' | 'storage' | 'websocket' | 'search' | 'whatsapp' | 'gateway' | 'container' | 'devcatz' | 'catzoid';
+export type MonitorKind = 'site' | 'php' | 'database' | 'webtool' | 'storage' | 'websocket' | 'search' | 'whatsapp' | 'gateway' | 'container' | 'devcatz' | 'catzoid';
 
 /** One point: CPU %, memory bytes, network and disk rates (bytes/s). */
 export interface MonitorPoint {
@@ -3270,6 +3338,25 @@ export interface HerdApi {
   dbcatzInstall(connId: string | null, database?: string): Promise<void>;
   dbcatzCancelInstall(): Promise<void>;
   dbcatzDismiss(): Promise<void>;
+  /** Web database tools (TODO §48). Install with the name and port picked in the form; opens the service after when given. */
+  webToolInstall(id: WebToolId, opts: { domain: string; port: number; runtime?: string | null }, open?: { serviceId: string; database?: string }): Promise<void>;
+  webToolCancel(id: WebToolId): Promise<void>;
+  webToolUpdate(id: WebToolId): Promise<void>;
+  webToolUninstall(id: WebToolId): Promise<void>;
+  /** New name and / or port; running processes move to them. */
+  webToolConfigure(id: WebToolId, opts: { domain: string; port: number; runtime?: string | null }): Promise<void>;
+  /** Checks a name and port for the form: a message per field, null when fine. */
+  webToolCheck(id: WebToolId, opts: { domain: string; port: number }): Promise<{ domain: string | null; port: string | null }>;
+  /** Opens a service (optionally at a database) in the tool, starting it when needed. */
+  webToolOpen(id: WebToolId, serviceId: string, database?: string): Promise<void>;
+  webToolsCheckUpdates(): Promise<string[]>;
+  /** Starts / stops a web tool; pgweb per PostgreSQL service (serviceId), or every pgweb when stopping without one. */
+  webToolStart(id: WebToolId, serviceId?: string): Promise<void>;
+  webToolStop(id: WebToolId, serviceId?: string): Promise<void>;
+  /** pgweb: stop after `minutes` unused (5–1440, default 30), or keep running until stopped. */
+  webToolSetAutoStop(id: WebToolId, on: boolean, minutes?: number): Promise<void>;
+  /** Remembers what Open uses for this service (the last one picked). */
+  dbSetOpenWith(serviceId: string, tool: DbOpenTool): Promise<void>;
   searchInstall(kind: SearchKind, config: SearchConfig): Promise<void>;
   searchUpdate(kind: SearchKind, config: SearchConfig): Promise<void>;
   searchCancelInstall(kind: SearchKind): Promise<void>;
@@ -3630,5 +3717,5 @@ export const API_METHODS: (keyof HerdApi)[] = [
   'installDeps', 'depCommands', 'depRun', 'nodeRemote', 'nodeInstall', 'nodeUninstall', 'nodeSetDefault', 'shimPathSet',
   'bunRemote', 'bunInstall', 'bunUninstall', 'bunSetDefault',
   'goRemote', 'goInstall', 'goUninstall', 'goSetDefault', 'rustInstall', 'rustRemote', 'rustToolchainInstall', 'rustToolchainUninstall', 'rustSetDefault', 'rustTargetAdd', 'rustToolInstall', 'rustInstallLinker', 'rustToolsCheck', 'rustToolUninstall', 'toolsState', 'toolInstall', 'toolUninstall', 'repairElectron', 'installCancel', 'uvInstall', 'pythonRemote', 'pythonInstall', 'pythonUninstall', 'pythonSetDefault', 'rvInstall', 'rubyRemote', 'rubyInstall', 'rubyUninstall', 'rubySetDefault', 'rubyBuildToolsInstall',
-  'phpRemote', 'phpInstall', 'phpUninstall', 'phpAddFolder', 'phpRemoveFolder', 'phpSetDefault', 'phpGetIni', 'phpSetIni', 'composerInstall', 'phpExtensions', 'phpExtInstall', 'phpExtSetEnabled', 'phpExtRemove', 'phpExtDismiss', 'phpOpenIni', 'restartServices', 'checkUpdates', 'runtimeUpdate', 'goDbInfo', 'goDbTask', 'stackTask', 'dbEngines', 'dbVersions', 'dbDefaults', 'dbCreate', 'dbCancelCreate', 'dbDismiss', 'dbUpdate', 'dbRemove', 'dbAction', 'dbOpenData', 'dbOpenBinaries', 'dbDetect', 'dbList', 'dbCreateDatabase', 'dbBuildAction', 'dbcatzOpen', 'dbcatzInstall', 'dbcatzCancelInstall', 'dbcatzDismiss', 'monitorSnapshot', 'monitorLive', 'monitorHistory', 'monitorExport', 'searchInstall', 'searchUpdate', 'searchCancelInstall', 'searchUninstall', 'searchAction', 'searchOpenData', 'searchIndexes', 'searchCreateIndex', 'searchDeleteIndex', 'searchGetSettings', 'searchSaveSettings', 'searchQuery', 'searchUpsert', 'searchImportFile', 'searchDeleteDoc', 'mailAction', 'mailList', 'mailGet', 'mailRaw', 'mailMarkRead', 'mailDelete', 'mailDeleteAll', 'mailSaveAttachment', 'mailAttachmentData', 'mailForward', 'mailForwardConfig', 'mailSetForwardConfig', 'mailEnv', 'mailSendTest', 'mailOpenData', 'exposeInstall', 'exposeCancelInstall', 'exposeUninstall', 'exposeCheckUpdates', 'exposeUpgrade', 'exposeCloudflareLogin', 'exposeCloudflareLogout', 'exposeSetAccount', 'exposeStart', 'exposeStop', 'exposeRequests', 'exposeClearRequests', 'exposeReplay', 'waInstall', 'waUpdate', 'waCancelInstall', 'waUninstall', 'waAction', 'waOpenData', 'waCheckUpdates', 'taskDismiss', 'gwInstall', 'gwUpdate', 'gwCancelInstall', 'gwUninstall', 'gwAction', 'gwOpenData', 'gwCheckUpdates', 'gwUpgrade', 'gwMove', 'gwSetAutoStart', 'gwSend', 'gwEnv', 'gwSms', 'gwClearSms', 'waUpgrade', 'waSessionStart', 'waSessionQr', 'waSessionLogout', 'waSessionRemove', 'waSend', 'waContacts', 'waGroups', 'waMessages', 'waClearMessages', 'waHooks', 'waSetHook', 'waRemoveHook', 'waDeliveries', 'waReplay', 'waEnv', 'gitStatus', 'gitInstall', 'gitUpdateCheck', 'gitUpdate', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitDiscard', 'gitCommit', 'gitSync', 'gitCancel', 'gitLog', 'gitShow', 'gitBranches', 'gitBranch', 'aiSettings', 'aiSetSettings', 'aiSetKey', 'aiModels', 'aiProbe', 'aiTest', 'aiCancel', 'aiPreviewExplain', 'aiExplain', 'aiPreviewCommit', 'aiCommit', 'aiPreviewDockerEdit', 'aiDockerEdit', 'aiPreviewEnv', 'aiEnv', 'aiPreviewSearch', 'aiSearch', 'aiPreviewWebhook', 'aiWebhook', 'aiPreviewAsk', 'aiAsk', 'aiRunAction', 'worktreeList', 'worktreeCreate', 'worktreeAdd', 'worktreeCheck', 'worktreeRemove', 'worktreePrune', 'gitStashes', 'gitStash', 'gitTags', 'gitTag', 'gitOperation', 'gitSquash', 'gitCherryPick', 'gitRevert', 'gitReset', 'gitRestoreFile', 'gitOpenFile', 'gitIgnoreSuggestions', 'gitIgnoreAdd', 'gitSetIdentity', 'gitAddRemote', 'gitPulls', 'gitCreatePull', 'gitCheckoutPull', 'gitAddAccount', 'gitRemoveAccount', 'gitRepos', 'gitSshKeys', 'gitSshGenerate', 'gitSshAddToAccount', 'gitClone', 'gitCancelClone', 'searchUpgrade', 'wsUpgrade', 'storageUpgrade', 'servicesCheckUpdates', 'serviceSetAutoStart', 'searchTasks', 'searchCancelTasks', 'searchClearTasks', 'searchBackups', 'searchCreateBackup', 'searchDeleteBackup', 'searchRevealBackup', 'searchRestoreBackup', 'searchExport', 'searchKeys', 'searchCreateKey', 'searchDeleteKey', 'searchEnv', 'storageEnv', 'scoutCommand', 'wsInstall', 'wsUpdate', 'wsCancelInstall', 'wsUninstall', 'wsAction', 'wsOpenData', 'wsStats', 'wsPublish', 'wsClientAuth', 'wsEnv', 'reverbEnv', 'laravelBroadcast', 'laravelTestBroadcast', 'storageInstall', 'storageUpdate', 'storageCancelInstall', 'storageUninstall', 'storageAction', 'storageOpenData', 'openLogsFolder', 'pickFile', 's3Buckets', 's3CreateBucket', 's3DeleteBucket', 's3SetPublic', 's3List', 's3Upload', 's3CancelUpload', 's3Download', 's3Delete', 's3MkDir', 'dockerStatus', 'dockerFiles', 'dockerServices', 'dockerGenerate', 'dockerWrite', 'dockerListFiles', 'dockerDevPreview', 'dockerDocatzEnv', 'dockerDocatzEnvReplace', 'dockerCancel', 'dockerDevWrite', 'dockerComposeEnv', 'dockerReadFile', 'dockerSaveFile', 'dockerCompose', 'startEngine', 'setFavorite', 'setSiteGroup', 'renameGroup', 'deleteGroup', 'toggleGroup', 'moveGroup', 'siteMenu', 'groupMenu', 'setSiteOrder', 'dbSetFavorite', 'dbSetGroup', 'dbGroupAction', 'dbSetOrder', 'dbMenu', 'dbGroupMenu', 'laravelLog', 'herdSites', 'setTld', 'installResolver', 'uninstallResolver', 'restartDns', 'installCleanUrls', 'uninstallCleanUrls', 'startPortProxy',
+  'phpRemote', 'phpInstall', 'phpUninstall', 'phpAddFolder', 'phpRemoveFolder', 'phpSetDefault', 'phpGetIni', 'phpSetIni', 'composerInstall', 'phpExtensions', 'phpExtInstall', 'phpExtSetEnabled', 'phpExtRemove', 'phpExtDismiss', 'phpOpenIni', 'restartServices', 'checkUpdates', 'runtimeUpdate', 'goDbInfo', 'goDbTask', 'stackTask', 'dbEngines', 'dbVersions', 'dbDefaults', 'dbCreate', 'dbCancelCreate', 'dbDismiss', 'dbUpdate', 'dbRemove', 'dbAction', 'dbOpenData', 'dbOpenBinaries', 'dbDetect', 'dbList', 'dbCreateDatabase', 'dbBuildAction', 'dbcatzOpen', 'dbcatzInstall', 'dbcatzCancelInstall', 'dbcatzDismiss', 'webToolInstall', 'webToolCancel', 'webToolUpdate', 'webToolUninstall', 'webToolConfigure', 'webToolCheck', 'webToolOpen', 'webToolsCheckUpdates', 'webToolStart', 'webToolStop', 'webToolSetAutoStop', 'dbSetOpenWith', 'monitorSnapshot', 'monitorLive', 'monitorHistory', 'monitorExport', 'searchInstall', 'searchUpdate', 'searchCancelInstall', 'searchUninstall', 'searchAction', 'searchOpenData', 'searchIndexes', 'searchCreateIndex', 'searchDeleteIndex', 'searchGetSettings', 'searchSaveSettings', 'searchQuery', 'searchUpsert', 'searchImportFile', 'searchDeleteDoc', 'mailAction', 'mailList', 'mailGet', 'mailRaw', 'mailMarkRead', 'mailDelete', 'mailDeleteAll', 'mailSaveAttachment', 'mailAttachmentData', 'mailForward', 'mailForwardConfig', 'mailSetForwardConfig', 'mailEnv', 'mailSendTest', 'mailOpenData', 'exposeInstall', 'exposeCancelInstall', 'exposeUninstall', 'exposeCheckUpdates', 'exposeUpgrade', 'exposeCloudflareLogin', 'exposeCloudflareLogout', 'exposeSetAccount', 'exposeStart', 'exposeStop', 'exposeRequests', 'exposeClearRequests', 'exposeReplay', 'waInstall', 'waUpdate', 'waCancelInstall', 'waUninstall', 'waAction', 'waOpenData', 'waCheckUpdates', 'taskDismiss', 'gwInstall', 'gwUpdate', 'gwCancelInstall', 'gwUninstall', 'gwAction', 'gwOpenData', 'gwCheckUpdates', 'gwUpgrade', 'gwMove', 'gwSetAutoStart', 'gwSend', 'gwEnv', 'gwSms', 'gwClearSms', 'waUpgrade', 'waSessionStart', 'waSessionQr', 'waSessionLogout', 'waSessionRemove', 'waSend', 'waContacts', 'waGroups', 'waMessages', 'waClearMessages', 'waHooks', 'waSetHook', 'waRemoveHook', 'waDeliveries', 'waReplay', 'waEnv', 'gitStatus', 'gitInstall', 'gitUpdateCheck', 'gitUpdate', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitDiscard', 'gitCommit', 'gitSync', 'gitCancel', 'gitLog', 'gitShow', 'gitBranches', 'gitBranch', 'aiSettings', 'aiSetSettings', 'aiSetKey', 'aiModels', 'aiProbe', 'aiTest', 'aiCancel', 'aiPreviewExplain', 'aiExplain', 'aiPreviewCommit', 'aiCommit', 'aiPreviewDockerEdit', 'aiDockerEdit', 'aiPreviewEnv', 'aiEnv', 'aiPreviewSearch', 'aiSearch', 'aiPreviewWebhook', 'aiWebhook', 'aiPreviewAsk', 'aiAsk', 'aiRunAction', 'worktreeList', 'worktreeCreate', 'worktreeAdd', 'worktreeCheck', 'worktreeRemove', 'worktreePrune', 'gitStashes', 'gitStash', 'gitTags', 'gitTag', 'gitOperation', 'gitSquash', 'gitCherryPick', 'gitRevert', 'gitReset', 'gitRestoreFile', 'gitOpenFile', 'gitIgnoreSuggestions', 'gitIgnoreAdd', 'gitSetIdentity', 'gitAddRemote', 'gitPulls', 'gitCreatePull', 'gitCheckoutPull', 'gitAddAccount', 'gitRemoveAccount', 'gitRepos', 'gitSshKeys', 'gitSshGenerate', 'gitSshAddToAccount', 'gitClone', 'gitCancelClone', 'searchUpgrade', 'wsUpgrade', 'storageUpgrade', 'servicesCheckUpdates', 'serviceSetAutoStart', 'searchTasks', 'searchCancelTasks', 'searchClearTasks', 'searchBackups', 'searchCreateBackup', 'searchDeleteBackup', 'searchRevealBackup', 'searchRestoreBackup', 'searchExport', 'searchKeys', 'searchCreateKey', 'searchDeleteKey', 'searchEnv', 'storageEnv', 'scoutCommand', 'wsInstall', 'wsUpdate', 'wsCancelInstall', 'wsUninstall', 'wsAction', 'wsOpenData', 'wsStats', 'wsPublish', 'wsClientAuth', 'wsEnv', 'reverbEnv', 'laravelBroadcast', 'laravelTestBroadcast', 'storageInstall', 'storageUpdate', 'storageCancelInstall', 'storageUninstall', 'storageAction', 'storageOpenData', 'openLogsFolder', 'pickFile', 's3Buckets', 's3CreateBucket', 's3DeleteBucket', 's3SetPublic', 's3List', 's3Upload', 's3CancelUpload', 's3Download', 's3Delete', 's3MkDir', 'dockerStatus', 'dockerFiles', 'dockerServices', 'dockerGenerate', 'dockerWrite', 'dockerListFiles', 'dockerDevPreview', 'dockerDocatzEnv', 'dockerDocatzEnvReplace', 'dockerCancel', 'dockerDevWrite', 'dockerComposeEnv', 'dockerReadFile', 'dockerSaveFile', 'dockerCompose', 'startEngine', 'setFavorite', 'setSiteGroup', 'renameGroup', 'deleteGroup', 'toggleGroup', 'moveGroup', 'siteMenu', 'groupMenu', 'setSiteOrder', 'dbSetFavorite', 'dbSetGroup', 'dbGroupAction', 'dbSetOrder', 'dbMenu', 'dbGroupMenu', 'laravelLog', 'herdSites', 'setTld', 'installResolver', 'uninstallResolver', 'restartDns', 'installCleanUrls', 'uninstallCleanUrls', 'startPortProxy',
 ];

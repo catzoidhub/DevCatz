@@ -12,13 +12,15 @@ import dbcatzLogo from '../assets/logos/dbcatz.png';
  * latest release from GitHub, verified, copied to /Applications — and then
  * opens the same connection.
  */
-const props = withDefaults(defineProps<{ connId?: string | null; database?: string; label?: string; primary?: boolean; title?: string; size?: 'sm' | 'md' }>(), {
+const props = withDefaults(defineProps<{ connId?: string | null; database?: string; label?: string; primary?: boolean; title?: string; size?: 'sm' | 'md'; joinItem?: boolean; hide?: boolean }>(), {
   connId: null,
   database: undefined,
   label: 'Open in DBCatz',
   primary: false,
   title: undefined,
   size: 'sm',
+  joinItem: false,
+  hide: false,
 });
 const asking = ref(false);
 const task = computed(() => state.value?.dbcatz.task ?? null);
@@ -29,6 +31,8 @@ async function open() {
   const ok = await attempt(() => herd.dbcatzOpen(props.connId, props.database));
   if (ok === false) asking.value = true;
 }
+/** The split button (DbOpenButton) opens DBCatz from its menu too. */
+defineExpose({ open });
 async function install() {
   await attempt(() => herd.dbcatzInstall(props.connId, props.database));
 }
@@ -40,7 +44,7 @@ function close() {
 </script>
 
 <template>
-  <button type="button" class="btn gap-2" :class="[primary ? 'btn-primary' : '', size === 'sm' ? 'btn-sm' : '']" :title="hint" @click="open">
+  <button type="button" class="btn gap-2" :class="[primary ? 'btn-primary' : '', size === 'sm' ? 'btn-sm' : '', joinItem ? 'join-item' : '', hide ? 'hidden' : '']" :title="hint" @click="open">
     <img :src="dbcatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ label }}
   </button>
 

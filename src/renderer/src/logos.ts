@@ -1,4 +1,4 @@
-import type { MonitorEntity, SearchKind, StorageKind, WaEngine, WsKind, DbServiceState } from '@shared/types';
+import type { MonitorEntity, SearchKind, StorageKind, WaEngine, WebToolId, WsKind, DbServiceState } from '@shared/types';
 import rustfsLogo from './assets/logos/rustfs.png';
 import minioLogo from './assets/logos/minio.png';
 import siloLogo from './assets/logos/silo.svg';
@@ -22,6 +22,10 @@ import devcatzLogo from './assets/logos/devcatz.svg';
 import dbcatzLogo from './assets/logos/dbcatz.png';
 import dialcatzLogo from './assets/logos/dialcatz.png';
 import docatzLogo from './assets/logos/docatz.png';
+import phpmyadminLogo from './assets/logos/phpmyadmin.png';
+import adminerLogo from './assets/logos/adminer.svg';
+import pgwebLogo from './assets/logos/pgweb.png';
+import rediscommanderLogo from './assets/logos/rediscommander.png';
 import { DB_LOGO } from './db';
 import { GW_LOGO } from './gateways';
 
@@ -31,6 +35,9 @@ export const SEARCH_LOGO: Record<SearchKind, string> = { meilisearch: meiliLogo,
 export const WS_LOGO: Record<WsKind, string> = { reverb: reverbLogo, sockudo: sockudoLogo, centrifugo: centrifugoLogo, mercure: mercureLogo, nats: natsLogo };
 export const WA_LOGO: Record<WaEngine, string> = { gowa: gowaLogo, waha: wahaLogo };
 export const DEVCATZ_LOGO = devcatzLogo;
+/** phpMyAdmin, Adminer, pgweb (TODO §48). pgweb's mark is black: shown on a light tile (WEB_TOOL_TILE) so it stays seen in dark mode. */
+export const WEB_TOOL_LOGO: Record<WebToolId, string> = { phpmyadmin: phpmyadminLogo, adminer: adminerLogo, pgweb: pgwebLogo, rediscommander: rediscommanderLogo };
+export const WEB_TOOL_TILE: Record<WebToolId, string> = { phpmyadmin: '', adminer: '', pgweb: 'rounded bg-white p-px', rediscommander: '' };
 
 /** The logo of a Monitoring row, from the engine named in its id (`storage:rustfs`, `ws:reverb` …); null when there is none. */
 export function monitorLogo(e: MonitorEntity, databases: DbServiceState[]): string | null {
@@ -51,6 +58,8 @@ export function monitorLogo(e: MonitorEntity, databases: DbServiceState[]): stri
       return pick(WA_LOGO);
     case 'gateway':
       return pick(GW_LOGO);
+    case 'webtool':
+      return WEB_TOOL_LOGO[key.split(':')[0] as WebToolId] ?? null;
     case 'devcatz':
       return DEVCATZ_LOGO;
     case 'catzoid':

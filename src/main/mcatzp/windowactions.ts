@@ -1,5 +1,5 @@
 import type { ActionDef, CallResult } from '@catzoid/mcatzp-host';
-import type { GwKind, HerdApi, SearchKind, StorageKind, WaEngine, WsKind } from '@shared/types';
+import type { GwKind, HerdApi, SearchKind, StorageKind, WaEngine, WebToolId, WsKind } from '@shared/types';
 import { findSite, inBackground, type ChangeAction, type Scopes } from './actions';
 
 /**
@@ -72,6 +72,17 @@ export function windowChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
     if (!m) throw new Error(`No mock server ${String(ref)} is running (see list_mocks)`);
     return m;
   };
+  const WEB_TOOL = { type: 'string', enum: ['phpmyadmin', 'adminer', 'pgweb', 'rediscommander'] };
+  /** An installed web tool and a database service it opens. */
+  const webToolFor = async (tool: unknown, service: unknown) => {
+    const s = await state();
+    const t = s.webTools.find((x) => x.id === tool);
+    if (!t?.installed) throw new Error(`${String(tool)} is not installed: install_web_tool installs it`);
+    const d = s.databases.find((x) => x.id === service || x.name === service);
+    if (!d) throw new Error(`No database service ${String(service)}`);
+    if (!t.engines.includes(d.engine)) throw new Error(`${t.name} does not open ${d.engineName}`);
+    return { t, d };
+  };
   const INSTALLED = (found: boolean, app: string) => ok({ opened: found, ...(found ? {} : { note: `${app} is not installed: install_catzoid_app installs it` }) });
 
   return [
@@ -115,6 +126,61 @@ export function windowChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
             if (!d) throw new Error(`No database service ${String(a.service)}`);
             return INSTALLED(await api.dbcatzOpen(d.id, typeof a.database === 'string' ? a.database : undefined), 'DBCatz');
           }),
+          act('open_in_web_tool', 'Open in phpMyAdmin, Adminer or pgweb', 'Opens a database service, optionally one database, in an installed web tool (list_services shows webTools and which engines each opens). It is remembered as what Open uses for that service.', { tool: WEB_TOOL, service: S('A database id or name from list_services.'), database: { type: 'string', maxLength: 200 } }, ['tool', 'service'], async (a) => {
+            const { t, d } = await webToolFor(a.tool, a.service);
+            return { title: `Open ${d.name} in ${t.name}?`, facts: [{ label: 'Address', value: t.host }, ...(typeof a.database === 'string' ? [{ label: 'Database', value: a.database }] : [])], page: `db:${d.id}` };
+          }, async (a) => {
+            const { t, d } = await webToolFor(a.tool, a.service);
+            await api.dbSetOpenWith(d.id, t.id);
+            await api.webToolOpen(t.id, d.id, typeof a.database === 'string' ? a.database : undefined);
+            return ok({ opened: d.name, in: t.name });
+          }),
+          act('install_web_tool', 'Install phpMyAdmin, Adminer, pgweb or Redis Commander', 'Downloads a web database tool (checksums checked) and serves it at its own address, <name>.<default domain>. phpMyAdmin and Adminer run on an installed PHP, Redis Commander on an installed Node.js (the default one unless `runtime` names another). `cancel_install` stops it.', { tool: WEB_TOOL, domain: { type: 'string', pattern: '^[a-z0-9]([a-z0-9-]{0,48}[a-z0-9])?$', description: 'Its name under the default domain; default: the tool id.' }, port: { type: 'integer', minimum: 1024, maximum: 65535 }, runtime: { type: 'string', maxLength: 40, description: 'The PHP (phpMyAdmin, Adminer) or Node.js (Redis Commander) version.' } }, ['tool'], async (a) => {
+            const t = (await state()).webTools.find((x) => x.id === a.tool)!;
+            if (t.installed) throw new Error(`${t.name} is already installed`);
+            return { title: `Install ${t.name}?`, facts: [{ label: 'Address', value: `${typeof a.domain === 'string' ? a.domain : t.defaults.domain}.${t.host.split('.').slice(1).join('.')}` }, { label: 'Port', value: String(typeof a.port === 'number' ? a.port : t.defaults.port) }], page: 'database' };
+          }, async (a, ctx) => {
+            const t = (await state()).webTools.find((x) => x.id === a.tool)!;
+            return inBackground(api, ctx, api.webToolInstall(t.id, { domain: typeof a.domain === 'string' ? a.domain : t.defaults.domain, port: typeof a.port === 'number' ? a.port : t.defaults.port, runtime: typeof a.runtime === 'string' ? a.runtime : null }), () => api.webToolCancel(t.id), { tool: t.name }, 'Installed', 'Still installing: list_services shows it when done', () => null);
+          }, false),
+          act('update_web_tool', 'Update phpMyAdmin, Adminer or pgweb', 'Installs the newer release a web tool has (list_updates), keeping its address and port.', { tool: WEB_TOOL }, ['tool'], async (a) => {
+            const t = (await state()).webTools.find((x) => x.id === a.tool && x.installed);
+            if (!t) throw new Error(`${String(a.tool)} is not installed`);
+            return { title: `Update ${t.name}?`, facts: [{ label: 'Version', value: `${t.version} → ${t.update ?? 'the latest'}` }], page: 'database' };
+          }, async (a, ctx) => inBackground(api, ctx, api.webToolUpdate(a.tool as WebToolId), () => api.webToolCancel(a.tool as WebToolId), { tool: a.tool }, 'Updated', 'Still updating: list_services shows it when done', () => null), false),
+          act('configure_web_tool', "Change a web tool's address, port or PHP", 'Sets the name under the default domain, the port, (phpMyAdmin / Adminer / Redis Commander) the PHP or Node.js version and (pgweb) autoStop: stop after autoStopMinutes unused (default 30).', { tool: WEB_TOOL, domain: { type: 'string', pattern: '^[a-z0-9]([a-z0-9-]{0,48}[a-z0-9])?$' }, port: { type: 'integer', minimum: 1024, maximum: 65535 }, runtime: { type: 'string', maxLength: 40, description: 'The PHP (phpMyAdmin, Adminer) or Node.js (Redis Commander) version.' }, autoStop: { type: 'boolean' }, autoStopMinutes: { type: 'integer', minimum: 5, maximum: 1440 } }, ['tool'], async (a) => {
+            const t = (await state()).webTools.find((x) => x.id === a.tool && x.installed);
+            if (!t) throw new Error(`${String(a.tool)} is not installed`);
+            return { title: `Change ${t.name}?`, facts: [{ label: 'Name', value: String(a.domain ?? t.domain) }, { label: 'Port', value: String(a.port ?? t.port) }, ...(t.runtime ? [{ label: t.runtime === 'php' ? 'PHP' : 'Node.js', value: String(a.runtime ?? t.runtimeVersion) }] : []), ...(typeof a.autoStop === 'boolean' || typeof a.autoStopMinutes === 'number' ? [{ label: 'Stop when unused', value: (a.autoStop ?? t.autoStop) === false ? 'off' : `after ${String(a.autoStopMinutes ?? t.autoStopMinutes)} minutes` }] : [])], page: 'database' };
+          }, async (a) => {
+            const t = (await state()).webTools.find((x) => x.id === a.tool && x.installed)!;
+            await api.webToolConfigure(t.id, { domain: typeof a.domain === 'string' ? a.domain : t.domain, port: typeof a.port === 'number' ? a.port : t.port, runtime: typeof a.runtime === 'string' ? a.runtime : null });
+            if (typeof a.autoStop === 'boolean' || typeof a.autoStopMinutes === 'number') await api.webToolSetAutoStop(t.id, typeof a.autoStop === 'boolean' ? a.autoStop : t.autoStop !== false, typeof a.autoStopMinutes === 'number' ? a.autoStopMinutes : undefined);
+            return ok({ result: 'Changed' });
+          }),
+          act('start_web_tool', 'Start phpMyAdmin, Adminer or pgweb', 'Starts an installed web tool; pgweb starts for one PostgreSQL service (`service`).', { tool: WEB_TOOL, service: S('pgweb: a PostgreSQL service id or name from list_services.') }, ['tool'], async (a) => {
+            const t = (await state()).webTools.find((x) => x.id === a.tool && x.installed);
+            if (!t) throw new Error(`${String(a.tool)} is not installed`);
+            return { title: `Start ${t.name}?`, facts: typeof a.service === 'string' ? [{ label: 'Service', value: a.service }] : [], page: 'database' };
+          }, async (a) => {
+            const d = typeof a.service === 'string' ? (await state()).databases.find((x) => x.id === a.service || x.name === a.service) : undefined;
+            await api.webToolStart(a.tool as WebToolId, d?.id);
+            return ok({ result: 'Started' });
+          }),
+          act('stop_web_tool', 'Stop phpMyAdmin, Adminer or pgweb', 'Stops a web tool; pgweb of one PostgreSQL service when `service` is given, else every pgweb. Open starts it again.', { tool: WEB_TOOL, service: S('pgweb: a PostgreSQL service id or name from list_services.') }, ['tool'], async (a) => {
+            const t = (await state()).webTools.find((x) => x.id === a.tool && x.installed);
+            if (!t) throw new Error(`${String(a.tool)} is not installed`);
+            return { title: `Stop ${t.name}?`, facts: typeof a.service === 'string' ? [{ label: 'Service', value: a.service }] : [], page: 'database' };
+          }, async (a) => {
+            const d = typeof a.service === 'string' ? (await state()).databases.find((x) => x.id === a.service || x.name === a.service) : undefined;
+            await api.webToolStop(a.tool as WebToolId, d?.id);
+            return ok({ result: 'Stopped' });
+          }),
+          act('uninstall_web_tool', 'Uninstall phpMyAdmin, Adminer or pgweb', 'Stops a web tool and removes its files and address. Databases are not touched; Open goes back to DBCatz where it was the choice.', { tool: WEB_TOOL }, ['tool'], async (a) => {
+            const t = (await state()).webTools.find((x) => x.id === a.tool && x.installed);
+            if (!t) throw new Error(`${String(a.tool)} is not installed`);
+            return { title: `Uninstall ${t.name}?`, facts: [{ label: 'Goes', value: `its files and ${t.host}` }, { label: 'Stays', value: 'every database' }], page: 'database' };
+          }, async (a) => (await api.webToolUninstall(a.tool as WebToolId), ok({ result: 'Uninstalled' }))),
           act('open_in_dialcatz', 'Open in DialCatz', "Opens a site's API import in DialCatz.", { site: SITE }, ['site'], async (a) => {
             const p = await site(a.site);
             return { title: `Open ${p.name} in DialCatz?`, facts: [], page: `api:${p.id}` };
