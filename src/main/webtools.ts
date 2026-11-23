@@ -1042,6 +1042,10 @@ export class WebTools {
 
   /** Stops pgweb / mongo-express of services that stopped or are gone, and those nobody used for their auto-stop minutes. */
   prune(): void {
+    // What Open uses for a service that is gone goes with it.
+    const ids = new Set(this.deps.services().map((d) => d.id));
+    const w = store.settings.dbOpenWith ?? {};
+    if (Object.keys(w).some((k) => !ids.has(k))) store.updateSettings({ dbOpenWith: Object.fromEntries(Object.entries(w).filter(([k]) => ids.has(k))) });
     for (const r of [...this.runs.values()]) {
       if (TOOLS[r.id].perService && r.serviceId) {
         const s = this.servicesOf(r.id).find((x) => x.id === r.serviceId);
