@@ -43,6 +43,8 @@ interface ToolDef {
   description: string;
   engines: DbEngine[];
   runtime: ToolRuntime | null;
+  /** Its name under the default domain unless you pick another: redis-commander.<tld>, not rediscommander. */
+  domain?: string;
   /** One process per service (pgweb, mongo-express: one connection each), at `<service>.<name>.<tld>`. */
   perService?: boolean;
   port: number;
@@ -215,6 +217,7 @@ const TOOLS: Record<WebToolId, ToolDef> = {
     description: 'A web viewer for Redis and Valkey: keys, values, TTLs and a command line.',
     engines: ['redis', 'valkey'],
     runtime: 'node',
+    domain: 'redis-commander',
     port: 8093,
     sourceUrl: 'https://github.com/joeferner/redis-commander',
     latest: () => npmLatest('redis-commander'),
@@ -225,6 +228,7 @@ const TOOLS: Record<WebToolId, ToolDef> = {
     description: 'A web viewer for MongoDB: databases, collections and documents. One per service.',
     engines: ['mongodb'],
     runtime: 'node',
+    domain: 'mongo-express',
     perService: true,
     port: 8094,
     sourceUrl: 'https://github.com/mongo-express/mongo-express',
@@ -519,7 +523,7 @@ export class WebTools {
     store.updateSettings({ webTools: all });
   }
   private host(id: WebToolId): string {
-    return `${this.config(id)?.domain ?? id}.${tld()}`;
+    return `${this.config(id)?.domain ?? TOOLS[id].domain ?? id}.${tld()}`;
   }
 
   private servicesOf(id: WebToolId): DbServiceState[] {
@@ -542,11 +546,11 @@ export class WebTools {
         installed: !!c,
         version: c?.version ?? null,
         update: c ? (this.updates.get(id) ?? null) : null,
-        domain: c?.domain ?? id,
+        domain: c?.domain ?? t.domain ?? id,
         host,
         url: this.deps.urlOf(host),
         port: c?.port ?? port,
-        defaults: { domain: id, port },
+        defaults: { domain: t.domain ?? id, port },
         runtime: t.runtime,
         runtimeVersion: t.runtime ? (c?.runtime ?? this.deps.runtime(t.runtime)?.version ?? null) : null,
         perService: !!t.perService,
@@ -582,7 +586,7 @@ export class WebTools {
     else {
       const host = `${name}.${tld()}`;
       const owner = this.deps.domainOwner(host);
-      const other = WEB_TOOL_IDS.find((x) => x !== id && (this.config(x)?.domain ?? x) === name);
+      const other = WEB_TOOL_IDS.find((x) => x !== id && (this.config(x)?.domain ?? TOOLS[x].domain ?? x) === name);
       if (owner) domain = `${host} is the site ${owner}'s address`;
       else if (other) domain = `${host} is ${TOOLS[other].name}'s address`;
     }
