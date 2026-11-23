@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { constants as zlibConstants, gunzipSync } from 'node:zlib';
 import { delimiter, dirname, join } from 'node:path';
 import type { DbEngine, DbOpenTool, DbServiceState, TaskProgress, WebToolConfig, WebToolFound, WebToolId, WebToolRun, WebToolState } from '@shared/types';
 import type { Route } from './proxy';
@@ -95,6 +96,43 @@ async function npmFetch(pkg: string, v: string, into: string, rt: RuntimeInfo | 
   const res = isWin ? await run(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', npm, ...args], { env, timeout: 600_000 }) : await run(npm, args, { env, timeout: 600_000 });
   if (res.code !== 0) throw new Error(`npm install: ${(res.stderr || res.stdout).trim().split('\n').slice(-3).join(' ')}`);
   if (!existsSync(join(into, 'node_modules', pkg, check))) throw new Error(`${pkg} is not in the download`);
+}
+
+/**
+ * mongo-express ships to npm without its pages (they are built with webpack from src/, which the package leaves out), so
+ * DevCatz builds them once at install:
+ *  1. the source of the release tag from GitHub, checked to be that tag's commit (git archive writes the commit id);
+ *  2. its dependencies with the Yarn the repository carries, `--immutable` against yarn.lock (every package checked
+ *     against the checksum there) and `--mode=skip-build` (no install scripts run);
+ *  3. webpack builds the pages; then the build tools go (`workspaces focus --production`), leaving ~45 MB.
+ */
+async function buildMongoExpress(v: string, into: string, tmp: string, progress: (received: number, total: number) => void, rt: RuntimeInfo | null): Promise<void> {
+  if (!rt) throw new Error('Needs Node.js');
+  const repo = 'mongo-express/mongo-express';
+  const ref = await githubJson<{ object: { sha: string; type: string } }>(`/repos/${repo}/git/ref/tags/v${v}`);
+  const commit = ref.object.type === 'tag' ? (await githubJson<{ object: { sha: string } }>(`/repos/${repo}/git/tags/${ref.object.sha}`)).object.sha : ref.object.sha;
+  const tgz = join(tmp, 'src.tar.gz');
+  await downloadVerified(`https://codeload.github.com/${repo}/tar.gz/refs/tags/v${v}`, tgz, '', progress);
+  const head = gunzipSync(readFileSync(tgz), { finishFlush: zlibConstants.Z_SYNC_FLUSH }).subarray(0, 4096).toString('latin1');
+  if (/comment=([0-9a-f]{40})/.exec(head)?.[1] !== commit) throw new Error(`The source of mongo-express ${v} is not the release's commit (${commit.slice(0, 7)})`);
+  mkdirSync(join(tmp, 'x'), { recursive: true });
+  const ux = await run(isWin ? TAR : 'tar', ['-xzf', tgz, '-C', join(tmp, 'x')], { timeout: 300_000 });
+  if (ux.code !== 0) throw new Error(`Unpacking failed: ${ux.stderr.trim()}`);
+  const src = join(tmp, 'x', readdirSync(join(tmp, 'x'))[0] ?? '');
+  const yarn = readdirSync(join(src, '.yarn', 'releases')).find((f) => /^yarn-.*\.c?js$/.test(f));
+  if (!yarn) throw new Error('mongo-express no longer carries its Yarn: DevCatz cannot build this release');
+  const env = { ...rt.env, NODE_ENV: 'production', YARN_ENABLE_GLOBAL_CACHE: 'false', YARN_CACHE_FOLDER: join(tmp, 'cache'), YARN_ENABLE_TELEMETRY: '0', YARN_ENABLE_PROGRESS_BARS: 'false' };
+  const step = async (what: string, args: string[]) => {
+    const r = await run(rt.bin, args, { cwd: src, env, timeout: 900_000 });
+    if (r.code !== 0) throw new Error(`${what}: ${(r.stderr || r.stdout).trim().split('\n').slice(-3).join(' ')}`);
+  };
+  const yarnJs = join(src, '.yarn', 'releases', yarn);
+  await step('Installing its packages', [yarnJs, 'install', '--immutable', '--mode=skip-build']);
+  await step('Building its pages', [join(src, 'node_modules', 'webpack', 'bin', 'webpack.js')]);
+  if (!existsSync(join(src, 'build-assets.json'))) throw new Error('mongo-express built no pages');
+  await step('Removing the build tools', [yarnJs, 'workspaces', 'focus', '--all', '--production']);
+  rmSync(join(src, '.yarn', 'cache'), { recursive: true, force: true });
+  renameSync(src, into);
 }
 
 const pgwebAsset = (): string => {
@@ -191,7 +229,7 @@ const TOOLS: Record<WebToolId, ToolDef> = {
     port: 8094,
     sourceUrl: 'https://github.com/mongo-express/mongo-express',
     latest: () => npmLatest('mongo-express'),
-    fetch: (v, into, _tmp, _progress, rt) => npmFetch('mongo-express', v, into, rt, 'app.js'),
+    fetch: (v, into, tmp, progress, rt) => buildMongoExpress(v, into, tmp, progress, rt),
   },
 };
 
@@ -356,6 +394,8 @@ async function findExisting(id: WebToolId): Promise<WebToolFound | null> {
     while (pkg !== dirname(pkg) && !existsSync(join(pkg, 'package.json'))) pkg = dirname(pkg);
     if (!existsSync(join(pkg, main))) pkg = join(dirname(bin), 'node_modules', name);
     if (!existsSync(join(pkg, main))) return null;
+    // npm's mongo-express has no built pages: it would stop at once, so it is not offered.
+    if (id === 'mongoexpress' && !existsSync(join(pkg, 'build-assets.json'))) return null;
     const v = (JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')) as { version?: string }).version ?? null;
     return { path: pkg, label: labelOf(pkg), version: v, signsIn: true };
   } catch {
@@ -391,6 +431,7 @@ export async function inspectPath(id: WebToolId, picked: string): Promise<WebToo
     if (statSync(p).isFile()) p = dirname(p);
     const pkg = [p, dirname(p), join(p, pkgName), join(p, 'node_modules', pkgName), join(p, 'lib', 'node_modules', pkgName)].find((d) => existsSync(join(d, main)));
     if (!pkg) throw new Error(`No ${name} in ${picked}: pick its folder (…/node_modules/${pkgName})`);
+    if (id === 'mongoexpress' && !existsSync(join(pkg, 'build-assets.json'))) throw new Error(`This mongo-express has no built pages (npm's package ships without them): use Download, DevCatz builds them`);
     const v = (JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')) as { version?: string }).version ?? null;
     return { path: pkg, label: labelOf(pkg), version: v, signsIn: true };
   } catch (err) {
@@ -883,7 +924,7 @@ export class WebTools {
     // mongo-express: every database of the service (admin view), no basic auth (127.0.0.1 behind DevCatz's proxy).
     const rt = this.deps.runtime('node', c.runtime);
     if (!rt) throw new Error('Needs Node.js: install it first');
-    const pkg = c.external?.path ?? this.dir(id, 'app', 'node_modules', 'mongo-express');
+    const pkg = c.external?.path ?? this.dir(id, 'app');
     const cred = s.user ? `${encodeURIComponent(s.user)}${s.password ? `:${encodeURIComponent(s.password)}` : ''}@` : '';
     const secret = () => randomBytes(24).toString('hex');
     const env = {
