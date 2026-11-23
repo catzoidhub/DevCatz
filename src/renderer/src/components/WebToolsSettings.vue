@@ -23,7 +23,7 @@ async function checkUpdates() {
   else if (failed) notify('success', tools.value.some((t) => t.update) ? 'Updates found' : 'Everything is up to date');
 }
 async function toggle(id: WebToolId, running: boolean) {
-  // pgweb starts per service (Open or the service's Web tools card); here it can only be stopped, every one at once.
+  // pgweb / mongo-express start per service (Open or the service's Web tools card); here they can only be stopped, all at once.
   await attempt(() => (running ? herd.webToolStop(id) : herd.webToolStart(id)));
 }
 async function update(id: WebToolId, name: string) {
@@ -47,7 +47,7 @@ async function uninstall(id: WebToolId) {
       </div>
       <p class="text-xs opacity-60">
         Browser tools for the database services, each at its own address; they sign in by themselves. Open on a service uses the one picked last
-        there (▾ next to Open); DBCatz stays the recommended app. pgweb runs per PostgreSQL service, started by Open.
+        there (▾ next to Open); DBCatz stays the recommended app. pgweb and mongo-express run once per service, started by Open.
       </p>
       <div class="overflow-x-auto rounded-box border border-base-300/60">
         <table class="table table-sm">
@@ -76,7 +76,7 @@ async function uninstall(id: WebToolId) {
                 </td>
                 <td class="font-mono text-xs">
                   <template v-if="t.installed">
-                    {{ t.id === 'pgweb' ? `<service>.${t.host}` : t.host }} · :{{ t.port }}<span v-if="t.runtime && t.runtimeVersion" class="font-sans opacity-60"> · {{ t.runtime === 'php' ? 'PHP' : 'Node.js' }} {{ t.runtimeVersion }}</span>
+                    {{ t.perService ? `<service>.${t.host}` : t.host }} · :{{ t.port }}<span v-if="t.runtime && t.runtimeVersion" class="font-sans opacity-60"> · {{ t.runtime === 'php' ? 'PHP' : 'Node.js' }} {{ t.runtimeVersion }}</span>
                   </template>
                   <span v-else-if="t.found" class="font-sans opacity-60" :title="t.found.path">Found on this computer{{ t.found.label ? ` (${t.found.label})` : '' }}{{ t.found.version ? ` · ${t.found.version}` : '' }}</span>
                   <span v-else class="font-sans opacity-60">{{ t.blocked ?? t.description }}</span>
@@ -85,13 +85,13 @@ async function uninstall(id: WebToolId) {
                   <template v-if="t.installed">
                     <button v-if="t.update" class="btn btn-xs" :disabled="busy(t)" @click="update(t.id, t.name)">Update</button>
                     <button
-                      v-if="t.id !== 'pgweb' || t.running.length"
+                      v-if="!t.perService || t.running.length"
                       class="btn btn-ghost btn-xs"
                       :disabled="busy(t)"
-                      :title="t.id === 'pgweb' ? 'Stops pgweb of every PostgreSQL service' : undefined"
+                      :title="t.perService ? `Stops ${t.name} of every service` : undefined"
                       @click="toggle(t.id, t.running.length > 0)"
                     >
-                      {{ t.running.length ? (t.id === 'pgweb' && t.running.length > 1 ? `Stop all (${t.running.length})` : 'Stop') : 'Start' }}
+                      {{ t.running.length ? (t.perService && t.running.length > 1 ? `Stop all (${t.running.length})` : 'Stop') : 'Start' }}
                     </button>
                     <button class="btn btn-ghost btn-xs" :disabled="busy(t)" @click="dialog = { tool: t.id, mode: 'settings' }">Settings…</button>
                     <button class="btn btn-ghost btn-xs text-error" :disabled="busy(t)" @click="confirming = t.id">{{ t.external ? 'Stop using' : 'Uninstall' }}</button>

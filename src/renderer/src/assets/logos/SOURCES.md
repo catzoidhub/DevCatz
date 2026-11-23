@@ -150,3 +150,4 @@ Simple Icons 16.36.0 (zedindustries) — Zed, Settings → MCatzP.
 - adminer.svg — https://github.com/vrana/adminer/blob/master/adminer/static/logo.svg (Adminer, Jakub Vrána)
 - pgweb.png — https://github.com/sosedoff/pgweb/blob/main/static/img/icon.png, scaled to 128 px (pgweb, Dan Sosedoff)
 - rediscommander.png — the mark of https://github.com/joeferner/redis-commander/blob/master/web/static/images/RedisCommandLogo.png (left 40 px, scaled to 96 px; Redis Commander)
+- mongoexpress.svg — https://github.com/mongo-express/mongo-express/blob/master/public/images/mongo-express-logo.svg (mongo-express)

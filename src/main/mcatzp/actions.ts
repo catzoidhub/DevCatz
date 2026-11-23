@@ -189,7 +189,7 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
       const log = await api.gitLog(p.id, typeof search === 'string' ? search : '', typeof skip === 'number' ? skip : 0);
       return reply(log.map((c) => ({ sha: c.sha, author: c.author, date: c.date, subject: c.subject, refs: c.refs })));
     }),
-    ...(!scopes.services ? [] : [read('list_services', 'List services', 'The services DevCatz runs and whether they are up: databases, search engines, WebSocket servers, object storage, gateways, the mail catcher, and the web database tools (phpMyAdmin, Adminer, pgweb) with what Open uses per database. No passwords or keys.', OBJECT(), async () => {
+    ...(!scopes.services ? [] : [read('list_services', 'List services', 'The services DevCatz runs and whether they are up: databases, search engines, WebSocket servers, object storage, gateways, the mail catcher, and the web database tools (phpMyAdmin, Adminer, pgweb, Redis Commander, mongo-express) with what Open uses per database. No passwords or keys.', OBJECT(), async () => {
       const s = await state();
       const svc = (x: { kind: string; name: string; installed: boolean; status: string; error: string | null; task: TaskProgress | null; config: { version?: string | null } | null }) => ({ kind: x.kind, name: x.name, installed: x.installed, status: taskProgress(x.task) ? 'installing' : x.status, progress: taskProgress(x.task), error: x.task?.error ?? x.error, version: x.config?.version ?? null });
       return reply({

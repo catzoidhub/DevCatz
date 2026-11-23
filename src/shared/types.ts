@@ -2651,7 +2651,7 @@ export interface DbServiceConfig {
 
 // ------------------------------------------------------------ web database tools (TODO §48)
 
-export type WebToolId = 'phpmyadmin' | 'adminer' | 'pgweb' | 'rediscommander';
+export type WebToolId = 'phpmyadmin' | 'adminer' | 'pgweb' | 'rediscommander' | 'mongoexpress';
 /** What Open on a database service uses: DBCatz, or one of the web tools. */
 export type DbOpenTool = 'dbcatz' | WebToolId;
 
@@ -2713,7 +2713,9 @@ export interface WebToolState {
   runtime: 'php' | 'node' | null;
   /** The version it runs on (installed) or would run on (the default); null without a runtime or none installed. */
   runtimeVersion: string | null;
-  /** pgweb: stops after `autoStopMinutes` unused; null for the others (they stay on). */
+  /** One process per service (pgweb, mongo-express) at `<service>.<host>`, started by Open. */
+  perService: boolean;
+  /** pgweb / mongo-express: stop after `autoStopMinutes` unused; null for the others (they stay on). */
   autoStop: boolean | null;
   autoStopMinutes: number;
   /** Why it cannot be installed or opened now (no PHP yet), or null. */

@@ -8,7 +8,7 @@ import WebToolDialog from './WebToolDialog.vue';
 import WebToolAutoStop from './WebToolAutoStop.vue';
 
 /**
- * Web tools for this service's engine (TODO §48): phpMyAdmin / Adminer / pgweb / Redis Commander with their address,
+ * Web tools for this service's engine (TODO §48): phpMyAdmin / Adminer / pgweb / Redis Commander / mongo-express with their address,
  * version, Open, Start / Stop, Update, Settings (name, port, PHP / Node.js) and Uninstall. The service header keeps only Open (DbOpenButton).
  */
 const props = defineProps<{ service: DbServiceState }>();
@@ -17,10 +17,10 @@ const dialog = ref<{ tool: WebToolId; mode: 'install' | 'settings' } | null>(nul
 const confirming = ref<WebToolId | null>(null);
 const choice = computed(() => state.value?.settings.dbOpenWith?.[props.service.id] ?? 'dbcatz');
 
-/** pgweb runs per service: this service's own address once it ran; the tool's address otherwise. */
+/** pgweb / mongo-express run per service: this service's own address once it ran; the tool's address otherwise. */
 const addressOf = (id: WebToolId) => {
   const t = tools.value.find((x) => x.id === id)!;
-  return t.running.find((r) => r.serviceId === props.service.id)?.url ?? (id === 'pgweb' ? null : t.url);
+  return t.running.find((r) => r.serviceId === props.service.id)?.url ?? (t.perService ? null : t.url);
 };
 const runningHere = (id: WebToolId) => tools.value.find((x) => x.id === id)!.running.some((r) => r.serviceId === null || r.serviceId === props.service.id);
 
@@ -31,11 +31,11 @@ async function useForOpen(id: WebToolId) {
   await attempt(() => herd.dbSetOpenWith(props.service.id, choice.value === id ? 'dbcatz' : id));
 }
 async function toggle(id: WebToolId) {
-  const sid = id === 'pgweb' ? props.service.id : undefined;
+  const sid = tools.value.find((x) => x.id === id)?.perService ? props.service.id : undefined;
   await attempt(() => (runningHere(id) ? herd.webToolStop(id, sid) : herd.webToolStart(id, sid)));
 }
-/** pgweb needs its service running; the others serve stopped services too (and say they cannot connect). */
-const canStart = (id: WebToolId) => id !== 'pgweb' || props.service.status === 'running';
+/** pgweb / mongo-express need their service running; the others serve stopped services too (and say they cannot connect). */
+const canStart = (id: WebToolId) => !tools.value.find((x) => x.id === id)?.perService || props.service.status === 'running';
 async function update(id: WebToolId, name: string) {
   await attempt(() => herd.webToolUpdate(id), `${name} updated`);
 }

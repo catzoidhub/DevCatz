@@ -367,6 +367,12 @@ export class Herd extends EventEmitter {
       return { version: n.version, bin: join(n.binDir, exe('node')), binDir: n.binDir, env: { [key]: joinPath([n.binDir, ...splitPath(getShellEnv()[key])]) } };
     },
     domainOwner: (host) => this.domainOwner(host),
+    databases: (id) => this.dbs.databases(id),
+    siteDatabases: (id) =>
+      this.projects
+        .filter((p) => p.dbService === id)
+        .map((p) => this.stacks.get(p.id)?.database?.database ?? null)
+        .filter((d): d is string => !!d),
     urlOf: (host) => `https://${host}${this.portSuffix(true)}`,
   });
   /** DialCatz, the API client: opened at a site by dialcatz:// links, installed from its release when missing. */

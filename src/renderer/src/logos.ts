@@ -26,6 +26,7 @@ import phpmyadminLogo from './assets/logos/phpmyadmin.png';
 import adminerLogo from './assets/logos/adminer.svg';
 import pgwebLogo from './assets/logos/pgweb.png';
 import rediscommanderLogo from './assets/logos/rediscommander.png';
+import mongoexpressLogo from './assets/logos/mongoexpress.svg';
 import { DB_LOGO } from './db';
 import { GW_LOGO } from './gateways';
 
@@ -35,9 +36,9 @@ export const SEARCH_LOGO: Record<SearchKind, string> = { meilisearch: meiliLogo,
 export const WS_LOGO: Record<WsKind, string> = { reverb: reverbLogo, sockudo: sockudoLogo, centrifugo: centrifugoLogo, mercure: mercureLogo, nats: natsLogo };
 export const WA_LOGO: Record<WaEngine, string> = { gowa: gowaLogo, waha: wahaLogo };
 export const DEVCATZ_LOGO = devcatzLogo;
-/** phpMyAdmin, Adminer, pgweb (TODO §48). pgweb's mark is black: shown on a light tile (WEB_TOOL_TILE) so it stays seen in dark mode. */
-export const WEB_TOOL_LOGO: Record<WebToolId, string> = { phpmyadmin: phpmyadminLogo, adminer: adminerLogo, pgweb: pgwebLogo, rediscommander: rediscommanderLogo };
-export const WEB_TOOL_TILE: Record<WebToolId, string> = { phpmyadmin: '', adminer: '', pgweb: 'rounded bg-white p-px', rediscommander: '' };
+/** phpMyAdmin, Adminer, pgweb, Redis Commander, mongo-express (TODO §48). pgweb's mark is black: shown on a light tile (WEB_TOOL_TILE) so it stays seen in dark mode. */
+export const WEB_TOOL_LOGO: Record<WebToolId, string> = { phpmyadmin: phpmyadminLogo, adminer: adminerLogo, pgweb: pgwebLogo, rediscommander: rediscommanderLogo, mongoexpress: mongoexpressLogo };
+export const WEB_TOOL_TILE: Record<WebToolId, string> = { phpmyadmin: '', adminer: '', pgweb: 'rounded bg-white p-px', rediscommander: '', mongoexpress: '' };
 
 /** The logo of a Monitoring row, from the engine named in its id (`storage:rustfs`, `ws:reverb` …); null when there is none. */
 export function monitorLogo(e: MonitorEntity, databases: DbServiceState[]): string | null {

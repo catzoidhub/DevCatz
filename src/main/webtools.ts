@@ -42,6 +42,8 @@ interface ToolDef {
   description: string;
   engines: DbEngine[];
   runtime: ToolRuntime | null;
+  /** One process per service (pgweb, mongo-express: one connection each), at `<service>.<name>.<tld>`. */
+  perService?: boolean;
   port: number;
   sourceUrl: string;
   latest(): Promise<string>;
@@ -71,6 +73,28 @@ async function unpack(archive: string, into: string): Promise<void> {
       ? await unzipLinux(archive, into)
       : await run('ditto', ['-x', '-k', archive, into], { timeout: 300_000 });
   if (r.code !== 0) throw new Error(`Unpacking failed: ${r.stderr.trim()}`);
+}
+
+/** npm's newest release of a package. */
+async function npmLatest(pkg: string): Promise<string> {
+  const res = await fetch(`https://registry.npmjs.org/${pkg}/latest`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`npm: HTTP ${res.status}`);
+  const v = ((await res.json()) as { version?: string }).version;
+  if (!v) throw new Error('npm gave no version');
+  return v;
+}
+
+/** `npm install` of one package into `into` with the chosen Node.js: npm checks every package's sha512, no install scripts run. */
+async function npmFetch(pkg: string, v: string, into: string, rt: RuntimeInfo | null, check: string): Promise<void> {
+  if (!rt) throw new Error('Needs Node.js');
+  mkdirSync(into, { recursive: true });
+  writeFileSync(join(into, 'package.json'), JSON.stringify({ name: `devcatz-${pkg}`, private: true }));
+  const npm = join(rt.binDir, isWin ? 'npm.cmd' : 'npm');
+  const args = ['install', '--prefix', into, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', '--no-update-notifier', `${pkg}@${v}`];
+  const env = rt.env; // run() adds the shell environment
+  const res = isWin ? await run(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', npm, ...args], { env, timeout: 600_000 }) : await run(npm, args, { env, timeout: 600_000 });
+  if (res.code !== 0) throw new Error(`npm install: ${(res.stderr || res.stdout).trim().split('\n').slice(-3).join(' ')}`);
+  if (!existsSync(join(into, 'node_modules', pkg, check))) throw new Error(`${pkg} is not in the download`);
 }
 
 const pgwebAsset = (): string => {
@@ -129,6 +153,7 @@ const TOOLS: Record<WebToolId, ToolDef> = {
     description: 'A small, fast web viewer for PostgreSQL, one per service.',
     engines: ['postgresql'],
     runtime: null,
+    perService: true,
     port: 8092,
     sourceUrl: 'https://github.com/sosedoff/pgweb',
     async latest() {
@@ -154,25 +179,19 @@ const TOOLS: Record<WebToolId, ToolDef> = {
     runtime: 'node',
     port: 8093,
     sourceUrl: 'https://github.com/joeferner/redis-commander',
-    async latest() {
-      const res = await fetch('https://registry.npmjs.org/redis-commander/latest', { cache: 'no-store' });
-      if (!res.ok) throw new Error(`npm: HTTP ${res.status}`);
-      const v = ((await res.json()) as { version?: string }).version;
-      if (!v) throw new Error('npm gave no version');
-      return v;
-    },
-    async fetch(v, into, _tmp, _progress, rt) {
-      if (!rt) throw new Error('Needs Node.js');
-      // npm checks every package against its sha512 in the registry; no install scripts run.
-      mkdirSync(into, { recursive: true });
-      writeFileSync(join(into, 'package.json'), JSON.stringify({ name: 'devcatz-redis-commander', private: true }));
-      const npm = join(rt.binDir, isWin ? 'npm.cmd' : 'npm');
-      const args = ['install', '--prefix', into, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', '--no-update-notifier', `redis-commander@${v}`];
-      const env = rt.env; // run() adds the shell environment
-      const r = isWin ? await run(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', npm, ...args], { env, timeout: 600_000 }) : await run(npm, args, { env, timeout: 600_000 });
-      if (r.code !== 0) throw new Error(`npm install: ${(r.stderr || r.stdout).trim().split('\n').slice(-3).join(' ')}`);
-      if (!existsSync(join(into, 'node_modules', 'redis-commander', 'bin', 'redis-commander.js'))) throw new Error('Redis Commander is not in the download');
-    },
+    latest: () => npmLatest('redis-commander'),
+    fetch: (v, into, _tmp, _progress, rt) => npmFetch('redis-commander', v, into, rt, join('bin', 'redis-commander.js')),
+  },
+  mongoexpress: {
+    name: 'mongo-express',
+    description: 'A web viewer for MongoDB: databases, collections and documents. One per service.',
+    engines: ['mongodb'],
+    runtime: 'node',
+    perService: true,
+    port: 8094,
+    sourceUrl: 'https://github.com/mongo-express/mongo-express',
+    latest: () => npmLatest('mongo-express'),
+    fetch: (v, into, _tmp, _progress, rt) => npmFetch('mongo-express', v, into, rt, 'app.js'),
   },
 };
 
@@ -327,12 +346,16 @@ async function findExisting(id: WebToolId): Promise<WebToolFound | null> {
       const r = await run(bin, ['--version'], { timeout: 5000 });
       return { path: bin, label: labelOf(realpathSync(bin)), version: /v?(\d+\.\d+\.\d+)/.exec(r.stdout + r.stderr)?.[1] ?? null, signsIn: true };
     }
-    const bin = await findCommand('redis-commander');
+    const name = id === 'mongoexpress' ? 'mongo-express' : 'redis-commander';
+    const main = id === 'mongoexpress' ? 'app.js' : join('bin', 'redis-commander.js');
+    const bin = await findCommand(name);
     if (!bin) return null;
     // npm's global link (macOS / Linux) points into the package; Windows' .cmd shim sits next to node_modules.
     const real = realpathSync(bin);
-    const pkg = real.endsWith('redis-commander.js') ? dirname(dirname(real)) : join(dirname(bin), 'node_modules', 'redis-commander');
-    if (!existsSync(join(pkg, 'bin', 'redis-commander.js'))) return null;
+    let pkg = dirname(real);
+    while (pkg !== dirname(pkg) && !existsSync(join(pkg, 'package.json'))) pkg = dirname(pkg);
+    if (!existsSync(join(pkg, main))) pkg = join(dirname(bin), 'node_modules', name);
+    if (!existsSync(join(pkg, main))) return null;
     const v = (JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')) as { version?: string }).version ?? null;
     return { path: pkg, label: labelOf(pkg), version: v, signsIn: true };
   } catch {
@@ -362,10 +385,12 @@ export async function inspectPath(id: WebToolId, picked: string): Promise<WebToo
       if (!/pgweb/i.test(r.stdout + r.stderr)) throw new Error(`${picked} is not pgweb`);
       return { path: p, label: labelOf(realpathSync(p)), version: /v?(\d+\.\d+\.\d+)/.exec(r.stdout + r.stderr)?.[1] ?? null, signsIn: true };
     }
-    // Redis Commander: its package folder (or a file in it, or the node_modules / prefix that holds it).
+    // Redis Commander / mongo-express: the package folder (or a file in it, or the node_modules / prefix that holds it).
+    const pkgName = id === 'mongoexpress' ? 'mongo-express' : 'redis-commander';
+    const main = id === 'mongoexpress' ? 'app.js' : join('bin', 'redis-commander.js');
     if (statSync(p).isFile()) p = dirname(p);
-    const pkg = [p, dirname(p), join(p, 'redis-commander'), join(p, 'node_modules', 'redis-commander'), join(p, 'lib', 'node_modules', 'redis-commander')].find((d) => existsSync(join(d, 'bin', 'redis-commander.js')));
-    if (!pkg) throw new Error(`No ${name} in ${picked}: pick its folder (…/node_modules/redis-commander)`);
+    const pkg = [p, dirname(p), join(p, pkgName), join(p, 'node_modules', pkgName), join(p, 'lib', 'node_modules', pkgName)].find((d) => existsSync(join(d, main)));
+    if (!pkg) throw new Error(`No ${name} in ${picked}: pick its folder (…/node_modules/${pkgName})`);
     const v = (JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')) as { version?: string }).version ?? null;
     return { path: pkg, label: labelOf(pkg), version: v, signsIn: true };
   } catch (err) {
@@ -396,6 +421,10 @@ export interface WebToolsDeps {
   runtime(kind: ToolRuntime, version?: string | null): RuntimeInfo | null;
   /** The site that owns this host already, or null. */
   domainOwner(host: string): string | null;
+  /** The databases on a running service (system ones left out). */
+  databases(serviceId: string): Promise<string[]>;
+  /** The databases the sites linked to this service use, in order. */
+  siteDatabases(serviceId: string): string[];
   /** https://<host> with the proxy's port when it is not 443. */
   urlOf(host: string): string;
 }
@@ -452,8 +481,8 @@ export class WebTools {
     return `${this.config(id)?.domain ?? id}.${tld()}`;
   }
 
-  private pgServices(): DbServiceState[] {
-    return this.deps.services().filter((s) => s.engine === 'postgresql' && !s.pending);
+  private servicesOf(id: WebToolId): DbServiceState[] {
+    return this.deps.services().filter((s) => TOOLS[id].engines.includes(s.engine) && !s.pending);
   }
 
   state(): WebToolState[] {
@@ -479,7 +508,8 @@ export class WebTools {
         defaults: { domain: id, port },
         runtime: t.runtime,
         runtimeVersion: t.runtime ? (c?.runtime ?? this.deps.runtime(t.runtime)?.version ?? null) : null,
-        autoStop: id === 'pgweb' ? c?.autoStop !== false : null,
+        perService: !!t.perService,
+        autoStop: t.perService ? c?.autoStop !== false : null,
         autoStopMinutes: c?.autoStopMinutes ?? PGWEB_IDLE_MINUTES,
         blocked: t.runtime && !this.deps.runtime(t.runtime) ? `Needs ${RUNTIME_NAME[t.runtime]}` : null,
         running: [...this.runs.values()].filter((r) => r.id === id).map((r) => this.runInfo(r)),
@@ -492,9 +522,9 @@ export class WebTools {
   }
 
   private runHost(r: Running): string {
-    if (r.id !== 'pgweb' || !r.serviceId) return this.host(r.id);
-    const s = this.pgServices().find((x) => x.id === r.serviceId);
-    return `${slug(s?.name ?? r.serviceId)}.${this.host('pgweb')}`;
+    if (!TOOLS[r.id].perService || !r.serviceId) return this.host(r.id);
+    const s = this.servicesOf(r.id).find((x) => x.id === r.serviceId);
+    return `${slug(s?.name ?? r.serviceId)}.${this.host(r.id)}`;
   }
   private runInfo(r: Running): WebToolRun {
     const s = r.serviceId ? this.deps.services().find((x) => x.id === r.serviceId) : null;
@@ -621,7 +651,7 @@ export class WebTools {
       this.save(id, { version, domain: form.domain, port: form.port, ...(rt ? { runtime: rt.version } : {}) });
       this.updates.delete(id);
       // Its address answers right away (pgweb starts per service, when one is opened).
-      if (kind) await this.startShared(id).catch(() => undefined);
+      if (kind && !TOOLS[id].perService) await this.startShared(id).catch(() => undefined);
       t.finish();
     } catch (err) {
       t.report({ error: (err as Error).message, cancelled: (err as Error).message === 'Cancelled' || undefined });
@@ -643,7 +673,7 @@ export class WebTools {
     }
     this.save(id, { version: f.version ?? 'yours', domain: form.domain, port: form.port, external: { path: f.path, label: f.label }, ...(rt ? { runtime: rt.version } : {}) });
     this.updates.delete(id);
-    if (TOOLS[id].runtime) await this.startShared(id).catch(() => undefined);
+    if (TOOLS[id].runtime && !TOOLS[id].perService) await this.startShared(id).catch(() => undefined);
     this.onChange();
   }
 
@@ -658,7 +688,7 @@ export class WebTools {
       const version = await this.download(id, t.report, this.updates.get(id), kind ? this.deps.runtime(kind, c.runtime) : null);
       this.save(id, { ...c, version });
       this.updates.delete(id);
-      if (kind) await this.startShared(id).catch(() => undefined);
+      if (kind && !TOOLS[id].perService) await this.startShared(id).catch(() => undefined);
       t.finish();
     } catch (err) {
       t.report({ error: (err as Error).message });
@@ -697,7 +727,7 @@ export class WebTools {
     if (portChanged || rtChanged) {
       const wasUp = [...this.runs.values()].some((r) => r.id === id);
       this.stopTool(id);
-      if (wasUp && kind) await this.startShared(id).catch(() => undefined);
+      if (wasUp && kind && !TOOLS[id].perService) await this.startShared(id).catch(() => undefined);
     }
     this.onChange();
   }
@@ -755,9 +785,9 @@ export class WebTools {
     if (!isWin) chmodSync(this.dir(id, 'servers.json'), 0o600);
   }
 
-  private spawnTracked(key: string, id: WebToolId, serviceId: string | null, port: number, cmd: string, args: string[], env: NodeJS.ProcessEnv, db?: string): Running {
+  private spawnTracked(key: string, id: WebToolId, serviceId: string | null, port: number, cmd: string, args: string[], env: NodeJS.ProcessEnv, db?: string, cwd?: string): Running {
     // Its own process group (macOS / Linux), so Stop takes php -S's workers with it (killTree kills the group).
-    const child = spawn(cmd, args, { env, stdio: 'ignore', windowsHide: true, detached: !isWin });
+    const child = spawn(cmd, args, { env, cwd, stdio: 'ignore', windowsHide: true, detached: !isWin });
     const r: Running = { key, id, serviceId, port, child, db, usedAt: Date.now() };
     this.runs.set(key, r);
     child.on('exit', () => {
@@ -810,22 +840,28 @@ export class WebTools {
     return r;
   }
 
-  private async pgwebPort(serviceId: string): Promise<number> {
-    const c = this.config('pgweb')!;
+  /** A per-service tool's port for this service: kept from before, else the next free one from the tool's port up. */
+  private async servicePort(id: WebToolId, serviceId: string): Promise<number> {
+    const c = this.config(id)!;
     const ports = { ...(c.ports ?? {}) };
     if (ports[serviceId] && (await portFree(ports[serviceId]))) return ports[serviceId];
-    const taken = new Set([...Object.values(ports), ...WEB_TOOL_IDS.filter((x) => x !== 'pgweb').map((x) => this.config(x)?.port), ...this.deps.services().map((s) => s.port)]);
+    const taken = new Set([
+      ...Object.values(ports),
+      ...WEB_TOOL_IDS.filter((x) => x !== id).flatMap((x) => [this.config(x)?.port, ...Object.values(this.config(x)?.ports ?? {})]),
+      ...this.deps.services().map((s) => s.port),
+    ]);
     let p = c.port;
     while (taken.has(p) || !(await portFree(p))) p++;
     ports[serviceId] = p;
-    this.save('pgweb', { ...c, ports });
+    this.save(id, { ...c, ports });
     return p;
   }
 
-  private async startPgweb(s: DbServiceState, db: string): Promise<Running> {
-    const key = `pgweb:${s.id}`;
+  /** pgweb (on one database) or mongo-express for one service; the connection string goes in the environment only. */
+  private async startPerService(id: WebToolId, s: DbServiceState, db?: string): Promise<Running> {
+    const key = `${id}:${s.id}`;
     const have = this.runs.get(key);
-    if (have && have.db === db) {
+    if (have && (id !== 'pgweb' || have.db === db)) {
       have.usedAt = Date.now();
       return have;
     }
@@ -834,12 +870,38 @@ export class WebTools {
       this.stop(key);
       await new Promise((r) => setTimeout(r, 300));
     }
-    const port = await this.pgwebPort(s.id);
-    const user = encodeURIComponent(s.user || 'postgres');
-    const pass = s.password ? `:${encodeURIComponent(s.password)}` : '';
-    const env = { ...getShellEnv(), PGWEB_DATABASE_URL: `postgres://${user}${pass}@127.0.0.1:${s.port}/${encodeURIComponent(db)}?sslmode=disable` };
-    const r = this.spawnTracked(key, 'pgweb', s.id, port, this.config('pgweb')?.external?.path ?? this.dir('pgweb', 'app', isWin ? 'pgweb.exe' : 'pgweb'), ['--bind=127.0.0.1', `--listen=${port}`, '--skip-open'], env, db);
-    await this.waitUp(port, r.child, 'pgweb');
+    const port = await this.servicePort(id, s.id);
+    const c = this.config(id)!;
+    if (id === 'pgweb') {
+      const user = encodeURIComponent(s.user || 'postgres');
+      const pass = s.password ? `:${encodeURIComponent(s.password)}` : '';
+      const env = { ...getShellEnv(), PGWEB_DATABASE_URL: `postgres://${user}${pass}@127.0.0.1:${s.port}/${encodeURIComponent(db ?? 'postgres')}?sslmode=disable` };
+      const r = this.spawnTracked(key, id, s.id, port, c.external?.path ?? this.dir(id, 'app', isWin ? 'pgweb.exe' : 'pgweb'), ['--bind=127.0.0.1', `--listen=${port}`, '--skip-open'], env, db);
+      await this.waitUp(port, r.child, TOOLS[id].name);
+      return r;
+    }
+    // mongo-express: every database of the service (admin view), no basic auth (127.0.0.1 behind DevCatz's proxy).
+    const rt = this.deps.runtime('node', c.runtime);
+    if (!rt) throw new Error('Needs Node.js: install it first');
+    const pkg = c.external?.path ?? this.dir(id, 'app', 'node_modules', 'mongo-express');
+    const cred = s.user ? `${encodeURIComponent(s.user)}${s.password ? `:${encodeURIComponent(s.password)}` : ''}@` : '';
+    const secret = () => randomBytes(24).toString('hex');
+    const env = {
+      ...getShellEnv(),
+      ...rt.env,
+      NODE_ENV: 'production',
+      ME_CONFIG_MONGODB_URL: `mongodb://${cred}127.0.0.1:${s.port}/`,
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true',
+      ME_CONFIG_BASICAUTH_ENABLED: 'false',
+      ME_CONFIG_SITE_SESSIONSECRET: secret(),
+      ME_CONFIG_SITE_COOKIESECRET: secret(),
+      VCAP_APP_HOST: '127.0.0.1',
+      PORT: String(port),
+    };
+    // Started from DevCatz's own folder: mongo-express reads a ./config.js from where it starts, and none is there.
+    mkdirSync(this.dir(id), { recursive: true });
+    const r = this.spawnTracked(key, id, s.id, port, rt.bin, [join(pkg, 'app.js')], env, undefined, this.dir(id));
+    await this.waitUp(port, r.child, TOOLS[id].name);
     return r;
   }
 
@@ -851,9 +913,10 @@ export class WebTools {
     if (!this.config(id)) throw new Error(`${TOOLS[id].name} is not installed`);
     if (s.engine !== 'sqlite' && !this.deps.isActive(s.id)) throw new Error(`${s.name} is not running: start it first`);
     const q = (o: Record<string, string>) => new URLSearchParams(o).toString();
-    if (id === 'pgweb') {
-      const r = await this.startPgweb(s, database || 'postgres');
-      return this.deps.urlOf(this.runHost(r)) + '/';
+    if (TOOLS[id].perService) {
+      const r = await this.startPerService(id, s, id === 'pgweb' ? database || (await this.pgwebDatabase(s)) : undefined);
+      const url = this.deps.urlOf(this.runHost(r));
+      return id === 'mongoexpress' && database ? `${url}/db/${encodeURIComponent(database)}/` : `${url}/`;
     }
     this.writeServers(id);
     // A service created since it started: Redis Commander reads its connections once, so it starts again.
@@ -875,24 +938,35 @@ export class WebTools {
     return `${base}/?${q({ devcatz: s.id, [driver]: `127.0.0.1:${s.port}`, username: s.user || (s.engine === 'postgresql' ? 'postgres' : 'root'), ...(database ? { db: database } : {}) })}`;
   }
 
-  /** Start: phpMyAdmin / Adminer serve every service; pgweb starts for one PostgreSQL service (on the database it had). */
+  /**
+   * pgweb opens one database. Without one asked for: the one it already shows, else a linked site's, else the first of
+   * yours; the empty `postgres` only when there is nothing else (its schema lists no tables).
+   */
+  private async pgwebDatabase(s: DbServiceState): Promise<string> {
+    const running = this.runs.get(`pgweb:${s.id}`)?.db;
+    if (running && running !== 'postgres') return running;
+    const dbs = (await this.deps.databases(s.id).catch(() => [] as string[])).filter((d) => !['postgres', 'template0', 'template1'].includes(d));
+    return this.deps.siteDatabases(s.id).find((d) => dbs.includes(d)) ?? dbs[0] ?? 'postgres';
+  }
+
+  /** Start: phpMyAdmin / Adminer / Redis Commander serve every service; pgweb and mongo-express start for one service. */
   async start(id: WebToolId, serviceId?: string): Promise<void> {
     if (!this.config(id)) throw new Error(`${TOOLS[id].name} is not installed`);
-    if (TOOLS[id].runtime) {
+    if (!TOOLS[id].perService) {
       this.writeServers(id);
       await this.startShared(id);
       return;
     }
-    const s = this.pgServices().find((x) => x.id === serviceId);
-    if (!s) throw new Error('Name the PostgreSQL service to start pgweb for');
+    const s = this.servicesOf(id).find((x) => x.id === serviceId);
+    if (!s) throw new Error(`Name the service to start ${TOOLS[id].name} for`);
     if (!this.deps.isActive(s.id)) throw new Error(`${s.name} is not running: start it first`);
-    await this.startPgweb(s, this.runs.get(`pgweb:${s.id}`)?.db ?? 'postgres');
+    await this.startPerService(id, s, id === 'pgweb' ? await this.pgwebDatabase(s) : undefined);
   }
 
   setAutoStop(id: WebToolId, on: boolean, minutes?: number): void {
     const c = this.config(id);
     if (!c) throw new Error(`${TOOLS[id].name} is not installed`);
-    if (id !== 'pgweb') throw new Error(`${TOOLS[id].name} has no auto-stop: it is light and serves every service`);
+    if (!TOOLS[id].perService) throw new Error(`${TOOLS[id].name} has no auto-stop: it is light and serves every service`);
     // Counting starts again from now when it is turned back on.
     if (on) for (const r of this.runs.values()) if (r.id === id) r.usedAt = Date.now();
     const m = minutes === undefined ? c.autoStopMinutes : Math.round(minutes);
@@ -901,9 +975,9 @@ export class WebTools {
     this.onChange();
   }
 
-  /** Stop: the tool, or pgweb of one service (every pgweb without one). Open starts it again. */
+  /** Stop: the tool, or pgweb / mongo-express of one service (every one without a service). Open starts it again. */
   stopRunning(id: WebToolId, serviceId?: string): void {
-    if (id === 'pgweb' && serviceId) this.stop(`pgweb:${serviceId}`);
+    if (TOOLS[id].perService && serviceId) this.stop(`${id}:${serviceId}`);
     else this.stopTool(id);
   }
 
@@ -922,15 +996,15 @@ export class WebTools {
 
   /** phpMyAdmin, Adminer and Redis Commander start with DevCatz once installed, so their address answers without a click. */
   async startInstalled(): Promise<void> {
-    for (const id of WEB_TOOL_IDS) if (TOOLS[id].runtime && this.config(id)) await this.startShared(id).catch(() => undefined);
+    for (const id of WEB_TOOL_IDS) if (TOOLS[id].runtime && !TOOLS[id].perService && this.config(id)) await this.startShared(id).catch(() => undefined);
   }
 
-  /** Stops pgweb of services that stopped or are gone, and pgweb nobody used for its auto-stop minutes. */
+  /** Stops pgweb / mongo-express of services that stopped or are gone, and those nobody used for their auto-stop minutes. */
   prune(): void {
     for (const r of [...this.runs.values()]) {
-      if (r.id === 'pgweb' && r.serviceId) {
-        const s = this.pgServices().find((x) => x.id === r.serviceId);
-        const c = this.config('pgweb');
+      if (TOOLS[r.id].perService && r.serviceId) {
+        const s = this.servicesOf(r.id).find((x) => x.id === r.serviceId);
+        const c = this.config(r.id);
         const idle = c?.autoStop !== false && Date.now() - r.usedAt > (c?.autoStopMinutes ?? PGWEB_IDLE_MINUTES) * 60_000;
         if (!s || !this.deps.isActive(s.id) || idle) this.stop(r.key);
       }
@@ -954,14 +1028,17 @@ export class WebTools {
   routes(): Route[] {
     const out: Route[] = [];
     for (const id of WEB_TOOL_IDS) {
-      if (!this.config(id) || id === 'pgweb') continue;
+      if (!this.config(id) || TOOLS[id].perService) continue;
       const r = this.runs.get(id);
       out.push({ domain: this.host(id), port: r?.port ?? this.config(id)!.port, projectName: TOOLS[id].name, running: !!r, secure: true, keepHost: true });
     }
-    const pg = [...this.runs.values()].filter((r) => r.id === 'pgweb');
     const used = (r: Running) => () => void (r.usedAt = Date.now());
-    for (const r of pg) out.push({ domain: this.runHost(r), port: r.port, projectName: this.runInfo(r).name, running: true, secure: true, used: used(r) });
-    if (this.config('pgweb') && this.pgServices().length === 1 && pg[0]) out.push({ domain: this.host('pgweb'), port: pg[0].port, projectName: 'pgweb', running: true, secure: true, used: used(pg[0]) });
+    for (const id of WEB_TOOL_IDS.filter((x) => TOOLS[x].perService && this.config(x))) {
+      const runs = [...this.runs.values()].filter((r) => r.id === id);
+      for (const r of runs) out.push({ domain: this.runHost(r), port: r.port, projectName: this.runInfo(r).name, running: true, secure: true, used: used(r) });
+      // <name>.<tld> itself while there is one service of its engine.
+      if (this.servicesOf(id).length === 1 && runs[0]) out.push({ domain: this.host(id), port: runs[0].port, projectName: TOOLS[id].name, running: true, secure: true, used: used(runs[0]) });
+    }
     return out;
   }
 

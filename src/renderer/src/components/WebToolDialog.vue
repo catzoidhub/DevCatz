@@ -6,7 +6,7 @@ import { WEB_TOOL_LOGO, WEB_TOOL_TILE } from '../logos';
 import TaskStepper from './TaskStepper.vue';
 
 /**
- * Install phpMyAdmin / Adminer / pgweb / Redis Commander (TODO §48), or change an installed one: its name under the
+ * Install phpMyAdmin / Adminer / pgweb / Redis Commander / mongo-express (TODO §48), or change an installed one: its name under the
  * default domain, its port and the PHP / Node.js version it runs on (with Install PHP / Node.js when there is none
  * yet). Opened from a
  * database service's Open menu (then it opens that service once installed) or from the Web tools card.
@@ -16,7 +16,7 @@ const emit = defineEmits<{ close: [] }>();
 
 const t = computed(() => state.value?.webTools.find((x) => x.id === props.tool) ?? null);
 const tld = computed(() => state.value?.settings.tld || 'localhost');
-/** The runtime it runs on (PHP for phpMyAdmin / Adminer, Node.js for Redis Commander), null for pgweb. */
+/** The runtime it runs on (PHP for phpMyAdmin / Adminer, Node.js for Redis Commander / mongo-express), null for pgweb. */
 const kind = computed(() => t.value?.runtime ?? null);
 const rtName = computed(() => (kind.value === 'node' ? 'Node.js' : 'PHP'));
 const rtState = computed(() => (kind.value === 'node' ? state.value?.node : state.value?.php) ?? null);
@@ -69,8 +69,8 @@ const picking = ref(false);
 async function pickOwn() {
   picking.value = true;
   try {
-    // phpMyAdmin and Redis Commander are folders; Adminer is one .php file and pgweb one program.
-    const path = props.tool === 'phpmyadmin' || props.tool === 'rediscommander' ? await herd.pickFolder() : await herd.pickFile(`Choose your ${t.value?.name ?? ''}`);
+    // phpMyAdmin, Redis Commander and mongo-express are folders; Adminer is one .php file and pgweb one program.
+    const path = props.tool === 'phpmyadmin' || props.tool === 'rediscommander' || props.tool === 'mongoexpress' ? await herd.pickFolder() : await herd.pickFile(`Choose your ${t.value?.name ?? ''}`);
     if (!path) return;
     if (await attempt(() => herd.webToolInspect(props.tool, path))) source.value = 'existing';
   } finally {
@@ -81,6 +81,7 @@ const OWN_HINT: Record<WebToolId, string> = {
   phpmyadmin: 'the phpMyAdmin folder (the one with index.php)',
   adminer: 'its adminer.php',
   pgweb: 'the pgweb program',
+  mongoexpress: 'its folder (…/node_modules/mongo-express)',
   rediscommander: 'its folder (…/node_modules/redis-commander)',
 };
 
@@ -173,7 +174,7 @@ function close() {
               </span>
             </button>
             <div class="flex flex-wrap items-center gap-2 pt-1 text-xs">
-              <button type="button" class="btn btn-ghost btn-xs" :disabled="picking" @click="pickOwn">{{ tool === 'phpmyadmin' || tool === 'rediscommander' ? 'Choose folder…' : 'Choose file…' }}</button>
+              <button type="button" class="btn btn-ghost btn-xs" :disabled="picking" @click="pickOwn">{{ tool === 'phpmyadmin' || tool === 'rediscommander' || tool === 'mongoexpress' ? 'Choose folder…' : 'Choose file…' }}</button>
               <span class="opacity-60">{{ t.found ? 'Another copy? Choose' : 'Have one already? Choose' }} {{ OWN_HINT[tool] }}.</span>
             </div>
           </fieldset>
@@ -195,8 +196,8 @@ function close() {
               <span v-if="errs.port" class="mt-1 block text-xs text-error">{{ errs.port }}</span>
             </label>
             <p v-if="!errs.domain && !errs.port" class="-mt-2 text-xs opacity-60 sm:col-span-2">
-              <template v-if="tool === 'pgweb'">
-                Each PostgreSQL service gets its own name under it, <code>&lt;service&gt;.{{ domain }}.{{ tld }}</code>, and the port from this one up. On 127.0.0.1 only.
+              <template v-if="t.perService">
+                Each {{ tool === 'pgweb' ? 'PostgreSQL' : 'MongoDB' }} service gets its own name under it, <code>&lt;service&gt;.{{ domain }}.{{ tld }}</code>, and the port from this one up. On 127.0.0.1 only.
               </template>
               <template v-else>Listens on 127.0.0.1 only; DevCatz serves it at this address over HTTPS.</template>
             </p>

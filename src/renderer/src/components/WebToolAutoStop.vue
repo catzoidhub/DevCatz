@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 import type { WebToolState } from '@shared/types';
 import { attempt, herd } from '../store';
 
-/** pgweb's auto-stop (TODO §48): a switch and its minutes (default 30), saved as they change. */
+/** pgweb / mongo-express auto-stop (TODO §48): a switch and its minutes (default 30), saved as they change. */
 const props = defineProps<{ tool: WebToolState }>();
 const minutes = ref(props.tool.autoStopMinutes);
 watch(

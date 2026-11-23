@@ -9,7 +9,7 @@ import dbcatzLogo from '../assets/logos/dbcatz.png';
 
 /**
  * Open for a database service (TODO §48): DBCatz by default, or the web tool picked last for this service (phpMyAdmin,
- * Adminer, pgweb). The main part opens with that one; the ▾ beside it lists the others for the service's engine, with
+ * Adminer, pgweb, Redis Commander, mongo-express). The main part opens with that one; the ▾ beside it lists the others for the service's engine, with
  * Install & open for the ones not installed. The pick is remembered per service, so the menu is needed only to change.
  */
 const props = withDefaults(defineProps<{ serviceId: string; database?: string; size?: 'sm' | 'md' }>(), { database: undefined, size: 'sm' });

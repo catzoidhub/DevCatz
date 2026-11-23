@@ -680,7 +680,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
       </div>
     </div>
 
-    <!-- Database: web tools (phpMyAdmin, Adminer, pgweb) -->
+    <!-- Database: web tools (phpMyAdmin, Adminer, pgweb, Redis Commander, mongo-express) -->
     <WebToolsSettings v-if="tab === 'database'" />
 
     <!-- Database: builds -->
