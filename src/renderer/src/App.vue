@@ -84,6 +84,35 @@ const RAIL: { id: AppSection; label: string; short: string; icon: 'projects' | '
 ];
 // Windows, stage 1: only the sections that work there so far (Catzoid #57).
 const railShown = isWin ? RAIL.filter((r) => WIN_SECTIONS.has(r.id)) : RAIL;
+/**
+ * A window too short for every section with its label: the labels go (icons with their tooltips stay), so nothing
+ * hides below the fold. The height the full rail needs is measured while the labels show.
+ */
+const railEl = ref<HTMLElement | null>(null);
+const railCompact = ref(false);
+let railFull = 0;
+let railWatch: ResizeObserver | null = null;
+function fitRail() {
+  const el = railEl.value;
+  if (!el) return;
+  if (!railCompact.value) railFull = el.scrollHeight;
+  railCompact.value = railFull > el.clientHeight + 1;
+}
+// The rail appears once the state has loaded: watch for the element, not for the mount.
+watch(railEl, (el) => {
+  railWatch?.disconnect();
+  if (!el) return;
+  railWatch = new ResizeObserver(fitRail);
+  railWatch.observe(el);
+});
+onBeforeUnmount(() => railWatch?.disconnect());
+/** Icons only: the section's name shows beside the icon at once (the native tooltip takes a second). */
+const railTip = ref<{ text: string; top: number; left: number } | null>(null);
+function showRailTip(e: MouseEvent, text: string) {
+  if (!railCompact.value) return;
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  railTip.value = { text, top: r.top + r.height / 2, left: r.right - 6 };
+}
 /** Remembered per window (convenience only). */
 const section = ref<AppSection>(
   (() => {
@@ -690,19 +719,25 @@ async function park() {
           <svg viewBox="0 0 20 20" class="size-4" fill="currentColor"><path d="M3 5a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1Zm0 5a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1Zm1 4a1 1 0 1 0 0 2h12a1 1 0 1 0 0-2H4Z" /></svg>
         </button>
       </div>
-      <!-- Scrolls (no bar) when the window is too short for every section. -->
-      <div class="rail-scroll no-scrollbar flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto pb-3">
+      <Teleport to="body">
+        <div v-if="railTip && railCompact" class="rail-tip" :style="{ top: `${railTip.top}px`, left: `${railTip.left}px` }">{{ railTip.text }}</div>
+      </Teleport>
+      <!-- Short window: icons only (labels as tooltips), so every section stays in view; it scrolls (no bar) only below that. -->
+      <div ref="railEl" class="rail-scroll no-scrollbar flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto pb-3" :class="{ 'rail-compact': railCompact }">
         <button
           v-for="r in railShown"
           :key="r.id"
           class="rail-item relative shrink-0"
           :class="{ 'is-active': section === r.id }"
           :style="{ '--rail-c': `var(--c-${r.id})` }"
-          :title="r.label"
+          :title="railCompact ? undefined : r.label"
+          :aria-label="r.label"
           @click="section = r.id"
+          @mouseenter="showRailTip($event, r.short)"
+          @mouseleave="railTip = null"
         >
           <span class="rail-icon"><svg class="size-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" :d="ICONS[r.icon]" /></svg></span>
-          {{ r.short }}
+          <span class="rail-label">{{ r.short }}</span>
           <span
             v-if="sectionUpdates[r.id]"
             class="absolute top-1.5 right-4 size-2 rounded-full bg-primary ring-2 ring-base-200"

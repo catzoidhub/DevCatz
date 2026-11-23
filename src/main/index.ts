@@ -694,6 +694,7 @@ function api(): HerdApi {
       return herd.remotes.add(input);
     },
     proxyRemove: async (id) => herd.remotes.remove(String(id)),
+    proxyReorder: async (ids) => herd.remotes.reorder(Array.isArray(ids) ? ids.map(String) : []),
     proxyValidate: async (input, id) => herd.remotes.validate(input, typeof id === 'string' ? id : undefined),
     dbSetOpenWith: async (serviceId, tool) => {
       if (tool !== 'dbcatz') webToolId(tool);

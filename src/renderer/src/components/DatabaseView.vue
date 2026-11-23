@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { STAR } from '../icons';
 import PopMenu from './PopMenu.vue';
+import FoldAllButton from './FoldAllButton.vue';
 import { groupByType, sortList, useListView } from '../listview';
 import type { DbEngine, DbnginInstall, DbServiceState, ExternalDbService, StorageAction, DbEngineInfo } from '@shared/types';
 import StatusDot from './StatusDot.vue';
@@ -54,6 +55,16 @@ interface Section {
   items: DbServiceState[];
 }
 const favs = computed(() => new Set(state.value?.settings.dbFavorites ?? []));
+// Expand / collapse all, as in the sites list: every section with a heading (your groups are kept in Settings).
+const foldable = computed(() => sections.value.filter((x) => x.title));
+const anyOpen = computed(() => foldable.value.some((x) => !x.collapsed));
+function setAll(open: boolean) {
+  for (const x of foldable.value) {
+    if (!!x.collapsed === !open) continue;
+    if (x.group) void herd.dbGroupAction(x.group, 'toggle');
+    else listView.toggle(x.key);
+  }
+}
 const sections = computed<Section[]>(() => {
   const filtering = view.value.runningOnly;
   const all = filtering ? services.value.filter(live) : services.value;
@@ -230,6 +241,7 @@ const sourceOf = (engine: DbEngine) => engineInfo.value.find((e) => e.engine ===
           @click="listView.setRunningOnly(false)"
         >Running · {{ liveCount }} of {{ services.length }} <span class="opacity-70">✕</span></button>
         <span class="flex-1" />
+        <FoldAllButton v-if="foldable.length > 1" :any-open="anyOpen" @toggle="setAll(!anyOpen)" />
         <PopMenu :items="listView.items.value" align="end" :width="260">
           <button class="btn btn-ghost btn-xs btn-square" :class="{ 'text-primary': listView.custom.value }" title="Sort and group">
             <svg class="size-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M2.5 5.25A.75.75 0 0 1 3.25 4.5h13.5a.75.75 0 0 1 0 1.5H3.25a.75.75 0 0 1-.75-.75Zm2 4A.75.75 0 0 1 5.25 8.5h9.5a.75.75 0 0 1 0 1.5h-9.5a.75.75 0 0 1-.75-.75Zm2 4a.75.75 0 0 1 .75-.75h5.5a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1-.75-.75Z" /></svg>

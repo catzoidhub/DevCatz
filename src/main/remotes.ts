@@ -116,6 +116,12 @@ export class Remotes {
     this.save(this.list().filter((e) => e.id !== id));
   }
 
+  /** The list's own order (drag and drop); ids it does not name keep their place at the end. */
+  reorder(ids: string[]): void {
+    const at = new Map(ids.map((id, i) => [id, i]));
+    this.save([...this.list()].sort((a, b) => (at.get(a.id) ?? 1e6) - (at.get(b.id) ?? 1e6)));
+  }
+
   /** Whether each proxy's target accepts a TCP connection (every 30 s; redirects are not checked). */
   async check(): Promise<void> {
     let dirty = false;
