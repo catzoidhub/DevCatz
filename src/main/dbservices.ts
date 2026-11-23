@@ -461,12 +461,26 @@ export class DbServiceManager {
     await this.processes.stop(pid);
   }
 
-  /** "running" once the port answers; then the one-time bootstrap. */
+  /** Services whose port is open but which still turn connections away (said once in their log). */
+  private stillStarting = new Set<string>();
+
+  /** "running" once the port answers and, where the engine can tell, it accepts connections; then the one-time bootstrap. */
   private async poll(): Promise<void> {
     for (const c of store.dbServices) {
       const pid = dbProcessId(c.id);
-      if (this.processes.getStatus(pid).status !== 'starting') continue;
+      if (this.processes.getStatus(pid).status !== 'starting') {
+        this.stillStarting.delete(c.id);
+        continue;
+      }
       if (!(await isPortOpen(c.port))) continue;
+      const e = DB_ENGINES[c.engine];
+      const bin = this.binaryOf(c);
+      if (e.ready && bin && !(await e.ready(c, bin.root).catch(() => true))) {
+        if (!this.stillStarting.has(c.id)) this.processes.log(pid, 'sys', `Port ${c.port} is open; still starting up (recovering), not accepting connections yet`);
+        this.stillStarting.add(c.id);
+        continue;
+      }
+      this.stillStarting.delete(c.id);
       this.processes.markRunning(pid);
       this.processes.log(pid, 'sys', `Ready on 127.0.0.1:${c.port}`);
       if (!c.bootstrapped && !this.booting.has(c.id)) void this.bootstrap(c);

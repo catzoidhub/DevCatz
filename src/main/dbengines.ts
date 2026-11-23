@@ -67,6 +67,12 @@ export interface EngineDef {
   spec?(c: DbServiceConfig, root: string, data: string, socket: string | null): RunSpec;
   /** Once, after the first successful start (extra users/roles). */
   bootstrap?(c: DbServiceConfig, root: string): Promise<void>;
+  /**
+   * Accepts connections, beyond an open port: PostgreSQL opens its port while it still recovers (a minute after an
+   * unclean stop on a slow machine) and turns every connection away meanwhile. Until this says yes, the service stays
+   * "starting".
+   */
+  ready?(c: DbServiceConfig, root: string): Promise<boolean>;
   /** Windows: asks the server to stop itself (console programs get no SIGTERM; taskkill /F skips the clean shutdown). */
   shutdown?(c: DbServiceConfig, root: string, data: string): Promise<void>;
 }
@@ -762,6 +768,13 @@ const postgresql: EngineDef = {
     const user = c.user || 'root';
     const has = await client(psql, [...psqlArgs(c), '-tAc', `SELECT 1 FROM pg_database WHERE datname = '${user}'`], env);
     if (!has.trim()) await client(psql, [...psqlArgs(c), '-c', `CREATE DATABASE "${user}"`], env);
+  },
+  async ready(c, root) {
+    const bin = binOf(root, 'pg_isready');
+    if (!existsSync(bin)) return true;
+    // 0: accepting connections; 1: rejecting them (starting up, recovering); 2: no answer; 3: could not even try.
+    const r = await run(bin, ['-h', '127.0.0.1', '-p', String(c.port), '-t', '3'], { timeout: 10_000 });
+    return r.code === 0 || r.code === 3;
   },
   async shutdown(_c, root, data) {
     // Fast shutdown, like SIGINT on macOS; pg_ctl signals the postmaster through its named pipe.
