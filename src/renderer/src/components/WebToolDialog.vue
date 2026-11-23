@@ -45,6 +45,44 @@ watch(
   { immediate: true },
 );
 onBeforeUnmount(() => clearTimeout(timer));
+// Install: the suggested port may be taken by another copy (MAMP, XAMPP, Laragon, Docker …): move on to a free one.
+if (props.mode === 'install') {
+  void (async () => {
+    for (let i = 0; i < 30; i++) {
+      const r = await attempt(() => herd.webToolCheck(props.tool, { domain: domain.value, port: Number(port.value) }));
+      if (!r?.port) return;
+      port.value = Number(port.value) + 1;
+    }
+  })();
+}
+
+/** Install: your own copy (found on this computer, or chosen with Choose folder / file) or DevCatz's download. */
+const source = ref<'existing' | 'download'>(t.value?.found ? 'existing' : 'download');
+watch(
+  () => t.value?.found,
+  (f, before) => {
+    if (f && !before) source.value = 'existing';
+    if (!f) source.value = 'download';
+  },
+);
+const picking = ref(false);
+async function pickOwn() {
+  picking.value = true;
+  try {
+    // phpMyAdmin and Redis Commander are folders; Adminer is one .php file and pgweb one program.
+    const path = props.tool === 'phpmyadmin' || props.tool === 'rediscommander' ? await herd.pickFolder() : await herd.pickFile(`Choose your ${t.value?.name ?? ''}`);
+    if (!path) return;
+    if (await attempt(() => herd.webToolInspect(props.tool, path))) source.value = 'existing';
+  } finally {
+    picking.value = false;
+  }
+}
+const OWN_HINT: Record<WebToolId, string> = {
+  phpmyadmin: 'the phpMyAdmin folder (the one with index.php)',
+  adminer: 'its adminer.php',
+  pgweb: 'the pgweb program',
+  rediscommander: 'its folder (…/node_modules/redis-commander)',
+};
 
 const task = computed(() => t.value?.task ?? null);
 const working = computed(() => !!task.value && !task.value.done && !task.value.error);
@@ -69,7 +107,7 @@ async function installPhp() {
 }
 
 async function submit() {
-  const opts = { domain: domain.value.trim(), port: Number(port.value), runtime: kind.value ? php.value : null };
+  const opts = { domain: domain.value.trim(), port: Number(port.value), runtime: kind.value ? php.value : null, existing: props.mode === 'install' && source.value === 'existing' };
   if (props.mode === 'install') {
     const r = await attempt(() => herd.webToolInstall(props.tool, opts, props.serviceId ? { serviceId: props.serviceId, database: props.database } : undefined).then(() => true));
     if (r) emit('close');
@@ -85,50 +123,96 @@ function close() {
 <template>
   <Teleport to="body">
     <dialog open class="modal modal-open" @keydown.esc="close">
-      <div v-if="t" class="modal-box w-[32rem] max-w-[95vw] space-y-4">
+      <div v-if="t" class="modal-box w-[34rem] max-w-[95vw] space-y-5">
         <div class="flex items-start gap-4">
           <img :src="WEB_TOOL_LOGO[t.id]" alt="" class="size-14 shrink-0 object-contain drop-shadow-sm" :class="WEB_TOOL_TILE[t.id]" draggable="false" />
           <div class="min-w-0 space-y-1">
-            <h3 class="text-lg font-semibold tracking-tight">{{ mode === 'install' ? `Install ${t.name}` : `${t.name} settings` }}</h3>
+            <h3 class="text-lg font-semibold tracking-tight">{{ mode === 'install' ? `Add ${t.name}` : `${t.name} settings` }}</h3>
             <p class="text-sm opacity-70">{{ t.description }}</p>
-            <p v-if="mode === 'install'" class="text-xs opacity-60">
-              The latest release from <a class="link" @click="herd.openUrl(t.sourceUrl)">{{ t.sourceUrl.replace(/^https:\/\//, '') }}</a>, SHA-256 checked. It signs in to DevCatz's
-              services by itself; DBCatz stays the recommended app.
-            </p>
+            <p v-if="t.external && mode === 'settings'" class="text-xs opacity-60">Your own copy ({{ t.external.label }}): <code class="break-all">{{ t.external.path }}</code></p>
           </div>
         </div>
 
         <TaskStepper v-if="task" :task="task" cancellable dismissable @cancel="herd.webToolCancel(tool)" @dismiss="herd.webToolCancel(tool)" />
 
         <template v-if="!working">
-          <label class="block space-y-1">
-            <span class="label-caps">Address</span>
-            <div class="join flex">
-              <span class="join-item flex shrink-0 items-center border border-base-300 bg-base-200 px-2.5 font-mono text-xs opacity-70">https://</span>
-              <input v-model="domain" class="input input-sm join-item min-w-0 flex-1 font-mono" :class="{ 'input-error': errs.domain }" spellcheck="false" autocapitalize="off" />
-              <span class="join-item flex shrink-0 items-center border border-base-300 bg-base-200 px-2.5 font-mono text-xs opacity-70">.{{ tld }}</span>
+          <!-- Where it comes from (install only) -->
+          <fieldset v-if="mode === 'install'" class="min-w-0 space-y-2">
+            <span class="label-caps mb-1 block">Source</span>
+            <button
+              v-if="t.found"
+              type="button"
+              class="flex w-full min-w-0 items-start gap-3 overflow-hidden rounded-box border px-3 py-2.5 text-left transition-colors"
+              :class="source === 'existing' ? 'border-primary bg-primary/5' : 'border-base-300/60 hover:bg-base-200/60'"
+              @click="source = 'existing'"
+            >
+              <input type="radio" class="radio radio-primary radio-sm mt-0.5" :checked="source === 'existing'" tabindex="-1" />
+              <span class="min-w-0 flex-1 space-y-0.5">
+                <span class="block text-sm font-medium">Use your own <span class="font-normal opacity-60">{{ [t.found.label, t.found.version].filter(Boolean).map((x) => `· ${x}`).join(' ') }}</span></span>
+                <!-- A long path keeps its end (the file or folder name) and loses its start. -->
+                <code class="block truncate text-left text-xs opacity-60" :title="t.found.path" dir="rtl"><bdi dir="ltr">{{ t.found.path }}</bdi></code>
+                <span class="block text-xs opacity-60">
+                  Nothing to download, and your files stay as they are.
+                  <template v-if="!t.found.signsIn">It signs in with its own settings (its config.inc.php), so it may ask for the user and password.</template>
+                  <template v-else>DevCatz signs it in to the services.</template>
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              class="flex w-full min-w-0 items-start gap-3 overflow-hidden rounded-box border px-3 py-2.5 text-left transition-colors"
+              :class="source === 'download' ? 'border-primary bg-primary/5' : 'border-base-300/60 hover:bg-base-200/60'"
+              @click="source = 'download'"
+            >
+              <input type="radio" class="radio radio-primary radio-sm mt-0.5" :checked="source === 'download'" tabindex="-1" />
+              <span class="min-w-0 flex-1 space-y-0.5">
+                <span class="block text-sm font-medium">Download the latest</span>
+                <span class="block text-xs opacity-60">
+                  From <a class="link" @click.stop="herd.openUrl(t.sourceUrl)">{{ t.sourceUrl.replace(/^https:\/\//, '') }}</a>, checksum checked, kept in DevCatz's folder and updated from here. It signs in to the services by itself.
+                </span>
+              </span>
+            </button>
+            <div class="flex flex-wrap items-center gap-2 pt-1 text-xs">
+              <button type="button" class="btn btn-ghost btn-xs" :disabled="picking" @click="pickOwn">{{ tool === 'phpmyadmin' || tool === 'rediscommander' ? 'Choose folder…' : 'Choose file…' }}</button>
+              <span class="opacity-60">{{ t.found ? 'Another copy? Choose' : 'Have one already? Choose' }} {{ OWN_HINT[tool] }}.</span>
             </div>
-            <span v-if="errs.domain" class="text-xs text-error">{{ errs.domain }}</span>
-            <span v-else-if="tool === 'pgweb'" class="text-xs opacity-60">Each PostgreSQL service gets its own name under it: <code>&lt;service&gt;.{{ domain }}.{{ tld }}</code> (and <code>{{ domain }}.{{ tld }}</code> while you have one).</span>
-          </label>
+          </fieldset>
 
-          <label class="block space-y-1">
-            <span class="label-caps">Port</span>
-            <input v-model.number="port" type="number" min="1024" max="65535" class="input input-sm w-36 font-mono" :class="{ 'input-error': errs.port }" />
-            <span v-if="errs.port" class="block text-xs text-error">{{ errs.port }}</span>
-            <span v-else class="block text-xs opacity-60">On 127.0.0.1 only.<template v-if="tool === 'pgweb'"> The first PostgreSQL service uses it, the next ones the following free ports.</template></span>
-          </label>
+          <!-- Address + port -->
+          <fieldset class="grid min-w-0 gap-4 sm:grid-cols-[1fr_8.5rem]">
+            <label class="block min-w-0">
+              <span class="label-caps mb-1 block">Address</span>
+              <div class="join flex">
+                <span class="join-item flex shrink-0 items-center border border-base-300 bg-base-200 px-2.5 font-mono text-xs opacity-70">https://</span>
+                <input v-model="domain" class="input input-sm join-item min-w-0 flex-1 font-mono" :class="{ 'input-error': errs.domain }" spellcheck="false" autocapitalize="off" />
+                <span class="join-item flex shrink-0 items-center border border-base-300 bg-base-200 px-2.5 font-mono text-xs opacity-70">.{{ tld }}</span>
+              </div>
+              <span v-if="errs.domain" class="mt-1 block text-xs text-error">{{ errs.domain }}</span>
+            </label>
+            <label class="block">
+              <span class="label-caps mb-1 block">Port</span>
+              <input v-model.number="port" type="number" min="1024" max="65535" class="input input-sm w-full font-mono" :class="{ 'input-error': errs.port }" />
+              <span v-if="errs.port" class="mt-1 block text-xs text-error">{{ errs.port }}</span>
+            </label>
+            <p v-if="!errs.domain && !errs.port" class="-mt-2 text-xs opacity-60 sm:col-span-2">
+              <template v-if="tool === 'pgweb'">
+                Each PostgreSQL service gets its own name under it, <code>&lt;service&gt;.{{ domain }}.{{ tld }}</code>, and the port from this one up. On 127.0.0.1 only.
+              </template>
+              <template v-else>Listens on 127.0.0.1 only; DevCatz serves it at this address over HTTPS.</template>
+            </p>
+          </fieldset>
 
-          <div v-if="kind" class="space-y-1">
-            <span class="label-caps block">{{ rtName }}</span>
+          <!-- Runtime -->
+          <div v-if="kind">
+            <span class="label-caps mb-1 block">{{ rtName }}</span>
             <template v-if="!needPhp">
-              <select v-model="php" class="select select-sm w-56">
+              <select v-model="php" class="select select-sm w-60 font-mono">
                 <option v-for="p in phps" :key="p.version" :value="p.version">{{ rtName }} {{ p.version }}{{ p.version === rtDefault ? ' (default)' : '' }}</option>
               </select>
-              <span v-if="pmaNote" class="block text-xs opacity-60">phpMyAdmin 5.2 is made for PHP up to 8.3. It runs on newer PHP too; its deprecation notices stay out of the pages.</span>
+              <span v-if="pmaNote" class="mt-1 block text-xs opacity-60">phpMyAdmin 5.2 is made for PHP up to 8.3. It runs on newer PHP too; its deprecation notices stay out of the pages.</span>
             </template>
-            <div v-else class="flex flex-wrap items-center gap-2 rounded-box bg-base-200/70 p-3 text-sm">
-              <span class="flex-1">{{ t.name }} runs on {{ rtName }}, and no {{ rtName }} is installed yet.</span>
+            <div v-else class="flex flex-wrap items-center gap-3 rounded-box border border-base-300/60 bg-base-200/50 px-3 py-2.5 text-sm">
+              <span class="min-w-0 flex-1">{{ t.name }} runs on {{ rtName }}, and none is installed yet.</span>
               <button v-if="!phpInstalling || phpInstalling.error" class="btn btn-sm" @click="installPhp">Install {{ rtName }}</button>
               <span v-else class="flex items-center gap-2 text-xs opacity-70"><span class="loading loading-spinner loading-xs" />Installing {{ rtName }} {{ phpInstalling.version }}…</span>
               <span v-if="phpInstalling?.error" class="w-full text-xs text-error">{{ phpInstalling.error }}</span>
@@ -136,10 +220,10 @@ function close() {
           </div>
         </template>
 
-        <div class="modal-action">
+        <div class="modal-action mt-2">
           <button class="btn btn-ghost btn-sm" :disabled="working" @click="close">{{ task?.error ? 'Close' : 'Cancel' }}</button>
           <button v-if="!working" class="btn btn-primary btn-sm" :disabled="!ready || !changed" @click="submit">
-            {{ mode === 'install' ? (serviceId ? 'Install & open' : 'Install') : 'Save' }}
+            {{ mode === 'install' ? (source === 'existing' ? (serviceId ? 'Use & open' : 'Use it') : serviceId ? 'Install & open' : 'Install') : 'Save' }}
           </button>
         </div>
       </div>

@@ -200,7 +200,7 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
         gateways: s.gateways.map(svc),
         whatsapp: s.whatsapp.map((w) => svc({ ...w, kind: w.engine })),
         mail: { running: s.mail.running, count: s.mail.count, unread: s.mail.unread },
-        webTools: s.webTools.map((t) => ({ id: t.id, name: t.name, opens: t.engines, installed: t.installed, version: t.version, update: t.update, address: t.installed ? t.url : null, port: t.port, runsOn: t.runtime ? `${t.runtime === 'php' ? 'PHP' : 'Node.js'} ${t.runtimeVersion ?? '(none installed)'}` : null, status: taskProgress(t.task) ? 'installing' : t.running.length ? 'running' : t.installed ? 'stopped' : 'not installed', progress: taskProgress(t.task), error: t.task?.error ?? null, running: t.running.map((r) => ({ service: r.serviceId, address: r.url, port: r.port })) })),
+        webTools: s.webTools.map((t) => ({ id: t.id, name: t.name, opens: t.engines, installed: t.installed, yours: t.external ? `${t.external.label}: ${t.external.path}` : null, found: t.found ? `${t.found.label}${t.found.version ? ` ${t.found.version}` : ''}: ${t.found.path}` : null, version: t.version, update: t.update, address: t.installed ? t.url : null, port: t.port, runsOn: t.runtime ? `${t.runtime === 'php' ? 'PHP' : 'Node.js'} ${t.runtimeVersion ?? '(none installed)'}` : null, status: taskProgress(t.task) ? 'installing' : t.running.length ? 'running' : t.installed ? 'stopped' : 'not installed', progress: taskProgress(t.task), error: t.task?.error ?? null, running: t.running.map((r) => ({ service: r.serviceId, address: r.url, port: r.port })) })),
         openWith: s.settings.dbOpenWith ?? {},
       });
     }),

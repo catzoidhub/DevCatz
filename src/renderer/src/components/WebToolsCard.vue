@@ -61,6 +61,7 @@ async function uninstall(id: WebToolId) {
               <div class="flex items-center gap-2 font-medium">
                 {{ t.name }}
                 <span v-if="t.installed" class="font-mono text-xs font-normal opacity-60">{{ t.version }}</span>
+                <span v-if="t.external" class="badge badge-ghost badge-xs" :title="t.external.path">your own{{ t.external.label ? ` · ${t.external.label}` : '' }}</span>
                 <span v-if="t.installed && runningHere(t.id)" class="status status-success status-sm" title="Running" />
                 <span v-if="choice === t.id" class="badge badge-soft badge-primary badge-xs">Open uses this</span>
                 <span v-if="t.update" class="badge badge-info badge-xs">{{ t.update }} available</span>
@@ -71,6 +72,7 @@ async function uninstall(id: WebToolId) {
                   <span v-else class="font-mono">&lt;service&gt;.{{ t.host }}</span>
                   · :{{ t.running.find((r) => r.serviceId === service.id)?.port ?? t.port }}<template v-if="t.runtime && t.runtimeVersion"> · {{ t.runtime === 'php' ? 'PHP' : 'Node.js' }} {{ t.runtimeVersion }}</template>
                 </template>
+                <template v-else-if="t.found">Found on this computer{{ t.found.label ? ` (${t.found.label})` : '' }}{{ t.found.version ? ` · ${t.found.version}` : '' }}</template>
                 <template v-else>{{ t.description }}</template>
               </div>
             </div>
@@ -84,19 +86,20 @@ async function uninstall(id: WebToolId) {
                   <ul tabindex="0" class="dropdown-content menu z-30 mt-1 w-56 rounded-box border border-base-300/60 bg-base-100 p-1.5 shadow-lg">
                     <li><a @click="useForOpen(t.id)">{{ choice === t.id ? 'Open with DBCatz again' : 'Use for Open' }}</a></li>
                     <li><a @click="dialog = { tool: t.id, mode: 'settings' }">Address, port{{ t.runtime ? (t.runtime === 'php' ? ', PHP' : ', Node.js') : '' }}…</a></li>
-                    <li><a class="text-error" @click="confirming = t.id">Uninstall…</a></li>
+                    <li><a class="text-error" @click="confirming = t.id">{{ t.external ? 'Stop using…' : 'Uninstall…' }}</a></li>
                   </ul>
                 </div>
               </template>
-              <button v-else class="btn btn-sm" :disabled="!!t.task && !t.task.done && !t.task.error" @click="dialog = { tool: t.id, mode: 'install' }">Install…</button>
+              <button v-else class="btn btn-sm" :disabled="!!t.task && !t.task.done && !t.task.error" @click="dialog = { tool: t.id, mode: 'install' }">{{ t.found ? 'Add…' : 'Install…' }}</button>
             </div>
           </div>
           <WebToolAutoStop v-if="t.installed && t.autoStop !== null" :tool="t" />
           <TaskStepper v-if="t.task && !dialog" :task="t.task" compact cancellable dismissable @cancel="herd.webToolCancel(t.id)" @dismiss="herd.webToolCancel(t.id)" />
           <div v-if="confirming === t.id" role="alert" class="alert alert-warning alert-soft flex flex-wrap items-center gap-2 text-sm">
-            <span class="flex-1">Uninstall {{ t.name }}? Its files and {{ t.host }} go; every database stays as it is.</span>
+            <span v-if="t.external" class="flex-1">Stop using your {{ t.name }} here? {{ t.host }} goes; its files and every database stay as they are.</span>
+            <span v-else class="flex-1">Uninstall {{ t.name }}? Its files and {{ t.host }} go; every database stays as it is.</span>
             <button class="btn btn-ghost btn-xs" @click="confirming = null">Keep</button>
-            <button class="btn btn-error btn-xs" @click="uninstall(t.id)">Uninstall</button>
+            <button class="btn btn-error btn-xs" @click="uninstall(t.id)">{{ t.external ? 'Stop using' : 'Uninstall' }}</button>
           </div>
         </div>
       </div>

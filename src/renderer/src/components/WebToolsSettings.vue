@@ -68,13 +68,17 @@ async function uninstall(id: WebToolId) {
                   <img v-for="e in t.engines" :key="e" :src="DB_LOGO[e]" :alt="e" :title="e" class="mr-1 inline size-4 rounded bg-white p-px" draggable="false" />
                 </td>
                 <td class="font-mono text-xs whitespace-nowrap">
-                  <template v-if="t.installed">{{ t.version }}<span v-if="t.update" class="badge badge-info badge-xs ml-1.5">{{ t.update }}</span></template>
+                  <template v-if="t.installed">
+                    {{ t.version }}<span v-if="t.update" class="badge badge-info badge-xs ml-1.5">{{ t.update }}</span>
+                    <span v-if="t.external" class="block font-sans text-[11px] opacity-60" :title="t.external.path">your own{{ t.external.label ? ` · ${t.external.label}` : '' }}</span>
+                  </template>
                   <span v-else class="badge badge-ghost badge-sm font-sans">not installed</span>
                 </td>
                 <td class="font-mono text-xs">
                   <template v-if="t.installed">
                     {{ t.id === 'pgweb' ? `<service>.${t.host}` : t.host }} · :{{ t.port }}<span v-if="t.runtime && t.runtimeVersion" class="font-sans opacity-60"> · {{ t.runtime === 'php' ? 'PHP' : 'Node.js' }} {{ t.runtimeVersion }}</span>
                   </template>
+                  <span v-else-if="t.found" class="font-sans opacity-60" :title="t.found.path">Found on this computer{{ t.found.label ? ` (${t.found.label})` : '' }}{{ t.found.version ? ` · ${t.found.version}` : '' }}</span>
                   <span v-else class="font-sans opacity-60">{{ t.blocked ?? t.description }}</span>
                 </td>
                 <td class="text-right whitespace-nowrap">
@@ -90,9 +94,9 @@ async function uninstall(id: WebToolId) {
                       {{ t.running.length ? (t.id === 'pgweb' && t.running.length > 1 ? `Stop all (${t.running.length})` : 'Stop') : 'Start' }}
                     </button>
                     <button class="btn btn-ghost btn-xs" :disabled="busy(t)" @click="dialog = { tool: t.id, mode: 'settings' }">Settings…</button>
-                    <button class="btn btn-ghost btn-xs text-error" :disabled="busy(t)" @click="confirming = t.id">Uninstall</button>
+                    <button class="btn btn-ghost btn-xs text-error" :disabled="busy(t)" @click="confirming = t.id">{{ t.external ? 'Stop using' : 'Uninstall' }}</button>
                   </template>
-                  <button v-else class="btn btn-xs" :disabled="busy(t)" @click="dialog = { tool: t.id, mode: 'install' }">Install…</button>
+                  <button v-else class="btn btn-xs" :disabled="busy(t)" @click="dialog = { tool: t.id, mode: 'install' }">{{ t.found ? 'Add…' : 'Install…' }}</button>
                 </td>
               </tr>
               <tr v-if="t.installed && t.autoStop !== null">
@@ -104,9 +108,10 @@ async function uninstall(id: WebToolId) {
                 <td colspan="5">
                   <TaskStepper v-if="t.task && !dialog" :task="t.task" compact cancellable dismissable @cancel="herd.webToolCancel(t.id)" @dismiss="herd.webToolCancel(t.id)" />
                   <div v-if="confirming === t.id" role="alert" class="alert alert-warning alert-soft flex flex-wrap items-center gap-2 text-sm">
-                    <span class="flex-1">Uninstall {{ t.name }}? Its files and {{ t.host }} go; every database stays as it is.</span>
+                    <span v-if="t.external" class="flex-1">Stop using your {{ t.name }} here? {{ t.host }} goes; its files and every database stay as they are.</span>
+                    <span v-else class="flex-1">Uninstall {{ t.name }}? Its files and {{ t.host }} go; every database stays as it is.</span>
                     <button class="btn btn-ghost btn-xs" @click="confirming = null">Keep</button>
-                    <button class="btn btn-error btn-xs" @click="uninstall(t.id)">Uninstall</button>
+                    <button class="btn btn-error btn-xs" @click="uninstall(t.id)">{{ t.external ? 'Stop using' : 'Uninstall' }}</button>
                   </div>
                 </td>
               </tr>

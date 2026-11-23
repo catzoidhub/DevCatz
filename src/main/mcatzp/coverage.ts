@@ -257,6 +257,7 @@ export const MCATZP_COVERAGE = {
   webToolUninstall: 'tool: uninstall_web_tool',
   webToolsCheckUpdates: 'tool: check_updates',
   webToolCheck: 'not a tool',
+  webToolInspect: 'not a tool',
   webToolStart: 'tool: start_web_tool',
   webToolStop: 'tool: stop_web_tool',
   webToolSetAutoStop: 'tool: configure_web_tool',

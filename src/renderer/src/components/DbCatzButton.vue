@@ -44,7 +44,7 @@ function close() {
 </script>
 
 <template>
-  <button type="button" class="btn gap-2" :class="[primary ? 'btn-primary' : '', size === 'sm' ? 'btn-sm' : '', joinItem ? 'join-item' : '', hide ? 'hidden' : '']" :title="hint" @click="open">
+  <button type="button" class="btn gap-2" :class="[primary ? 'btn-primary' : '', size === 'sm' ? 'btn-sm' : '', joinItem ? 'rounded-r-none' : '', hide ? 'hidden' : '']" :title="hint" @click="open">
     <img :src="dbcatzLogo" alt="" class="size-5 drop-shadow-sm" draggable="false" />{{ label }}
   </button>
 

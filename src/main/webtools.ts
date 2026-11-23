@@ -1,13 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { delimiter, join } from 'node:path';
-import type { DbEngine, DbOpenTool, DbServiceState, TaskProgress, WebToolConfig, WebToolId, WebToolRun, WebToolState } from '@shared/types';
+import { delimiter, dirname, join } from 'node:path';
+import type { DbEngine, DbOpenTool, DbServiceState, TaskProgress, WebToolConfig, WebToolFound, WebToolId, WebToolRun, WebToolState } from '@shared/types';
 import type { Route } from './proxy';
 import type { MonitorTarget } from './monitor';
 import { downloadVerified } from './download';
-import { getShellEnv, run } from './env';
+import { findCommand, getShellEnv, run } from './env';
 import { githubJson } from './github';
 import { unzipLinux } from './linuxapps';
 import { isLinux, isWin, killTree, TAR } from './platform';
@@ -196,8 +196,12 @@ const slug = (s: string): string =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'db';
 
-/** Adminer's sign-in for DevCatz's services (servers.json → its login, without the form). */
-const ADMINER_INDEX = `<?php
+/**
+ * Adminer's sign-in for DevCatz's services (servers.json → its login, without the form). `adminer` is the file it
+ * includes: DevCatz's own copy next to it, or yours (MAMP, Laragon, apt …), left as it is. Adminer 5+ (namespace
+ * Adminer) and 4.x (global class) both work.
+ */
+const adminerIndex = (adminer: string | null): string => `<?php
 // Written by DevCatz. Opens DevCatz's own database services without the login form. Their users and passwords stay
 // in servers.json next to this folder (never served), readable by you only; a link names a service, never a password.
 function devcatz_servers(): array {
@@ -211,17 +215,22 @@ if (isset($_GET['devcatz']) && ($s = devcatz_servers()[$_GET['devcatz']] ?? null
   $_SERVER['REQUEST_URI'] = preg_replace('~([?&])devcatz=[^&]*&?~', '$1', $_SERVER['REQUEST_URI']);
   unset($_GET['devcatz']);
 }
+trait DevCatzSignIn {
+  function name() { return 'Adminer · DevCatz'; }
+  // DevCatz's services may have no password (SQLite never has one).
+  function login($login, $password) { return true; }
+  // The sign-in above has no form, so there is no form token to check.
+  function verifyLoginToken() { return !defined('DEVCATZ_SIGN_IN'); }
+}
 function adminer_object() {
-  class DevCatzAdminer extends \\Adminer\\Adminer {
-    function name() { return 'Adminer · DevCatz'; }
-    // DevCatz's services may have no password (SQLite never has one).
-    function login($login, $password) { return true; }
-    // The sign-in above has no form, so there is no form token to check.
-    function verifyLoginToken() { return !defined('DEVCATZ_SIGN_IN'); }
+  if (class_exists('Adminer\\\\Adminer')) {
+    class DevCatzAdminer extends \\Adminer\\Adminer { use DevCatzSignIn; }
+  } else {
+    class DevCatzAdminer extends \\Adminer { use DevCatzSignIn; }
   }
   return new DevCatzAdminer;
 }
-include __DIR__ . '/adminer.php';
+include ${adminer ? JSON.stringify(adminer).replace(/\$/g, '\\$') : "__DIR__ . '/adminer.php'"};
 `;
 
 /** phpMyAdmin's config: every MySQL / MariaDB service of DevCatz is a server, signed in with its own user. */
@@ -243,6 +252,127 @@ foreach ((json_decode((string) @file_get_contents(dirname(__DIR__) . '/servers.j
     ];
 }
 `;
+
+// ---------------------------------------------------------------- copies you already have
+
+const home = (): string => process.env.HOME ?? process.env.USERPROFILE ?? '';
+const SYS = (): string => process.env.SystemDrive ?? 'C:';
+
+/** Where a copy came from, from its path. */
+function labelOf(p: string): string {
+  const l = p.toLowerCase();
+  if (l.includes('/applications/mamp') || l.includes('\\mamp\\')) return 'MAMP';
+  if (l.includes('xampp') || l.includes('/opt/lampp')) return 'XAMPP';
+  if (l.includes('laragon')) return 'Laragon';
+  if (l.includes('wamp')) return 'WampServer';
+  if (l.includes('/homebrew/') || l.includes('/cellar/') || l.startsWith('/usr/local/share') || l.startsWith('/usr/local/bin') || l.startsWith('/home/linuxbrew')) return 'Homebrew';
+  if (l.includes('scoop')) return 'Scoop';
+  if (l.includes('node_modules')) return 'npm';
+  if (l.startsWith('/usr/share') || l.startsWith('/usr/bin')) return 'your system packages';
+  return '';
+}
+
+/** phpMyAdmin's version from its folder (RELEASE-DATE-x.y.z, or Version.php). */
+function pmaVersion(dir: string): string | null {
+  try {
+    const f = readdirSync(dir).find((x) => x.startsWith('RELEASE-DATE-'));
+    if (f) return f.slice('RELEASE-DATE-'.length);
+    for (const v of ['libraries/classes/Version.php', 'src/Version.php']) {
+      const m = existsSync(join(dir, v)) ? /VERSION\s*=\s*'([0-9][^']*)'/.exec(readFileSync(join(dir, v), 'utf8')) : null;
+      if (m) return m[1];
+    }
+  } catch {
+    /* unreadable */
+  }
+  return null;
+}
+
+function phpMyAdminCandidates(): string[] {
+  if (isWin) {
+    const wamp = join(SYS(), '\\wamp64', 'apps');
+    let w: string[] = [];
+    try {
+      w = readdirSync(wamp).filter((d) => d.toLowerCase().startsWith('phpmyadmin')).map((d) => join(wamp, d));
+    } catch {
+      /* no WampServer */
+    }
+    return [join(SYS(), '\\xampp', 'phpMyAdmin'), join(SYS(), '\\laragon', 'etc', 'apps', 'phpMyAdmin'), join(SYS(), '\\MAMP', 'bin', 'phpMyAdmin5'), ...w];
+  }
+  if (isLinux) return ['/usr/share/phpmyadmin', '/opt/lampp/phpmyadmin', '/home/linuxbrew/.linuxbrew/share/phpmyadmin'];
+  return ['/Applications/MAMP/bin/phpMyAdmin5', '/Applications/MAMP/bin/phpMyAdmin', '/Applications/XAMPP/xamppfiles/phpmyadmin', '/opt/homebrew/share/phpmyadmin', '/usr/local/share/phpmyadmin'];
+}
+
+function adminerCandidates(): string[] {
+  if (isWin) return [join(SYS(), '\\laragon', 'etc', 'apps', 'adminer', 'index.php'), join(SYS(), '\\xampp', 'adminer', 'adminer.php')];
+  if (isLinux) return ['/usr/share/adminer/adminer.php', '/usr/share/adminer/adminer/adminer.php'];
+  return ['/Applications/MAMP/bin/adminer/adminer.php', '/opt/homebrew/share/adminer/adminer.php', '/usr/local/share/adminer/adminer.php', join(home(), 'Sites', 'adminer.php')];
+}
+
+/** A copy of the tool that is already on this computer (outside DevCatz), or null. */
+async function findExisting(id: WebToolId): Promise<WebToolFound | null> {
+  try {
+    if (id === 'phpmyadmin') {
+      const dir = phpMyAdminCandidates().find((d) => existsSync(join(d, 'index.php')) && (existsSync(join(d, 'libraries')) || existsSync(join(d, 'src'))));
+      return dir ? { path: dir, label: labelOf(dir), version: pmaVersion(dir), signsIn: false } : null;
+    }
+    if (id === 'adminer') {
+      const f = adminerCandidates().find((p) => existsSync(p) && /Adminer/i.test(readFileSync(p, 'utf8').slice(0, 2000)));
+      if (!f) return null;
+      const v = /@version\s+([0-9][^\s*]*)/.exec(readFileSync(f, 'utf8').slice(0, 2000))?.[1] ?? null;
+      return { path: f, label: labelOf(f), version: v, signsIn: true };
+    }
+    if (id === 'pgweb') {
+      const bin = (await findCommand('pgweb')) ?? (isWin ? null : ['/opt/homebrew/bin/pgweb', '/usr/local/bin/pgweb'].find((p) => existsSync(p)) ?? null);
+      if (!bin) return null;
+      const r = await run(bin, ['--version'], { timeout: 5000 });
+      return { path: bin, label: labelOf(realpathSync(bin)), version: /v?(\d+\.\d+\.\d+)/.exec(r.stdout + r.stderr)?.[1] ?? null, signsIn: true };
+    }
+    const bin = await findCommand('redis-commander');
+    if (!bin) return null;
+    // npm's global link (macOS / Linux) points into the package; Windows' .cmd shim sits next to node_modules.
+    const real = realpathSync(bin);
+    const pkg = real.endsWith('redis-commander.js') ? dirname(dirname(real)) : join(dirname(bin), 'node_modules', 'redis-commander');
+    if (!existsSync(join(pkg, 'bin', 'redis-commander.js'))) return null;
+    const v = (JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')) as { version?: string }).version ?? null;
+    return { path: pkg, label: labelOf(pkg), version: v, signsIn: true };
+  } catch {
+    return null;
+  }
+}
+
+/** A folder or file you chose ("Use your own"): checked to be the tool before it is used. */
+export async function inspectPath(id: WebToolId, picked: string): Promise<WebToolFound> {
+  const name = TOOLS[id].name;
+  let p = picked;
+  try {
+    if (id === 'phpmyadmin') {
+      if (statSync(p).isFile()) p = dirname(p);
+      if (!(existsSync(join(p, 'index.php')) && (existsSync(join(p, 'libraries')) || existsSync(join(p, 'src'))))) throw new Error(`No ${name} in ${picked}: pick the folder that holds its index.php`);
+      return { path: p, label: labelOf(p), version: pmaVersion(p), signsIn: false };
+    }
+    if (id === 'adminer') {
+      if (statSync(p).isDirectory()) p = ['adminer.php', 'index.php'].map((f) => join(p, f)).find((f) => existsSync(f)) ?? p;
+      const head = statSync(p).isFile() ? readFileSync(p, 'utf8').slice(0, 2000) : '';
+      if (!/Adminer/i.test(head)) throw new Error(`No ${name} in ${picked}: pick its adminer.php`);
+      return { path: p, label: labelOf(p), version: /@version\s+([0-9][^\s*]*)/.exec(head)?.[1] ?? null, signsIn: true };
+    }
+    if (id === 'pgweb') {
+      if (!statSync(p).isFile()) throw new Error(`Pick the pgweb program itself, not a folder`);
+      const r = await run(p, ['--version'], { timeout: 5000 });
+      if (!/pgweb/i.test(r.stdout + r.stderr)) throw new Error(`${picked} is not pgweb`);
+      return { path: p, label: labelOf(realpathSync(p)), version: /v?(\d+\.\d+\.\d+)/.exec(r.stdout + r.stderr)?.[1] ?? null, signsIn: true };
+    }
+    // Redis Commander: its package folder (or a file in it, or the node_modules / prefix that holds it).
+    if (statSync(p).isFile()) p = dirname(p);
+    const pkg = [p, dirname(p), join(p, 'redis-commander'), join(p, 'node_modules', 'redis-commander'), join(p, 'lib', 'node_modules', 'redis-commander')].find((d) => existsSync(join(d, 'bin', 'redis-commander.js')));
+    if (!pkg) throw new Error(`No ${name} in ${picked}: pick its folder (…/node_modules/redis-commander)`);
+    const v = (JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')) as { version?: string }).version ?? null;
+    return { path: pkg, label: labelOf(pkg), version: v, signsIn: true };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${picked} does not exist`);
+    throw err;
+  }
+}
 
 interface Running {
   key: string;
@@ -275,16 +405,42 @@ export class WebTools {
   private aborts = new Map<WebToolId, AbortController>();
   private updates = new Map<WebToolId, string>();
   private runs = new Map<string, Running>();
+  /** Copies already on this computer (outside DevCatz), looked for at start and when a form opens. */
+  private found = new Map<WebToolId, WebToolFound | null>();
   onChange: () => void = () => undefined;
 
-  constructor(private deps: WebToolsDeps) {}
+  constructor(private deps: WebToolsDeps) {
+    void this.scan();
+  }
+
+  /** Choose folder / file: checks what you picked and keeps it as the copy to use. */
+  async inspect(id: WebToolId, picked: string): Promise<WebToolFound> {
+    const f = await inspectPath(id, picked);
+    this.found.set(id, f);
+    this.picked.add(id);
+    this.onChange();
+    return f;
+  }
+  /** Tools whose found copy you picked yourself (a later scan keeps it). */
+  private picked = new Set<WebToolId>();
+
+  async scan(only?: WebToolId): Promise<void> {
+    for (const id of only ? [only] : WEB_TOOL_IDS) if (!this.picked.has(id)) this.found.set(id, await findExisting(id));
+    this.onChange();
+  }
+
+  /** Where the tool's own files are: yours (outside DevCatz) or DevCatz's download. */
+  private appPath(id: WebToolId): string {
+    return this.config(id)?.external?.path ?? this.dir(id, 'app');
+  }
 
   private dir(id: WebToolId, ...p: string[]): string {
     return dataDir('webtools', id, ...p);
   }
   private config(id: WebToolId): WebToolConfig | null {
     const c = store.settings.webTools?.[id];
-    return c && existsSync(this.dir(id, 'app')) ? c : null;
+    if (!c) return null;
+    return existsSync(c.external ? c.external.path : this.dir(id, 'app')) ? c : null;
   }
   private save(id: WebToolId, c: WebToolConfig | null): void {
     const all = { ...(store.settings.webTools ?? {}) };
@@ -329,6 +485,8 @@ export class WebTools {
         running: [...this.runs.values()].filter((r) => r.id === id).map((r) => this.runInfo(r)),
         task: this.tasks.get(id) ?? null,
         sourceUrl: t.sourceUrl,
+        external: c?.external ? { ...c.external, version: c.version, signsIn: !(id === 'phpmyadmin') } : null,
+        found: c ? null : (this.found.get(id) ?? null),
       };
     });
   }
@@ -346,6 +504,7 @@ export class WebTools {
   // ---------------------------------------------------------------- form checks
 
   async check(id: WebToolId, o: { domain: string; port: number }): Promise<{ domain: string | null; port: string | null }> {
+    if (!this.found.has(id) || !this.config(id)) void this.scan(id);
     const name = String(o.domain ?? '').trim().toLowerCase();
     let domain: string | null = null;
     if (!NAME_RE.test(name)) domain = 'Lowercase letters, digits and hyphens';
@@ -439,7 +598,7 @@ export class WebTools {
 
   /** The files DevCatz adds to a tool: Adminer's sign-in, phpMyAdmin's config and temp folder. */
   private writeFiles(id: WebToolId): void {
-    if (id === 'adminer') writeFileSync(this.dir(id, 'app', 'index.php'), ADMINER_INDEX);
+    if (id === 'adminer') writeFileSync(this.dir(id, 'app', 'index.php'), adminerIndex(null));
     if (id === 'phpmyadmin') {
       mkdirSync(this.dir(id, 'tmp'), { recursive: true });
       const secret = randomBytes(24).toString('base64').replace(/[^A-Za-z0-9]/g, '').padEnd(32, 'x').slice(0, 32);
@@ -447,12 +606,15 @@ export class WebTools {
     }
   }
 
-  async install(id: WebToolId, o: { domain: string; port: number; runtime?: string | null }): Promise<void> {
+  async install(id: WebToolId, o: { domain: string; port: number; runtime?: string | null; existing?: boolean }): Promise<void> {
     if (this.aborts.has(id)) throw new Error(`${TOOLS[id].name} is busy`);
+    // One of each: a second install would replace the first one's files and settings.
+    if (this.config(id)) throw new Error(`${TOOLS[id].name} is already installed: use Update, or change its address and port in its settings`);
     const kind = TOOLS[id].runtime;
     const rt = kind ? this.deps.runtime(kind, o.runtime) : null;
     if (kind && !rt) throw new Error(`Needs ${RUNTIME_NAME[kind]}: install it first`);
     const form = await this.assertForm(id, o);
+    if (o.existing) return this.useExisting(id, form, rt);
     const t = this.task(id, { kind: 'install', title: `Installing ${TOOLS[id].name}`, steps: ['Looking up the latest release', 'Downloading (SHA-256 checked)', 'Setting up'], step: 0 });
     try {
       const version = await this.download(id, t.report, undefined, rt);
@@ -469,9 +631,26 @@ export class WebTools {
     }
   }
 
+  /** Your own copy (MAMP, XAMPP, Laragon, Homebrew, npm …): nothing is downloaded and its files are left as they are. */
+  private async useExisting(id: WebToolId, form: { domain: string; port: number }, rt: RuntimeInfo | null): Promise<void> {
+    if (!this.picked.has(id)) await this.scan(id);
+    const f = this.found.get(id);
+    if (!f) throw new Error(`No ${TOOLS[id].name} found on this computer`);
+    // Adminer: DevCatz's small sign-in page next to it includes your file (the file itself is untouched).
+    if (id === 'adminer') {
+      mkdirSync(this.dir(id, 'app'), { recursive: true });
+      writeFileSync(this.dir(id, 'app', 'index.php'), adminerIndex(f.path));
+    }
+    this.save(id, { version: f.version ?? 'yours', domain: form.domain, port: form.port, external: { path: f.path, label: f.label }, ...(rt ? { runtime: rt.version } : {}) });
+    this.updates.delete(id);
+    if (TOOLS[id].runtime) await this.startShared(id).catch(() => undefined);
+    this.onChange();
+  }
+
   async update(id: WebToolId): Promise<void> {
     const c = this.config(id);
     if (!c) throw new Error(`${TOOLS[id].name} is not installed`);
+    if (c.external) throw new Error(`This ${TOOLS[id].name} is yours (${c.external.label}): update it there`);
     if (this.aborts.has(id)) throw new Error(`${TOOLS[id].name} is busy`);
     const t = this.task(id, { kind: 'update', title: `Updating ${TOOLS[id].name}`, steps: ['Looking up the latest release', 'Downloading (SHA-256 checked)', 'Setting up'], step: 0 });
     try {
@@ -492,8 +671,11 @@ export class WebTools {
   uninstall(id: WebToolId): void {
     if (this.aborts.has(id)) throw new Error(`${TOOLS[id].name} is busy`);
     this.stopTool(id);
+    // Only DevCatz's folder: a copy of yours (external) stays where it is.
     rmSync(this.dir(id), { recursive: true, force: true });
     this.save(id, null);
+    this.picked.delete(id);
+    void this.scan(id);
     this.updates.delete(id);
     // Open goes back to DBCatz where this tool was the choice.
     const w = { ...(store.settings.dbOpenWith ?? {}) };
@@ -525,7 +707,7 @@ export class WebTools {
     await Promise.all(
       WEB_TOOL_IDS.map(async (id) => {
         const c = this.config(id);
-        if (!c) return void this.updates.delete(id);
+        if (!c || c.external) return void this.updates.delete(id);
         const v = await TOOLS[id].latest().catch(() => null);
         if (!v) failed.push(TOOLS[id].name);
         else if (newer(v, c.version)) this.updates.set(id, v);
@@ -547,6 +729,9 @@ export class WebTools {
   // ---------------------------------------------------------------- running
 
   private writeServers(id: WebToolId): void {
+    // Your own phpMyAdmin keeps its own config.inc.php: DevCatz writes nothing into it.
+    if (id === 'phpmyadmin' && this.config(id)?.external) return;
+    mkdirSync(this.dir(id), { recursive: true });
     const svcs = this.deps.services().filter((s) => !s.pending && TOOLS[id].engines.includes(s.engine));
     let data: unknown;
     if (id === 'rediscommander') {
@@ -571,7 +756,8 @@ export class WebTools {
   }
 
   private spawnTracked(key: string, id: WebToolId, serviceId: string | null, port: number, cmd: string, args: string[], env: NodeJS.ProcessEnv, db?: string): Running {
-    const child = spawn(cmd, args, { env, stdio: 'ignore', windowsHide: true });
+    // Its own process group (macOS / Linux), so Stop takes php -S's workers with it (killTree kills the group).
+    const child = spawn(cmd, args, { env, stdio: 'ignore', windowsHide: true, detached: !isWin });
     const r: Running = { key, id, serviceId, port, child, db, usedAt: Date.now() };
     this.runs.set(key, r);
     child.on('exit', () => {
@@ -607,7 +793,9 @@ export class WebTools {
     this.writeServers(id);
     if (kind === 'node') {
       // Its own defaults, then DevCatz's connections (conf/local.json); nothing it saves goes back into them.
-      const pkg = this.dir(id, 'app', 'node_modules', 'redis-commander');
+      const c2 = this.config(id)!;
+      const pkg = c2.external ? c2.external.path : this.dir(id, 'app', 'node_modules', 'redis-commander');
+      mkdirSync(this.dir(id, 'conf'), { recursive: true });
       const env = { ...getShellEnv(), ...rt.env, NODE_ENV: 'production', NODE_CONFIG_DIR: [join(pkg, 'config'), this.dir(id, 'conf')].join(delimiter), NODE_CONFIG_STRICT_MODE: '0' };
       const r = this.spawnTracked(id, id, null, c.port, rt.bin, [join(pkg, 'bin', 'redis-commander.js'), '--address', '127.0.0.1', '--port', String(c.port), '--nosave'], env);
       await this.waitUp(c.port, r.child, TOOLS[id].name);
@@ -616,7 +804,7 @@ export class WebTools {
     const php = rt;
     const env = { ...getShellEnv(), ...php.env, ...(isWin ? {} : { PHP_CLI_SERVER_WORKERS: '4' }) };
     // phpMyAdmin 5.2 still raises deprecation notices on PHP 8.4+: they stay out of its pages.
-    const args = ['-d', 'display_errors=0', '-d', 'log_errors=0', '-d', 'error_reporting=24575', '-d', 'memory_limit=512M', '-d', 'upload_max_filesize=512M', '-d', 'post_max_size=512M', '-d', 'max_execution_time=600', '-S', `127.0.0.1:${c.port}`, '-t', this.dir(id, 'app')];
+    const args = ['-d', 'display_errors=0', '-d', 'log_errors=0', '-d', 'error_reporting=24575', '-d', 'memory_limit=512M', '-d', 'upload_max_filesize=512M', '-d', 'post_max_size=512M', '-d', 'max_execution_time=600', '-S', `127.0.0.1:${c.port}`, '-t', id === 'phpmyadmin' ? this.appPath(id) : this.dir(id, 'app')];
     const r = this.spawnTracked(id, id, null, c.port, php.bin, args, env);
     await this.waitUp(c.port, r.child, TOOLS[id].name);
     return r;
@@ -650,7 +838,7 @@ export class WebTools {
     const user = encodeURIComponent(s.user || 'postgres');
     const pass = s.password ? `:${encodeURIComponent(s.password)}` : '';
     const env = { ...getShellEnv(), PGWEB_DATABASE_URL: `postgres://${user}${pass}@127.0.0.1:${s.port}/${encodeURIComponent(db)}?sslmode=disable` };
-    const r = this.spawnTracked(key, 'pgweb', s.id, port, this.dir('pgweb', 'app', isWin ? 'pgweb.exe' : 'pgweb'), ['--bind=127.0.0.1', `--listen=${port}`, '--skip-open'], env, db);
+    const r = this.spawnTracked(key, 'pgweb', s.id, port, this.config('pgweb')?.external?.path ?? this.dir('pgweb', 'app', isWin ? 'pgweb.exe' : 'pgweb'), ['--bind=127.0.0.1', `--listen=${port}`, '--skip-open'], env, db);
     await this.waitUp(port, r.child, 'pgweb');
     return r;
   }
@@ -673,6 +861,7 @@ export class WebTools {
     await this.startShared(id);
     const base = this.deps.urlOf(this.host(id));
     if (id === 'rediscommander') return `${base}/`;
+    if (id === 'phpmyadmin' && this.config(id)?.external) return `${base}/`;
     if (id === 'phpmyadmin') {
       const n = this.deps.services().filter((x) => !x.pending && TOOLS.phpmyadmin.engines.includes(x.engine)).findIndex((x) => x.id === s.id) + 1;
       return `${base}/index.php?${q(database ? { route: '/database/structure', server: String(n), db: database } : { server: String(n) })}`;
@@ -787,7 +976,7 @@ export class WebTools {
         active: true,
         pids: info.pid ? [info.pid] : [],
         dataDirs: [],
-        binDirs: [this.dir(r.id, 'app')],
+        binDirs: this.config(r.id)?.external ? [] : [this.dir(r.id, 'app')],
         link: r.serviceId ? { section: 'database' as const, id: r.serviceId } : null,
       };
     });

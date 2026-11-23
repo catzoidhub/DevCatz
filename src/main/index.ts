@@ -663,7 +663,7 @@ function api(): HerdApi {
     dbcatzDismiss: async () => herd.dbcatz.dismiss(),
     webToolInstall: async (id, opts, open) => {
       const t = webToolId(id);
-      await herd.webTools.install(t, { domain: String(opts?.domain ?? ''), port: Number(opts?.port), runtime: typeof opts?.runtime === 'string' ? opts.runtime : null });
+      await herd.webTools.install(t, { domain: String(opts?.domain ?? ''), port: Number(opts?.port), runtime: typeof opts?.runtime === 'string' ? opts.runtime : null, existing: opts?.existing === true });
       if (open?.serviceId) {
         herd.dbSetOpenWith(String(open.serviceId), t);
         await openWeb(await herd.webTools.open(t, String(open.serviceId), typeof open.database === 'string' && open.database ? open.database : undefined));
@@ -682,6 +682,7 @@ function api(): HerdApi {
       await openWeb(await herd.webTools.open(t, String(serviceId), typeof database === 'string' && database ? database : undefined));
     },
     webToolsCheckUpdates: () => herd.webToolsCheckUpdates(),
+    webToolInspect: (id, path) => herd.webTools.inspect(webToolId(id), String(path)),
     webToolStart: (id, serviceId) => herd.webTools.start(webToolId(id), typeof serviceId === 'string' ? serviceId : undefined),
     webToolSetAutoStop: async (id, on, minutes) => herd.webTools.setAutoStop(webToolId(id), on === true, typeof minutes === 'number' ? minutes : undefined),
     webToolStop: async (id, serviceId) => herd.webTools.stopRunning(webToolId(id), typeof serviceId === 'string' ? serviceId : undefined),
@@ -1553,7 +1554,7 @@ app.whenReady().then(async () => {
       title: 'URLs without a port stopped answering',
       body: `Windows' IP Helper service has stopped. Sites use their :${store.settings.httpsPort} address meanwhile; click to start it again.`,
     });
-    n.on('click', () => showWindow('settings:project'));
+    n.on('click', () => showWindow('settings:general'));
     n.show();
   };
   herd.onMail = (m) => {
