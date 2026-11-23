@@ -100,8 +100,7 @@ async function done() {
         <div class="shrink-0 space-y-1">
           <p class="label-caps">{{ count }} things {{ isWin ? 'ask you to confirm' : 'ask for your password' }} — only if you choose them</p>
           <p class="text-xs opacity-60">
-            Nothing is installed now. Each button says what it does first; {{ s.domain.needsResolver ? 'all' : 'both' }} can be undone in Settings
-            (Project{{ s.domain.needsResolver ? ', General' : '' }}).
+            Nothing is installed now. Each button says what it does first; {{ s.domain.needsResolver ? 'all' : 'both' }} can be undone in Settings → General.
           </p>
         </div>
 

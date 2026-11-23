@@ -407,7 +407,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
     </div>
 
     <!-- HTTPS -->
-    <div v-if="tab === 'project'" class="card">
+    <div v-if="tab === 'general'" class="card">
       <div class="card-body">
         <h2 class="font-semibold">
           HTTPS certificates
@@ -433,7 +433,7 @@ const forget = (p: 'ngrok' | 'expose') => attempt(() => herd.exposeSetAccount(p,
     </div>
 
     <!-- Proxy / clean URLs -->
-    <div v-if="tab === 'project'" class="card">
+    <div v-if="tab === 'general'" class="card">
       <div class="card-body">
         <h2 class="font-semibold">
           Proxy

@@ -39,7 +39,7 @@ const DOT: Record<'running' | 'busy' | 'down' | 'stopped' | 'not-needed', [DotCo
 
 /**
  * A service row: dot icon, name, and the state as a suffix. Kept enabled
- * (macOS dims the icons of disabled items); a click opens Settings → Project.
+ * (macOS dims the icons of disabled items); a click opens Settings (General: proxy, DNS).
  */
 function status(state: 'running' | 'down' | 'not-needed', name: string, note: string | undefined, open: () => void): Electron.MenuItemConstructorOptions {
   const text = state === 'running' ? 'running' : state === 'down' ? 'stopped' : (note ?? 'not needed');

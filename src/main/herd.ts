@@ -5124,9 +5124,9 @@ export class Herd extends EventEmitter {
   private busyPortWords(port: number, file: string): string {
     const holder =
       port === store.settings.httpsPort
-        ? { who: "DevCatz's HTTPS proxy", own: 'or DevCatz\'s HTTPS port (Settings → Project → Proxy)' }
+        ? { who: "DevCatz's HTTPS proxy", own: 'or DevCatz\'s HTTPS port (Settings → General → Proxy)' }
         : port === store.settings.httpPort
-          ? { who: "DevCatz's HTTP proxy", own: 'or DevCatz\'s HTTP port (Settings → Project → Proxy)' }
+          ? { who: "DevCatz's HTTP proxy", own: 'or DevCatz\'s HTTP port (Settings → General → Proxy)' }
           : port === docatzHttpsPort() || port === docatzProxyPort()
             ? { who: "DoCatz's proxy", own: "or DoCatz's port in DoCatz's settings" }
             : null;
@@ -5419,7 +5419,7 @@ export class Herd extends EventEmitter {
       this.cleanUrls = await cleanUrlsWorking();
       this.cleanHttp = await cleanHttpWorking();
       this.changed();
-      if (!this.cleanUrls) throw new Error('The forwarding is installed, but https://<site>.localhost does not answer yet: try again in a moment, or see Settings → Project');
+      if (!this.cleanUrls) throw new Error('The forwarding is installed, but https://<site>.localhost does not answer yet: try again in a moment, or see Settings → General');
       return this.cleanUrls;
     }, 'Names without a port are on');
   }
