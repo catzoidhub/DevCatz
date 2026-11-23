@@ -116,6 +116,20 @@ export class Remotes {
     this.save(this.list().filter((e) => e.id !== id));
   }
 
+  /** Favourite on / off, or into a group ('' = none): the right-click menu and drag and drop. */
+  setMeta(id: string, meta: { favorite?: boolean; group?: string }): void {
+    if (!this.list().some((e) => e.id === id)) throw new Error('No such proxy');
+    const group = meta.group === undefined ? undefined : String(meta.group).trim().slice(0, 40);
+    this.save(this.list().map((e) => (e.id === id ? { ...e, ...(meta.favorite === undefined ? {} : { favorite: meta.favorite }), ...(group === undefined ? {} : { group }) } : e)));
+  }
+
+  /** A group's heading: rename it (every entry in it moves) or delete it (the entries stay, without a group). */
+  groupAction(name: string, action: 'rename' | 'delete', to?: string): void {
+    const next = action === 'rename' ? String(to ?? '').trim().slice(0, 40) : '';
+    if (action === 'rename' && !next) throw new Error('Give the group a name');
+    this.save(this.list().map((e) => (e.group === name ? { ...e, group: next } : e)));
+  }
+
   /** The list's own order (drag and drop); ids it does not name keep their place at the end. */
   reorder(ids: string[]): void {
     const at = new Map(ids.map((id, i) => [id, i]));

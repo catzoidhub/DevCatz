@@ -76,6 +76,8 @@ export const runtimeTabRequest = ref<string | null>(null);
 export const freeSpaceRequest = ref<string | null>(null);
 /** Database page: "New Group…" / "Rename Group…" from the native context menus (`db-new-group:<id>` / `db-rename-group:<name>`). */
 export const dbGroupRequest = ref<{ mode: 'new' | 'rename'; id?: string; from?: string } | null>(null);
+/** Proxies page: what its right-click menus asked for (`proxy-edit:` / `proxy-remove:` / `proxy-new-group:` <id>, `proxy-rename-group:` <name>). */
+export const proxyRequest = ref<{ action: 'edit' | 'remove' | 'new-group' | 'rename-group'; key: string } | null>(null);
 /** Ask DevCatz's "Uninstall …": the service's page opens its own uninstall dialog (typed confirmation), never a silent uninstall. */
 export const uninstallRequest = ref<{ scope: 'db' | 'storage' | 'ws' | 'search' | 'gateway' | 'whatsapp'; id: string } | null>(null);
 /** devcatz://gateways/<kind>?install=1 (DoCatz's DevCatz Services group): that gateway's page opens its install dialog. */

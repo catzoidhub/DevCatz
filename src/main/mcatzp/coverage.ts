@@ -252,6 +252,10 @@ export const MCATZP_COVERAGE = {
   proxyRemove: 'tool: remove_proxy',
   proxyValidate: 'not a tool',
   proxyReorder: 'not a tool',
+  proxySetMeta: 'tool: save_proxy',
+  proxyGroupAction: 'tool: save_proxy',
+  proxyMenu: 'not a tool',
+  proxyGroupMenu: 'not a tool',
   // web database tools (TODO §48)
   webToolOpen: 'tool: open_in_web_tool',
   dbSetOpenWith: 'tool: open_in_web_tool',

@@ -695,6 +695,41 @@ function api(): HerdApi {
     },
     proxyRemove: async (id) => herd.remotes.remove(String(id)),
     proxyReorder: async (ids) => herd.remotes.reorder(Array.isArray(ids) ? ids.map(String) : []),
+    proxySetMeta: async (id, meta) => herd.remotes.setMeta(String(id), { ...(typeof meta?.favorite === 'boolean' ? { favorite: meta.favorite } : {}), ...(typeof meta?.group === 'string' ? { group: meta.group } : {}) }),
+    proxyGroupAction: async (name, action, to) => herd.remotes.groupAction(String(name), action === 'rename' ? 'rename' : 'delete', typeof to === 'string' ? to : undefined),
+    proxyMenu: async (id) => {
+      const p = herd.remotes.state().find((x) => x.id === id);
+      if (!p) return;
+      const groups = [...new Set(herd.remotes.list().map((x) => x.group).filter(Boolean))].sort();
+      const nav = (t: string) => () => win?.webContents.send('herd:navigate', t);
+      Menu.buildFromTemplate([
+        { label: 'Open in Browser', click: () => void openWeb(p.address) },
+        { label: 'Copy Address', click: () => clipboard.writeText(p.address) },
+        { label: p.mode === 'proxy' ? 'Copy Target (IP and port)' : 'Copy Target Address', click: () => clipboard.writeText(p.target) },
+        { type: 'separator' },
+        { label: p.favorite ? 'Remove from Favorites' : 'Add to Favorites', click: () => herd.remotes.setMeta(p.id, { favorite: !p.favorite }) },
+        {
+          label: 'Move to Group',
+          submenu: [
+            ...groups.map((g) => ({ label: g, type: 'checkbox' as const, checked: g === p.group, click: () => herd.remotes.setMeta(p.id, { group: g }) })),
+            ...(groups.length ? [{ type: 'separator' as const }] : []),
+            { label: 'New Group…', click: nav(`proxy-new-group:${p.id}`) },
+            ...(p.group ? [{ label: `Remove from “${p.group}”`, click: () => herd.remotes.setMeta(p.id, { group: '' }) }] : []),
+          ],
+        },
+        { type: 'separator' },
+        { label: 'Edit…', click: nav(`proxy-edit:${p.id}`) },
+        { label: 'Remove…', click: nav(`proxy-remove:${p.id}`) },
+      ]).popup({ window: win ?? undefined });
+    },
+    proxyGroupMenu: async (name) => {
+      const nav = (t: string) => () => win?.webContents.send('herd:navigate', t);
+      Menu.buildFromTemplate([
+        { label: 'Rename Group…', click: nav(`proxy-rename-group:${name}`) },
+        { type: 'separator' },
+        { label: 'Delete Group (keeps the proxies)', click: () => herd.remotes.groupAction(String(name), 'delete') },
+      ]).popup({ window: win ?? undefined });
+    },
     proxyValidate: async (input, id) => herd.remotes.validate(input, typeof id === 'string' ? id : undefined),
     dbSetOpenWith: async (serviceId, tool) => {
       if (tool !== 'dbcatz') webToolId(tool);

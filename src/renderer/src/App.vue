@@ -2,7 +2,7 @@
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import { keyLabel, words } from '@shared/platform';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { attempt, cloneRequest, dbGroupRequest, gwInstallRequest, svcInstallRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog, updateDialogAuto, runtimeTabRequest, confirmRequest } from './store';
+import { attempt, cloneRequest, dbGroupRequest, proxyRequest, gwInstallRequest, svcInstallRequest, herd, init, navRequest, notify, openSiteRequest, reportDialog, siteTabRequest, state, toast, updateDialog, updateDialogAuto, runtimeTabRequest, confirmRequest } from './store';
 import UpdateDialog from './components/UpdateDialog.vue';
 import ReportDialog from './components/ReportDialog.vue';
 import UninstallDialog from './components/UninstallDialog.vue';
@@ -599,6 +599,12 @@ function navigate(target: string) {
   if (target.startsWith('db:')) {
     section.value = 'database';
     dbFocus.value = target.slice(3);
+    return;
+  }
+  const pr = /^proxy-(edit|remove|new-group|rename-group):(.+)$/.exec(target);
+  if (pr) {
+    section.value = 'proxies';
+    proxyRequest.value = { action: pr[1] as 'edit', key: pr[2] };
     return;
   }
   if (target.startsWith('db-new-group:') || target.startsWith('db-rename-group:')) {

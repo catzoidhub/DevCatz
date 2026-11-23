@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import type { ProxyState } from '@shared/types';
 import { words } from '@shared/platform';
-import { attempt, herd, notify, state } from '../store';
+import { attempt, herd, notify, proxyRequest, state } from '../store';
 import { ICONS } from '../icons';
 import ProxyDialog from './ProxyDialog.vue';
 import PopMenu, { type MenuItem } from './PopMenu.vue';
@@ -81,7 +81,6 @@ function setAll(open: boolean) {
   view.value.collapsed = open ? [] : foldable.value.map((x) => x.key);
 }
 
-const inputOf = (p: ProxyState) => ({ name: p.name, mode: p.mode, protocol: p.protocol, host: p.host, port: p.port, insecure: p.insecure, ownHost: p.ownHost, url: p.url, group: p.group, favorite: p.favorite });
 // ---- drag and drop: onto a heading (into Favorites / a group / out of them), onto a row (before it, into its section)
 const dragId = ref<string | null>(null);
 const dropSection = ref<string | null>(null);
@@ -99,7 +98,7 @@ async function onDrop(sec: Section, before?: ProxyState) {
   const p = proxies.value.find((x) => x.id === id);
   if (!p || before?.id === p.id) return;
   const m = membership(sec.key, p);
-  if (m && (m.favorite !== p.favorite || m.group !== p.group)) await attempt(() => herd.proxySave({ ...inputOf(p), ...m }, p.id));
+  if (m && (m.favorite !== p.favorite || m.group !== p.group)) await attempt(() => herd.proxySetMeta(p.id, m));
   if (before && view.value.sort === 'default') {
     const ids = proxies.value.map((x) => x.id).filter((x) => x !== p.id);
     ids.splice(ids.indexOf(before.id), 0, p.id);
@@ -107,8 +106,33 @@ async function onDrop(sec: Section, before?: ProxyState) {
   }
 }
 
+// ---- right-click menus (native, as on the sites list): what needs this page comes back through proxyRequest
+const groupDialog = ref<{ mode: 'new' | 'rename'; id?: string; from?: string; name: string } | null>(null);
+watch(
+  proxyRequest,
+  (r) => {
+    if (!r) return;
+    proxyRequest.value = null;
+    const p = proxies.value.find((x) => x.id === r.key);
+    if (r.action === 'edit' && p) dialog.value = { entry: p };
+    else if (r.action === 'remove' && p) {
+      selectedId.value = p.id;
+      setTimeout(() => (removing.value = true));
+    } else if (r.action === 'new-group' && p) groupDialog.value = { mode: 'new', id: p.id, name: '' };
+    else if (r.action === 'rename-group') groupDialog.value = { mode: 'rename', from: r.key, name: r.key };
+  },
+  { immediate: true },
+);
+async function saveGroup() {
+  const d = groupDialog.value;
+  const name = d?.name.trim();
+  if (!d || !name) return;
+  const ok = await attempt(() => (d.mode === 'new' ? herd.proxySetMeta(d.id!, { group: name }) : herd.proxyGroupAction(d.from!, 'rename', name)).then(() => true));
+  if (ok) groupDialog.value = null;
+}
+
 async function toggleFavorite(p: ProxyState) {
-  await attempt(() => herd.proxySave({ ...inputOf(p), favorite: !p.favorite }, p.id));
+  await attempt(() => herd.proxySetMeta(p.id, { favorite: !p.favorite }));
 }
 async function copy(v: string) {
   await navigator.clipboard.writeText(v).catch(() => undefined);
@@ -151,6 +175,7 @@ const dot = (p: ProxyState) => (p.mode === 'redirect' ? 'status-info' : p.reacha
               @dragover.prevent="dropSection = s.key"
               @dragleave="dropSection = dropSection === s.key ? null : dropSection"
               @drop.prevent="onDrop(s)"
+              @contextmenu.prevent="s.key.startsWith('g:') && herd.proxyGroupMenu(s.key.slice(2))"
             >
               <button class="flex flex-1 items-center gap-1 text-left" @click="toggle(s.key)">
                 <svg class="size-3 transition-transform" :class="{ '-rotate-90': s.collapsed }" viewBox="0 0 20 20" fill="currentColor"><path d="M5.2 7.2a.75.75 0 0 1 1.06 0L10 10.94l3.74-3.74a.75.75 0 1 1 1.06 1.06l-4.27 4.27a.75.75 0 0 1-1.06 0L5.2 8.26a.75.75 0 0 1 0-1.06Z" /></svg>
@@ -169,6 +194,7 @@ const dot = (p: ProxyState) => (p.mode === 'redirect' ? 'status-info' : p.reacha
                 @dragover.prevent="dropRow = p.id"
                 @dragleave="dropRow = dropRow === p.id ? null : dropRow"
                 @drop.prevent.stop="onDrop(s, p)"
+                @contextmenu.prevent="(selectedId = p.id), herd.proxyMenu(p.id)"
               >
                 <a :class="{ 'menu-active': p.id === selectedId }" :title="`${p.domain} → ${p.target}`" @click="selectedId = p.id">
                   <span class="status status-sm shrink-0" :class="dot(p)" />
@@ -268,5 +294,17 @@ const dot = (p: ProxyState) => (p.mode === 'redirect' ? 'status-info' : p.reacha
       </div>
     </main>
   </div>
+  <Teleport to="body">
+    <dialog v-if="groupDialog" open class="modal modal-open" @keydown.esc="groupDialog = null">
+      <form class="modal-box w-80 space-y-3" @submit.prevent="saveGroup">
+        <h3 class="font-semibold">{{ groupDialog.mode === 'new' ? 'New group' : 'Rename group' }}</h3>
+        <input v-model="groupDialog.name" class="input input-sm w-full" placeholder="e.g. Production" maxlength="40" autofocus />
+        <div class="modal-action mt-2">
+          <button type="button" class="btn btn-sm btn-ghost" @click="groupDialog = null">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary" :disabled="!groupDialog.name.trim()">{{ groupDialog.mode === 'new' ? 'Create' : 'Rename' }}</button>
+        </div>
+      </form>
+    </dialog>
+  </Teleport>
   <ProxyDialog v-if="dialog" :entry="dialog.entry" @close="dialog = null" @saved="(id) => ((dialog = null), (selectedId = id))" />
 </template>
