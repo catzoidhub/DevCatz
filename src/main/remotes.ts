@@ -168,7 +168,7 @@ export class Remotes {
     return this.list().map((e) =>
       e.mode === 'redirect'
         ? { domain: this.hostOf(e), port: null, projectName: e.name, running: true, secure: true, anyScheme: true, redirect: e.url! }
-        : { domain: this.hostOf(e), port: null, projectName: e.name, running: true, secure: true, remote: { target: this.targetOf(e), insecure: e.insecure !== false, ownHost: e.ownHost === true } },
+        : { domain: this.hostOf(e), port: null, projectName: e.name, running: true, secure: true, remote: { target: this.targetOf(e), insecure: e.insecure !== false, ownHost: e.ownHost === true, reachable: () => this.reach.get(e.id) ?? null } },
     );
   }
 }

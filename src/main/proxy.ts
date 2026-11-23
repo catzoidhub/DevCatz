@@ -38,7 +38,7 @@ export interface Route {
   /** `/` redirects here (RustFS serves its console under /rustfs/console/). */
   rootRedirect?: string;
   /** A server elsewhere (TODO §49): forwarded to `target`; its certificate unchecked when `insecure`; the Host header is the target's unless `ownHost`. */
-  remote?: { target: string; insecure: boolean; ownHost: boolean };
+  remote?: { target: string; insecure: boolean; ownHost: boolean; reachable?: () => boolean | null };
   /** The browser is sent on to this address, with the path it asked for (TODO §49). */
   redirect?: string;
   /** Called on every request it gets (pgweb's idle stop counts from the last one). */
@@ -224,7 +224,10 @@ export class Proxy {
     if (route?.php) return this.servePhp(req, res, route, secure);
     if (route?.remote) {
       const r = route.remote;
-      return void this.proxy.web(req, res, { target: r.target, changeOrigin: !r.ownHost, secure: !r.insecure, headers: { 'x-forwarded-proto': secure ? 'https' : 'http' } });
+      // Known down at the last check (every 30 s): say so at once instead of waiting for the system's connect timeout.
+      if (r.reachable?.() === false) return this.page(res, route, `No answer from ${r.target} at the last check`, String(req.headers.host ?? ''));
+      // A target that stops answering mid-way: DevCatz's page after 30 s without a byte, not an endless spinner.
+      return void this.proxy.web(req, res, { target: r.target, changeOrigin: !r.ownHost, secure: !r.insecure, proxyTimeout: 30_000, headers: { 'x-forwarded-proto': secure ? 'https' : 'http' } });
     }
     if (!route || !route.port) return this.page(res, route, undefined, String(req.headers.host ?? ''));
     void this.target(route.port, route.keepHost).then((t) => {
