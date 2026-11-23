@@ -94,6 +94,7 @@
   --c-mail: oklch(72% 0.14 300);
   --c-whatsapp: oklch(70% 0.15 350);
   --c-expose: oklch(70% 0.15 200);
+  --c-proxies: oklch(70% 0.14 260);
   --c-runtimes: oklch(66% 0.17 320);
   --c-settings: oklch(from var(--color-base-content) l c h / 0.9);
 }

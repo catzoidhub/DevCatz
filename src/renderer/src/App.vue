@@ -27,6 +27,7 @@ import GitView from './components/GitView.vue';
 import MailView from './components/MailView.vue';
 import WhatsAppView from './components/WhatsAppView.vue';
 import ExposeView from './components/ExposeView.vue';
+import ProxiesView from './components/ProxiesView.vue';
 import StorageView from './components/StorageView.vue';
 import AskDevCatz from './components/AskDevCatz.vue';
 import { aiOn } from './ai';
@@ -65,8 +66,8 @@ function gitTitle(p: ProjectState): string {
     .join(' · ');
 }
 
-type AppSection = 'projects' | 'runtimes' | 'database' | 'storage' | 'websocket' | 'search' | 'git' | 'mail' | 'whatsapp' | 'expose' | 'monitoring' | 'settings';
-const RAIL: { id: AppSection; label: string; short: string; icon: 'projects' | 'terminal' | 'database' | 'bucket' | 'websocket' | 'search' | 'git' | 'mail' | 'gateway' | 'expose' | 'monitoring' }[] = [
+type AppSection = 'projects' | 'runtimes' | 'database' | 'storage' | 'websocket' | 'search' | 'git' | 'mail' | 'whatsapp' | 'expose' | 'proxies' | 'monitoring' | 'settings';
+const RAIL: { id: AppSection; label: string; short: string; icon: 'projects' | 'terminal' | 'database' | 'bucket' | 'websocket' | 'search' | 'git' | 'mail' | 'gateway' | 'expose' | 'proxies' | 'monitoring' }[] = [
   { id: 'projects', label: 'Projects', short: 'Projects', icon: 'projects' },
   { id: 'runtimes', label: 'Runtimes: PHP, Python, Ruby, Node.js, Bun, Go', short: 'Runtimes', icon: 'terminal' },
   { id: 'database', label: 'Database', short: 'Database', icon: 'database' },
@@ -78,6 +79,7 @@ const RAIL: { id: AppSection; label: string; short: string; icon: 'projects' | '
   { id: 'mail', label: 'Mail: every mail the sites send, caught here', short: 'Mail', icon: 'mail' },
   { id: 'whatsapp', label: 'Gateways: WhatsApp (GOWA, WAHA), sessions, messages, webhooks', short: 'Gateways', icon: 'gateway' },
   { id: 'expose', label: 'Expose: share a site on a public URL', short: 'Expose', icon: 'expose' },
+  { id: 'proxies', label: 'Proxies: names for your other servers (an IP and port, or a redirect)', short: 'Proxies', icon: 'proxies' },
   { id: 'monitoring', label: 'Monitoring', short: 'Monitor', icon: 'monitoring' },
 ];
 // Windows, stage 1: only the sections that work there so far (Catzoid #57).
@@ -87,7 +89,7 @@ const section = ref<AppSection>(
   (() => {
     try {
       const v = localStorage.getItem('mrcatz-herd.section');
-      return ['runtimes', 'database', 'storage', 'websocket', 'search', 'git', 'mail', 'whatsapp', 'expose', 'monitoring', 'settings'].includes(v ?? '') ? (v as AppSection) : 'projects';
+      return ['runtimes', 'database', 'storage', 'websocket', 'search', 'git', 'mail', 'whatsapp', 'expose', 'proxies', 'monitoring', 'settings'].includes(v ?? '') ? (v as AppSection) : 'projects';
     } catch {
       return 'projects';
     }
@@ -519,7 +521,7 @@ function navigate(target: string) {
     else navigate('settings:ai');
     return;
   }
-  if (['projects', 'runtimes', 'settings', 'storage', 'database', 'websocket', 'search', 'git', 'mail', 'whatsapp', 'expose', 'monitoring'].includes(target)) {
+  if (['projects', 'runtimes', 'settings', 'storage', 'database', 'websocket', 'search', 'git', 'mail', 'whatsapp', 'expose', 'proxies', 'monitoring'].includes(target)) {
     section.value = target as AppSection;
     return;
   }
@@ -938,6 +940,7 @@ async function park() {
     <MailView v-else-if="section === 'mail'" :focus="mailFocus" @open-site="openSite" />
     <WhatsAppView v-else-if="section === 'whatsapp'" :focus="waFocus" @open-site="openSite" />
     <ExposeView v-else-if="section === 'expose'" :focus="exposeFocus" @open-site="openSite" />
+    <ProxiesView v-else-if="section === 'proxies'" />
     <MonitoringView v-else-if="section === 'monitoring'" @open="openFromMonitor" />
     <section v-else-if="section === 'websocket'" class="flex min-w-0 flex-1 flex-col bg-base-100">
       <WebSocketView :focus="wsFocus" @open-site="openSite" />

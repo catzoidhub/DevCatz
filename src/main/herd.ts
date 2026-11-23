@@ -38,6 +38,7 @@ import * as tools from './tools';
 import { cancellable } from './cancel';
 import * as phps from './php';
 import { WebTools } from './webtools';
+import { Remotes } from './remotes';
 import type { DbOpenTool } from '@shared/types';
 import { phpInFolder, phpVersion } from './phpsystem';
 import * as phpext from './phpext';
@@ -352,6 +353,12 @@ export class Herd extends EventEmitter {
   readonly ai = new DevCatzAi(this);
   /** DBCatz, the database viewer app: gets DevCatz's services through services.json, opened by dbcatz:// links. */
   readonly dbcatz = new DbCatz();
+  /** Proxies and redirects (TODO §49): friendly .localhost names for servers elsewhere. */
+  readonly remotes: Remotes = new Remotes({
+    domainOwner: (host) => this.domainOwnerExceptProxies(host),
+    urlOf: (host) => `https://${host}${this.portSuffix(true)}`,
+    ownPorts: () => [store.settings.httpsPort, store.settings.httpPort, 443, 80],
+  });
   /** phpMyAdmin, Adminer, pgweb (TODO §48): web tools next to DBCatz, at their own name under the default domain. */
   readonly webTools: WebTools = new WebTools({
     services: () => this.dbs.state(),
@@ -484,6 +491,12 @@ export class Herd extends EventEmitter {
     this.dbs.onChange = () => this.changed();
     this.dbcatz.onChange = () => this.changed();
     void this.dbcatz.locate();
+    this.remotes.onChange = () => {
+      this.updateRoutes();
+      this.changed();
+    };
+    this.timers.push(setInterval(() => void this.remotes.check(), 30_000));
+    void this.remotes.check();
     this.webTools.onChange = () => {
       this.updateRoutes();
       this.changed();
@@ -4516,7 +4529,7 @@ export class Herd extends EventEmitter {
       .filter((p) => p.reverb && this.stacks.get(p.id)?.apps.some((a) => a.framework === 'laravel'))
       .map((p) => ({ domain: this.reverbDomain(p), port: this.reverbPort(p), projectName: `${p.name} Reverb`, running: this.processes.isActive(p.id), secure: true }));
     // Object storage domains (minio.localhost, console.minio.localhost …) and WebSocket servers (ws.localhost …).
-    this.proxy.setRoutes([...routes, ...reverb, ...this.storage.routes(), ...this.ws.routes(), ...this.search.routes(), ...this.mail.routes(), ...this.whatsapp.routes(), ...this.gateways.routes(), ...this.docatzRoute(), ...this.mockRoutes(), ...this.webTools.routes()]);
+    this.proxy.setRoutes([...routes, ...reverb, ...this.storage.routes(), ...this.ws.routes(), ...this.search.routes(), ...this.mail.routes(), ...this.whatsapp.routes(), ...this.gateways.routes(), ...this.docatzRoute(), ...this.mockRoutes(), ...this.webTools.routes(), ...this.remotes.routes()]);
   }
 
   /**
@@ -4623,6 +4636,11 @@ export class Herd extends EventEmitter {
    * DB domain). `site` is the one being changed: its own domains do not count.
    */
   domainOwner(domain: string, site?: string): string | null {
+    return this.domainOwnerExceptProxies(domain, site) ?? this.remotes.ownerOf(domain);
+  }
+
+  /** As domainOwner, without the proxies (they check each other themselves, so one can be edited under its own name). */
+  private domainOwnerExceptProxies(domain: string, site?: string): string | null {
     const d = domain.trim().toLowerCase();
     for (const p of this.projects) {
       if (p.id === site) continue;
@@ -4637,6 +4655,8 @@ export class Herd extends EventEmitter {
     if (store.settings.dbDomain && `${store.settings.dbDomain}.${tld()}` === d) return 'the DB domain (Settings → Database)';
     if (d === `docatz.${tld()}` || d.endsWith(`.docatz.${tld()}`)) return 'DoCatz (its containers)';
     if (d === `dialcatz.${tld()}` || d.endsWith(`.dialcatz.${tld()}`)) return "DialCatz's mock servers";
+    const tool = this.webTools.state().find((t) => t.installed && (t.host === d || d.endsWith(`.${t.host}`)));
+    if (tool) return tool.name;
     return null;
   }
 
@@ -5796,6 +5816,7 @@ export class Herd extends EventEmitter {
       databases: this.dbs.state(),
       dbcatz: this.dbcatz.state(),
       webTools: this.webTools.state(),
+      proxies: this.remotes.state(),
       dialcatz: this.dialcatz.state(),
       mocks: this.mocks.list().map((m) => {
         const domain = `${m.slug}.dialcatz.${tld()}`;

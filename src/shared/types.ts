@@ -994,6 +994,8 @@ export interface Settings {
    * DialCatz's slug in `<name>.dialcatz.<default domain>` whenever that mock runs.
    */
   mockDomains?: Record<string, string>;
+  /** Proxies and redirects to other servers (TODO §49). */
+  proxies?: ProxyEntry[];
   /** Web database tools (TODO §48): what is installed, at which name and port. */
   webTools?: Partial<Record<WebToolId, WebToolConfig>>;
   /** What Open on a database service uses, per service id: the last one picked (DBCatz when unset). */
@@ -1821,6 +1823,8 @@ export interface AppState {
   mocks: DialcatzMockState[];
   /** phpMyAdmin, Adminer, pgweb (TODO §48). */
   webTools: WebToolState[];
+  /** Friendly names for servers elsewhere (TODO §49). */
+  proxies: ProxyState[];
   docatz: DbCatzState;
   /** DevCatz's own update (Catzoid #54). */
   appUpdate: AppUpdateState;
@@ -2649,6 +2653,40 @@ export interface DbServiceConfig {
   bootstrapped?: boolean;
 }
 
+// ------------------------------------------------------------ proxies and redirects (TODO §49)
+
+/** A friendly name under the default domain for a server elsewhere. */
+export interface ProxyEntry {
+  id: string;
+  /** `proxmox-prod` → proxmox-prod.<tld>. */
+  name: string;
+  /** proxy: the name stays in the address bar, DevCatz forwards. redirect: the browser goes to the real address. */
+  mode: 'proxy' | 'redirect';
+  /** proxy: where it forwards to. */
+  protocol?: 'http' | 'https';
+  host?: string;
+  port?: number;
+  /** proxy: the target's certificate is its own (self-signed), not checked. On unless set to false. */
+  insecure?: boolean;
+  /** proxy: send the .localhost name as the Host header instead of the target's. */
+  ownHost?: boolean;
+  /** redirect: the address to go to (the path asked for is added). */
+  url?: string;
+  /** A group in the list ("Production"), '' for none. */
+  group: string;
+  favorite: boolean;
+}
+export type ProxyInput = Omit<ProxyEntry, 'id' | 'group' | 'favorite'> & { group?: string; favorite?: boolean };
+export interface ProxyState extends ProxyEntry {
+  domain: string;
+  /** https://<name>.<tld> with the proxy's port when it is not 443. */
+  address: string;
+  /** `https://10.10.10.10:8443`, or the redirect's address. */
+  target: string;
+  /** proxy: the target accepted a connection at the last check; null = not checked yet, or a redirect. */
+  reachable: boolean | null;
+}
+
 // ------------------------------------------------------------ web database tools (TODO §48)
 
 export type WebToolId = 'phpmyadmin' | 'adminer' | 'pgweb' | 'rediscommander' | 'mongoexpress';
@@ -3375,6 +3413,11 @@ export interface HerdApi {
   webToolStop(id: WebToolId, serviceId?: string): Promise<void>;
   /** pgweb: stop after `minutes` unused (5–1440, default 30), or keep running until stopped. */
   webToolSetAutoStop(id: WebToolId, on: boolean, minutes?: number): Promise<void>;
+  /** Proxies and redirects (TODO §49): add (no id) or change one; returns its id. */
+  proxySave(input: ProxyInput, id?: string): Promise<string>;
+  proxyRemove(id: string): Promise<void>;
+  /** Checks the form: a message per field, null when fine. */
+  proxyValidate(input: ProxyInput, id?: string): Promise<{ name: string | null; target: string | null }>;
   /** Remembers what Open uses for this service (the last one picked). */
   dbSetOpenWith(serviceId: string, tool: DbOpenTool): Promise<void>;
   searchInstall(kind: SearchKind, config: SearchConfig): Promise<void>;
@@ -3737,5 +3780,5 @@ export const API_METHODS: (keyof HerdApi)[] = [
   'installDeps', 'depCommands', 'depRun', 'nodeRemote', 'nodeInstall', 'nodeUninstall', 'nodeSetDefault', 'shimPathSet',
   'bunRemote', 'bunInstall', 'bunUninstall', 'bunSetDefault',
   'goRemote', 'goInstall', 'goUninstall', 'goSetDefault', 'rustInstall', 'rustRemote', 'rustToolchainInstall', 'rustToolchainUninstall', 'rustSetDefault', 'rustTargetAdd', 'rustToolInstall', 'rustInstallLinker', 'rustToolsCheck', 'rustToolUninstall', 'toolsState', 'toolInstall', 'toolUninstall', 'repairElectron', 'installCancel', 'uvInstall', 'pythonRemote', 'pythonInstall', 'pythonUninstall', 'pythonSetDefault', 'rvInstall', 'rubyRemote', 'rubyInstall', 'rubyUninstall', 'rubySetDefault', 'rubyBuildToolsInstall',
-  'phpRemote', 'phpInstall', 'phpUninstall', 'phpAddFolder', 'phpRemoveFolder', 'phpSetDefault', 'phpGetIni', 'phpSetIni', 'composerInstall', 'phpExtensions', 'phpExtInstall', 'phpExtSetEnabled', 'phpExtRemove', 'phpExtDismiss', 'phpOpenIni', 'restartServices', 'checkUpdates', 'runtimeUpdate', 'goDbInfo', 'goDbTask', 'stackTask', 'dbEngines', 'dbVersions', 'dbDefaults', 'dbCreate', 'dbCancelCreate', 'dbDismiss', 'dbUpdate', 'dbRemove', 'dbAction', 'dbOpenData', 'dbOpenBinaries', 'dbDetect', 'dbList', 'dbCreateDatabase', 'dbBuildAction', 'dbcatzOpen', 'dbcatzInstall', 'dbcatzCancelInstall', 'dbcatzDismiss', 'webToolInstall', 'webToolCancel', 'webToolUpdate', 'webToolUninstall', 'webToolConfigure', 'webToolCheck', 'webToolOpen', 'webToolsCheckUpdates', 'webToolInspect', 'webToolStart', 'webToolStop', 'webToolSetAutoStop', 'dbSetOpenWith', 'monitorSnapshot', 'monitorLive', 'monitorHistory', 'monitorExport', 'searchInstall', 'searchUpdate', 'searchCancelInstall', 'searchUninstall', 'searchAction', 'searchOpenData', 'searchIndexes', 'searchCreateIndex', 'searchDeleteIndex', 'searchGetSettings', 'searchSaveSettings', 'searchQuery', 'searchUpsert', 'searchImportFile', 'searchDeleteDoc', 'mailAction', 'mailList', 'mailGet', 'mailRaw', 'mailMarkRead', 'mailDelete', 'mailDeleteAll', 'mailSaveAttachment', 'mailAttachmentData', 'mailForward', 'mailForwardConfig', 'mailSetForwardConfig', 'mailEnv', 'mailSendTest', 'mailOpenData', 'exposeInstall', 'exposeCancelInstall', 'exposeUninstall', 'exposeCheckUpdates', 'exposeUpgrade', 'exposeCloudflareLogin', 'exposeCloudflareLogout', 'exposeSetAccount', 'exposeStart', 'exposeStop', 'exposeRequests', 'exposeClearRequests', 'exposeReplay', 'waInstall', 'waUpdate', 'waCancelInstall', 'waUninstall', 'waAction', 'waOpenData', 'waCheckUpdates', 'taskDismiss', 'gwInstall', 'gwUpdate', 'gwCancelInstall', 'gwUninstall', 'gwAction', 'gwOpenData', 'gwCheckUpdates', 'gwUpgrade', 'gwMove', 'gwSetAutoStart', 'gwSend', 'gwEnv', 'gwSms', 'gwClearSms', 'waUpgrade', 'waSessionStart', 'waSessionQr', 'waSessionLogout', 'waSessionRemove', 'waSend', 'waContacts', 'waGroups', 'waMessages', 'waClearMessages', 'waHooks', 'waSetHook', 'waRemoveHook', 'waDeliveries', 'waReplay', 'waEnv', 'gitStatus', 'gitInstall', 'gitUpdateCheck', 'gitUpdate', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitDiscard', 'gitCommit', 'gitSync', 'gitCancel', 'gitLog', 'gitShow', 'gitBranches', 'gitBranch', 'aiSettings', 'aiSetSettings', 'aiSetKey', 'aiModels', 'aiProbe', 'aiTest', 'aiCancel', 'aiPreviewExplain', 'aiExplain', 'aiPreviewCommit', 'aiCommit', 'aiPreviewDockerEdit', 'aiDockerEdit', 'aiPreviewEnv', 'aiEnv', 'aiPreviewSearch', 'aiSearch', 'aiPreviewWebhook', 'aiWebhook', 'aiPreviewAsk', 'aiAsk', 'aiRunAction', 'worktreeList', 'worktreeCreate', 'worktreeAdd', 'worktreeCheck', 'worktreeRemove', 'worktreePrune', 'gitStashes', 'gitStash', 'gitTags', 'gitTag', 'gitOperation', 'gitSquash', 'gitCherryPick', 'gitRevert', 'gitReset', 'gitRestoreFile', 'gitOpenFile', 'gitIgnoreSuggestions', 'gitIgnoreAdd', 'gitSetIdentity', 'gitAddRemote', 'gitPulls', 'gitCreatePull', 'gitCheckoutPull', 'gitAddAccount', 'gitRemoveAccount', 'gitRepos', 'gitSshKeys', 'gitSshGenerate', 'gitSshAddToAccount', 'gitClone', 'gitCancelClone', 'searchUpgrade', 'wsUpgrade', 'storageUpgrade', 'servicesCheckUpdates', 'serviceSetAutoStart', 'searchTasks', 'searchCancelTasks', 'searchClearTasks', 'searchBackups', 'searchCreateBackup', 'searchDeleteBackup', 'searchRevealBackup', 'searchRestoreBackup', 'searchExport', 'searchKeys', 'searchCreateKey', 'searchDeleteKey', 'searchEnv', 'storageEnv', 'scoutCommand', 'wsInstall', 'wsUpdate', 'wsCancelInstall', 'wsUninstall', 'wsAction', 'wsOpenData', 'wsStats', 'wsPublish', 'wsClientAuth', 'wsEnv', 'reverbEnv', 'laravelBroadcast', 'laravelTestBroadcast', 'storageInstall', 'storageUpdate', 'storageCancelInstall', 'storageUninstall', 'storageAction', 'storageOpenData', 'openLogsFolder', 'pickFile', 's3Buckets', 's3CreateBucket', 's3DeleteBucket', 's3SetPublic', 's3List', 's3Upload', 's3CancelUpload', 's3Download', 's3Delete', 's3MkDir', 'dockerStatus', 'dockerFiles', 'dockerServices', 'dockerGenerate', 'dockerWrite', 'dockerListFiles', 'dockerDevPreview', 'dockerDocatzEnv', 'dockerDocatzEnvReplace', 'dockerCancel', 'dockerDevWrite', 'dockerComposeEnv', 'dockerReadFile', 'dockerSaveFile', 'dockerCompose', 'startEngine', 'setFavorite', 'setSiteGroup', 'renameGroup', 'deleteGroup', 'toggleGroup', 'moveGroup', 'siteMenu', 'groupMenu', 'setSiteOrder', 'dbSetFavorite', 'dbSetGroup', 'dbGroupAction', 'dbSetOrder', 'dbMenu', 'dbGroupMenu', 'laravelLog', 'herdSites', 'setTld', 'installResolver', 'uninstallResolver', 'restartDns', 'installCleanUrls', 'uninstallCleanUrls', 'startPortProxy',
+  'phpRemote', 'phpInstall', 'phpUninstall', 'phpAddFolder', 'phpRemoveFolder', 'phpSetDefault', 'phpGetIni', 'phpSetIni', 'composerInstall', 'phpExtensions', 'phpExtInstall', 'phpExtSetEnabled', 'phpExtRemove', 'phpExtDismiss', 'phpOpenIni', 'restartServices', 'checkUpdates', 'runtimeUpdate', 'goDbInfo', 'goDbTask', 'stackTask', 'dbEngines', 'dbVersions', 'dbDefaults', 'dbCreate', 'dbCancelCreate', 'dbDismiss', 'dbUpdate', 'dbRemove', 'dbAction', 'dbOpenData', 'dbOpenBinaries', 'dbDetect', 'dbList', 'dbCreateDatabase', 'dbBuildAction', 'dbcatzOpen', 'dbcatzInstall', 'dbcatzCancelInstall', 'dbcatzDismiss', 'webToolInstall', 'webToolCancel', 'webToolUpdate', 'webToolUninstall', 'webToolConfigure', 'webToolCheck', 'webToolOpen', 'webToolsCheckUpdates', 'webToolInspect', 'webToolStart', 'webToolStop', 'webToolSetAutoStop', 'dbSetOpenWith', 'proxySave', 'proxyRemove', 'proxyValidate', 'monitorSnapshot', 'monitorLive', 'monitorHistory', 'monitorExport', 'searchInstall', 'searchUpdate', 'searchCancelInstall', 'searchUninstall', 'searchAction', 'searchOpenData', 'searchIndexes', 'searchCreateIndex', 'searchDeleteIndex', 'searchGetSettings', 'searchSaveSettings', 'searchQuery', 'searchUpsert', 'searchImportFile', 'searchDeleteDoc', 'mailAction', 'mailList', 'mailGet', 'mailRaw', 'mailMarkRead', 'mailDelete', 'mailDeleteAll', 'mailSaveAttachment', 'mailAttachmentData', 'mailForward', 'mailForwardConfig', 'mailSetForwardConfig', 'mailEnv', 'mailSendTest', 'mailOpenData', 'exposeInstall', 'exposeCancelInstall', 'exposeUninstall', 'exposeCheckUpdates', 'exposeUpgrade', 'exposeCloudflareLogin', 'exposeCloudflareLogout', 'exposeSetAccount', 'exposeStart', 'exposeStop', 'exposeRequests', 'exposeClearRequests', 'exposeReplay', 'waInstall', 'waUpdate', 'waCancelInstall', 'waUninstall', 'waAction', 'waOpenData', 'waCheckUpdates', 'taskDismiss', 'gwInstall', 'gwUpdate', 'gwCancelInstall', 'gwUninstall', 'gwAction', 'gwOpenData', 'gwCheckUpdates', 'gwUpgrade', 'gwMove', 'gwSetAutoStart', 'gwSend', 'gwEnv', 'gwSms', 'gwClearSms', 'waUpgrade', 'waSessionStart', 'waSessionQr', 'waSessionLogout', 'waSessionRemove', 'waSend', 'waContacts', 'waGroups', 'waMessages', 'waClearMessages', 'waHooks', 'waSetHook', 'waRemoveHook', 'waDeliveries', 'waReplay', 'waEnv', 'gitStatus', 'gitInstall', 'gitUpdateCheck', 'gitUpdate', 'gitInit', 'gitDiff', 'gitStage', 'gitUnstage', 'gitDiscard', 'gitCommit', 'gitSync', 'gitCancel', 'gitLog', 'gitShow', 'gitBranches', 'gitBranch', 'aiSettings', 'aiSetSettings', 'aiSetKey', 'aiModels', 'aiProbe', 'aiTest', 'aiCancel', 'aiPreviewExplain', 'aiExplain', 'aiPreviewCommit', 'aiCommit', 'aiPreviewDockerEdit', 'aiDockerEdit', 'aiPreviewEnv', 'aiEnv', 'aiPreviewSearch', 'aiSearch', 'aiPreviewWebhook', 'aiWebhook', 'aiPreviewAsk', 'aiAsk', 'aiRunAction', 'worktreeList', 'worktreeCreate', 'worktreeAdd', 'worktreeCheck', 'worktreeRemove', 'worktreePrune', 'gitStashes', 'gitStash', 'gitTags', 'gitTag', 'gitOperation', 'gitSquash', 'gitCherryPick', 'gitRevert', 'gitReset', 'gitRestoreFile', 'gitOpenFile', 'gitIgnoreSuggestions', 'gitIgnoreAdd', 'gitSetIdentity', 'gitAddRemote', 'gitPulls', 'gitCreatePull', 'gitCheckoutPull', 'gitAddAccount', 'gitRemoveAccount', 'gitRepos', 'gitSshKeys', 'gitSshGenerate', 'gitSshAddToAccount', 'gitClone', 'gitCancelClone', 'searchUpgrade', 'wsUpgrade', 'storageUpgrade', 'servicesCheckUpdates', 'serviceSetAutoStart', 'searchTasks', 'searchCancelTasks', 'searchClearTasks', 'searchBackups', 'searchCreateBackup', 'searchDeleteBackup', 'searchRevealBackup', 'searchRestoreBackup', 'searchExport', 'searchKeys', 'searchCreateKey', 'searchDeleteKey', 'searchEnv', 'storageEnv', 'scoutCommand', 'wsInstall', 'wsUpdate', 'wsCancelInstall', 'wsUninstall', 'wsAction', 'wsOpenData', 'wsStats', 'wsPublish', 'wsClientAuth', 'wsEnv', 'reverbEnv', 'laravelBroadcast', 'laravelTestBroadcast', 'storageInstall', 'storageUpdate', 'storageCancelInstall', 'storageUninstall', 'storageAction', 'storageOpenData', 'openLogsFolder', 'pickFile', 's3Buckets', 's3CreateBucket', 's3DeleteBucket', 's3SetPublic', 's3List', 's3Upload', 's3CancelUpload', 's3Download', 's3Delete', 's3MkDir', 'dockerStatus', 'dockerFiles', 'dockerServices', 'dockerGenerate', 'dockerWrite', 'dockerListFiles', 'dockerDevPreview', 'dockerDocatzEnv', 'dockerDocatzEnvReplace', 'dockerCancel', 'dockerDevWrite', 'dockerComposeEnv', 'dockerReadFile', 'dockerSaveFile', 'dockerCompose', 'startEngine', 'setFavorite', 'setSiteGroup', 'renameGroup', 'deleteGroup', 'toggleGroup', 'moveGroup', 'siteMenu', 'groupMenu', 'setSiteOrder', 'dbSetFavorite', 'dbSetGroup', 'dbGroupAction', 'dbSetOrder', 'dbMenu', 'dbGroupMenu', 'laravelLog', 'herdSites', 'setTld', 'installResolver', 'uninstallResolver', 'restartDns', 'installCleanUrls', 'uninstallCleanUrls', 'startPortProxy',
 ];

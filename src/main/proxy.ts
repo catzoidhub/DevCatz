@@ -37,6 +37,10 @@ export interface Route {
   keepHost?: boolean;
   /** `/` redirects here (RustFS serves its console under /rustfs/console/). */
   rootRedirect?: string;
+  /** A server elsewhere (TODO §49): forwarded to `target`; its certificate unchecked when `insecure`; the Host header is the target's unless `ownHost`. */
+  remote?: { target: string; insecure: boolean; ownHost: boolean };
+  /** The browser is sent on to this address, with the path it asked for (TODO §49). */
+  redirect?: string;
   /** Called on every request it gets (pgweb's idle stop counts from the last one). */
   used?: () => void;
   /** Paths DevCatz answers itself on this domain instead of forwarding (e.g. WAHA's dashboard bootstrap). */
@@ -197,6 +201,11 @@ export class Proxy {
     }
     const route = this.route(req);
     route?.used?.();
+    if (route?.redirect) {
+      const path = req.url && req.url !== '/' ? req.url : '';
+      res.writeHead(302, { location: path ? route.redirect.replace(/\/$/, '') + path : route.redirect, 'cache-control': 'no-store' });
+      return res.end();
+    }
     // Send browsers to the scheme the site is configured for, on the host they asked for (a subdomain stays a subdomain).
     if (route && !route.anyScheme && route.secure !== secure && (req.method === 'GET' || req.method === 'HEAD')) {
       const host = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/\.$/, '').toLowerCase() || route.domain;
@@ -213,6 +222,10 @@ export class Proxy {
     const own = route?.pages?.[(req.url ?? '/').split('?')[0]];
     if (own) return own(req, res);
     if (route?.php) return this.servePhp(req, res, route, secure);
+    if (route?.remote) {
+      const r = route.remote;
+      return void this.proxy.web(req, res, { target: r.target, changeOrigin: !r.ownHost, secure: !r.insecure, headers: { 'x-forwarded-proto': secure ? 'https' : 'http' } });
+    }
     if (!route || !route.port) return this.page(res, route, undefined, String(req.headers.host ?? ''));
     void this.target(route.port, route.keepHost).then((t) => {
       this.proxy.web(req, res, { ...t, headers: { ...t.headers, 'x-forwarded-proto': secure ? 'https' : 'http' } });
@@ -226,6 +239,7 @@ export class Proxy {
       const scheme = route.php.viteTls ? 'https' : 'http';
       return this.proxy.ws(req, socket, head, { target: `${scheme}://localhost:${route.php.vitePort}`, secure: false });
     }
+    if (route?.remote) return this.proxy.ws(req, socket, head, { target: route.remote.target, changeOrigin: !route.remote.ownHost, secure: !route.remote.insecure });
     if (!route?.port) return socket.destroy();
     void this.target(route.port, route.keepHost).then((t) => this.proxy.ws(req, socket, head, t));
   };
@@ -423,15 +437,17 @@ export class Proxy {
 
   /** Friendly page for unknown hosts, stopped sites and sites still booting (DevCatz look, light + dark). */
   private page(res: ServerResponse, route?: Route, detail?: string, host = ''): void {
-    const state = !route ? 'unknown' : route.running ? 'starting' : 'stopped';
-    const title = state === 'unknown' ? 'Unknown site' : state === 'starting' ? `${route!.projectName} is starting` : `${route!.projectName} is stopped`;
+    const state = !route ? 'unknown' : route.remote ? 'unreachable' : route.running ? 'starting' : 'stopped';
+    const title = state === 'unknown' ? 'Unknown site' : state === 'unreachable' ? `${route!.projectName} does not answer` : state === 'starting' ? `${route!.projectName} is starting` : `${route!.projectName} is stopped`;
     const body =
-      state === 'unknown'
+      state === 'unreachable'
+        ? `DevCatz could not reach ${route!.remote!.target}. Is the server up, and is this ${words.computer} on its network (VPN)? This page refreshes on its own.`
+        : state === 'unknown'
         ? 'No site in DevCatz answers to this domain. Link the project (Create New Site) or check the spelling.'
         : state === 'starting'
           ? 'The dev server is not accepting connections yet. This page refreshes on its own.'
           : `Start it from the DevCatz window or the ${words.tray}. This page refreshes on its own.`;
-    const pill = state === 'unknown' ? ['Not linked', '#f59e0b'] : state === 'starting' ? ['Starting', '#8b5cf6'] : ['Stopped', '#94a3b8'];
+    const pill = state === 'unreachable' ? ['Unreachable', '#ef4444'] : state === 'unknown' ? ['Not linked', '#f59e0b'] : state === 'starting' ? ['Starting', '#8b5cf6'] : ['Stopped', '#94a3b8'];
     const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · DevCatz</title>${route ? '<meta http-equiv="refresh" content="2">' : ''}

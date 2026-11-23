@@ -587,7 +587,7 @@ export class WebTools {
       const host = `${name}.${tld()}`;
       const owner = this.deps.domainOwner(host);
       const other = WEB_TOOL_IDS.find((x) => x !== id && (this.config(x)?.domain ?? TOOLS[x].domain ?? x) === name);
-      if (owner) domain = `${host} is the site ${owner}'s address`;
+      if (owner) domain = `${host} is already ${owner}`;
       else if (other) domain = `${host} is ${TOOLS[other].name}'s address`;
     }
     const port = Number(o.port);

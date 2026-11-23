@@ -247,6 +247,10 @@ export const MCATZP_COVERAGE = {
   storageOpenData: 'tool: open_data_folder',
   // tool: open_in_dbcatz
   dbcatzOpen: 'tool: open_in_dbcatz',
+  // proxies and redirects (TODO §49)
+  proxySave: 'tool: save_proxy',
+  proxyRemove: 'tool: remove_proxy',
+  proxyValidate: 'not a tool',
   // web database tools (TODO §48)
   webToolOpen: 'tool: open_in_web_tool',
   dbSetOpenWith: 'tool: open_in_web_tool',

@@ -11,7 +11,7 @@ if (isWin) document.documentElement.classList.add('is-win');
 if (isLinux) document.documentElement.classList.add('is-linux');
 
 /** Rail sections and Settings tabs Windows has so far. */
-export const WIN_SECTIONS = new Set(['projects', 'runtimes', 'database', 'storage', 'websocket', 'search', 'git', 'mail', 'whatsapp', 'expose', 'monitoring', 'settings']);
+export const WIN_SECTIONS = new Set(['projects', 'runtimes', 'database', 'storage', 'websocket', 'search', 'git', 'mail', 'whatsapp', 'expose', 'proxies', 'monitoring', 'settings']);
 export const WIN_SETTINGS_TABS = new Set(['general', 'ai', 'mcatzp', 'project', 'database', 'storage', 'websocket', 'search', 'mail', 'whatsapp', 'expose', 'monitoring', 'updates', 'about']);
 /** Site tabs that work on Windows so far. */
 export const WIN_SITE_TABS = new Set(['overview', 'env', 'database', 'storage', 'api', 'git', 'mail', 'whatsapp', 'websocket', 'search', 'docker', 'logs', 'settings']);

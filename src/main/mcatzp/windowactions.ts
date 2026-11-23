@@ -1,5 +1,5 @@
 import type { ActionDef, CallResult } from '@catzoid/mcatzp-host';
-import type { GwKind, HerdApi, SearchKind, StorageKind, WaEngine, WebToolId, WsKind } from '@shared/types';
+import type { GwKind, HerdApi, ProxyInput, SearchKind, StorageKind, WaEngine, WebToolId, WsKind } from '@shared/types';
 import { findSite, inBackground, type ChangeAction, type Scopes } from './actions';
 
 /**
@@ -72,6 +72,17 @@ export function windowChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
     if (!m) throw new Error(`No mock server ${String(ref)} is running (see list_mocks)`);
     return m;
   };
+  const proxyInput = (a: Record<string, unknown>): ProxyInput => ({
+    name: String(a.name),
+    mode: a.mode === 'redirect' ? 'redirect' : 'proxy',
+    ...(a.protocol === 'http' || a.protocol === 'https' ? { protocol: a.protocol } : {}),
+    ...(typeof a.host === 'string' ? { host: a.host } : {}),
+    ...(typeof a.port === 'number' ? { port: a.port } : {}),
+    ...(typeof a.insecure === 'boolean' ? { insecure: a.insecure } : {}),
+    ...(typeof a.ownHost === 'boolean' ? { ownHost: a.ownHost } : {}),
+    ...(typeof a.url === 'string' ? { url: a.url } : {}),
+    ...(typeof a.group === 'string' ? { group: a.group } : {}),
+  });
   const WEB_TOOL = { type: 'string', enum: ['phpmyadmin', 'adminer', 'pgweb', 'rediscommander', 'mongoexpress'] };
   /** An installed web tool and a database service it opens. */
   const webToolFor = async (tool: unknown, service: unknown) => {
@@ -158,6 +169,22 @@ export function windowChanges(api: HerdApi, scopes: Scopes): ChangeAction[] {
             await api.webToolConfigure(t.id, { domain: typeof a.domain === 'string' ? a.domain : t.domain, port: typeof a.port === 'number' ? a.port : t.port, runtime: typeof a.runtime === 'string' ? a.runtime : null });
             if (typeof a.autoStop === 'boolean' || typeof a.autoStopMinutes === 'number') await api.webToolSetAutoStop(t.id, typeof a.autoStop === 'boolean' ? a.autoStop : t.autoStop !== false, typeof a.autoStopMinutes === 'number' ? a.autoStopMinutes : undefined);
             return ok({ result: 'Changed' });
+          }),
+          act('save_proxy', 'Add or change a proxy or redirect', 'A name under the default domain for a server elsewhere (list_services shows them as proxies). mode proxy: DevCatz forwards https://<name>.<default domain> to protocol + host + port (insecure: the server has its own certificate, on by default; ownHost: send the name as the Host). mode redirect: the browser is sent to url. Give id to change one.', { id: { type: 'string', maxLength: 40 }, name: { type: 'string', pattern: '^[a-z0-9]([a-z0-9-]{0,48}[a-z0-9])?$' }, mode: { type: 'string', enum: ['proxy', 'redirect'] }, protocol: { type: 'string', enum: ['http', 'https'] }, host: { type: 'string', maxLength: 253 }, port: { type: 'integer', minimum: 1, maximum: 65535 }, insecure: { type: 'boolean' }, ownHost: { type: 'boolean' }, url: { type: 'string', maxLength: 2000 }, group: { type: 'string', maxLength: 40 } }, ['name', 'mode'], async (a) => {
+            const input = proxyInput(a);
+            const v = await api.proxyValidate(input, typeof a.id === 'string' ? a.id : undefined);
+            if (v.name || v.target) throw new Error([v.name, v.target].filter(Boolean).join('. '));
+            return { title: `${typeof a.id === 'string' ? 'Change' : 'Add'} the ${String(a.mode)} ${String(a.name)}?`, facts: [{ label: a.mode === 'proxy' ? 'Forwards to' : 'Redirects to', value: a.mode === 'proxy' ? `${input.protocol ?? 'https'}://${String(a.host)}:${String(a.port)}` : String(a.url) }], page: 'proxies' };
+          }, async (a) => ok({ id: await api.proxySave(proxyInput(a), typeof a.id === 'string' ? a.id : undefined) })),
+          act('remove_proxy', 'Remove a proxy or redirect', 'Removes the name only; the server it pointed to is not touched.', { proxy: S('Its id or name from list_services.') }, ['proxy'], async (a) => {
+            const p = (await state()).proxies.find((x) => x.id === a.proxy || x.name === a.proxy);
+            if (!p) throw new Error(`No proxy ${String(a.proxy)}`);
+            return { title: `Remove ${p.name}?`, facts: [{ label: 'Goes', value: p.domain }, { label: 'Stays', value: p.target }], page: 'proxies' };
+          }, async (a) => {
+            const p = (await state()).proxies.find((x) => x.id === a.proxy || x.name === a.proxy);
+            if (!p) throw new Error(`No proxy ${String(a.proxy)}`);
+            await api.proxyRemove(p.id);
+            return ok({ removed: p.name });
           }),
           act('start_web_tool', 'Start a web database tool', 'Starts an installed web tool; pgweb and mongo-express start for one service (`service`).', { tool: WEB_TOOL, service: S('pgweb / mongo-express: a service id or name from list_services.') }, ['tool'], async (a) => {
             const t = (await state()).webTools.find((x) => x.id === a.tool && x.installed);

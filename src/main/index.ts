@@ -686,6 +686,15 @@ function api(): HerdApi {
     webToolStart: (id, serviceId) => herd.webTools.start(webToolId(id), typeof serviceId === 'string' ? serviceId : undefined),
     webToolSetAutoStop: async (id, on, minutes) => herd.webTools.setAutoStop(webToolId(id), on === true, typeof minutes === 'number' ? minutes : undefined),
     webToolStop: async (id, serviceId) => herd.webTools.stopRunning(webToolId(id), typeof serviceId === 'string' ? serviceId : undefined),
+    proxySave: async (input, id) => {
+      if (typeof id === 'string' && id) {
+        herd.remotes.update(id, input);
+        return id;
+      }
+      return herd.remotes.add(input);
+    },
+    proxyRemove: async (id) => herd.remotes.remove(String(id)),
+    proxyValidate: async (input, id) => herd.remotes.validate(input, typeof id === 'string' ? id : undefined),
     dbSetOpenWith: async (serviceId, tool) => {
       if (tool !== 'dbcatz') webToolId(tool);
       herd.dbSetOpenWith(String(serviceId), tool);
@@ -1416,6 +1425,7 @@ app.whenReady().then(async () => {
       ['Mail', 'mail'],
       ['Gateways', 'whatsapp'],
       ['Expose', 'expose'],
+      ['Proxies', 'proxies'],
       ['Monitoring', 'monitoring'],
     ];
     const site: Electron.MenuItemConstructorOptions[] = [

@@ -202,6 +202,7 @@ export function readActions(api: HerdApi, scopes: Scopes): ActionDef[] {
         mail: { running: s.mail.running, count: s.mail.count, unread: s.mail.unread },
         webTools: s.webTools.map((t) => ({ id: t.id, name: t.name, opens: t.engines, installed: t.installed, yours: t.external ? `${t.external.label}: ${t.external.path}` : null, found: t.found ? `${t.found.label}${t.found.version ? ` ${t.found.version}` : ''}: ${t.found.path}` : null, version: t.version, update: t.update, address: t.installed ? t.url : null, port: t.port, runsOn: t.runtime ? `${t.runtime === 'php' ? 'PHP' : 'Node.js'} ${t.runtimeVersion ?? '(none installed)'}` : null, status: taskProgress(t.task) ? 'installing' : t.running.length ? 'running' : t.installed ? 'stopped' : 'not installed', progress: taskProgress(t.task), error: t.task?.error ?? null, running: t.running.map((r) => ({ service: r.serviceId, address: r.url, port: r.port })) })),
         openWith: s.settings.dbOpenWith ?? {},
+        proxies: s.proxies.map((p) => ({ id: p.id, name: p.name, mode: p.mode, address: p.address, target: p.target, group: p.group || null, reachable: p.reachable })),
       });
     }),
     read('list_db_engines', 'List database engines', 'The database engines DevCatz can run, their default port, the versions already on this computer, and anything missing to install them.', OBJECT(), async () => {
