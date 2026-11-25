@@ -148,11 +148,11 @@ onMounted(() => input.value?.focus());
           <button v-if="busy" class="ask-send is-stop" title="Stop" aria-label="Stop" @click="stop">
             <svg viewBox="0 0 20 20" fill="currentColor"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5" /></svg>
           </button>
-          <button v-else class="ask-send" :disabled="!prompt.trim()" title="Send (⏎)" aria-label="Send" @click="send()">
+          <button v-else class="ask-send" :disabled="!prompt.trim()" :title="`Send (${keyLabel('enter')})`" aria-label="Send" @click="send()">
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3.5 4.6 8.9l1.1 1.1 3.5-3.5V16.5h1.6V6.5l3.5 3.5 1.1-1.1L10 3.5Z" /></svg>
           </button>
         </div>
-        <p class="mt-2 px-1 text-[11px] opacity-45">⏎ send · {{ keyLabel('shift+⏎') }} new line · Esc close · secrets are masked before anything is sent</p>
+        <p class="mt-2 px-1 text-[11px] opacity-45">{{ keyLabel('enter') }} send · {{ keyLabel('shift+enter') }} new line · Esc close · secrets are masked before anything is sent</p>
       </footer>
     </div>
     <div class="modal-backdrop" @click="emit('close')" />

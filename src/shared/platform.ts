@@ -54,8 +54,8 @@ export function wordsFor(os: OS) {
 
 export const words = wordsFor(currentOS);
 
-const MAC_KEYS: Record<string, string> = { mod: '⌘', shift: '⇧', alt: '⌥', ctrl: '⌃' };
-const PC_KEYS: Record<string, string> = { mod: 'Ctrl', shift: 'Shift', alt: 'Alt', ctrl: 'Ctrl' };
+const MAC_KEYS: Record<string, string> = { mod: '⌘', shift: '⇧', alt: '⌥', ctrl: '⌃', enter: '⏎' };
+const PC_KEYS: Record<string, string> = { mod: 'Ctrl', shift: 'Shift', alt: 'Alt', ctrl: 'Ctrl', enter: 'Enter' };
 
 /** A shortcut label from a combo like 'mod+K' or 'mod+shift+P': '⌘⇧P' on a Mac, 'Ctrl+Shift+P' elsewhere. */
 export function keyLabel(combo: string, os: OS = currentOS): string {

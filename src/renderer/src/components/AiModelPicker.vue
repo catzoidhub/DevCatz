@@ -1,5 +1,6 @@
 <!-- Copied from DBCatz (src/renderer/src/viewer/DvModelPicker.vue): keep the two in step until @catzoid/ui shares it. -->
 <script setup lang="ts">
+import { keyLabel } from '@shared/platform';
 import { computed, nextTick, ref, watch } from 'vue';
 
 /**
@@ -105,10 +106,10 @@ const working = computed(() => Object.values(props.status ?? {}).filter((x) => x
         <span>{{ query ? `${matches.length} of ${models.length}` : `${models.length} models` }}</span>
         <span v-if="checked">· {{ working }} of {{ checked }} checked work</span>
         <span class="flex-1" />
-        <span v-if="query && !matches.length">⏎ keeps “{{ text.trim() }}”</span>
+        <span v-if="query && !matches.length">{{ keyLabel('enter') }} keeps “{{ text.trim() }}”</span>
       </div>
       <div ref="list" class="relative overflow-y-auto p-1" :style="{ maxHeight: `${VIEW * ROW + 8}px` }" @scroll="scrollTop = ($event.target as HTMLElement).scrollTop">
-        <p v-if="!matches.length" class="px-2 py-2 text-xs opacity-50">No model matches. ⏎ uses the id as typed.</p>
+        <p v-if="!matches.length" class="px-2 py-2 text-xs opacity-50">No model matches. {{ keyLabel('enter') }} uses the id as typed.</p>
         <div :style="{ height: `${matches.length * ROW}px` }" class="relative">
           <div v-for="{ m, i } in visible" :key="m" class="absolute inset-x-0 flex cursor-pointer items-center gap-1.5 rounded-md px-2 font-mono text-xs" :class="{ 'bg-primary/15': i === activeIndex, 'font-semibold': m === modelValue, 'opacity-45': !!status?.[m] }" :style="{ top: `${i * ROW}px`, height: `${ROW}px` }" :title="status?.[m] ?? (status?.[m] === null ? 'Works with this key' : m)" @mousemove="activeIndex = i" @click="pick(m)">
             <span class="w-3 shrink-0 text-center" :class="status?.[m] === null ? 'text-success' : status?.[m] ? 'text-error' : 'text-primary'">{{ status?.[m] === null ? '✓' : status?.[m] ? '✗' : m === modelValue ? '•' : '' }}</span>

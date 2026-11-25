@@ -368,7 +368,7 @@ function openGitPage() {
                 Commit &amp; Push
               </button>
             </div>
-            <p class="text-[11px] opacity-50">{{ keyLabel('mod+↩') }} commits.</p>
+            <p class="text-[11px] opacity-50">{{ keyLabel('mod+enter') }} commits.</p>
           </form>
 
           <!-- .gitignore -->
