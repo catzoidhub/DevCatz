@@ -314,7 +314,7 @@ function openGitPage() {
       </div>
 
       <!-- Changes -->
-      <div v-if="sub === 'changes'" class="grid min-h-[28rem] flex-1 gap-4 lg:grid-cols-[minmax(16rem,22rem)_1fr]">
+      <div v-if="sub === 'changes'" class="grid min-h-[28rem] flex-1 gap-4 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
         <div class="flex min-h-0 flex-col gap-3">
           <div class="rounded-box border border-base-300/60">
             <div class="flex items-center gap-2 border-b border-base-300/60 px-3 py-2">
@@ -390,7 +390,7 @@ function openGitPage() {
           </div>
         </div>
 
-        <div class="flex min-h-0 flex-col rounded-box border border-base-300/60">
+        <div class="flex min-h-0 min-w-0 flex-col rounded-box border border-base-300/60">
           <div class="flex items-center gap-2 border-b border-base-300/60 px-3 py-2 text-xs">
             <span class="min-w-0 flex-1 truncate font-mono">{{ selected ? selected.path : 'Select a file to see its changes' }}</span>
             <span v-if="selected" class="badge badge-ghost badge-xs">{{ selected.staged ? 'staged' : 'working tree' }}</span>

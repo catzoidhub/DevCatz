@@ -113,7 +113,7 @@ async function squash() {
 </script>
 
 <template>
-  <div class="grid min-h-[28rem] flex-1 gap-4 xl:grid-cols-[minmax(22rem,1fr)_1.2fr]">
+  <div class="grid min-h-[28rem] flex-1 gap-4 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(22rem,1fr)_minmax(0,1.2fr)]">
     <div class="flex min-h-0 flex-col gap-3">
       <div class="flex flex-wrap items-center gap-2">
         <select v-model="ref_" class="select select-sm w-44" title="Branch whose history is shown">
@@ -161,7 +161,7 @@ async function squash() {
       </div>
     </div>
 
-    <div class="flex min-h-0 flex-col rounded-box border border-base-300/60">
+    <div class="flex min-h-0 min-w-0 flex-col rounded-box border border-base-300/60">
       <template v-if="open">
         <div class="flex flex-wrap items-center gap-2 border-b border-base-300/60 px-3 py-2 text-xs">
           <a class="font-mono link link-hover" title="Copy the full id" @click="copy(open.sha)">{{ open.short }}</a>
