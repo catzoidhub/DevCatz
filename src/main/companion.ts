@@ -211,6 +211,8 @@ async function writeDesktopEntry(name: string, exe: string, tmp: string): Promis
   // The icon in the user's icon theme, so the menu and the dock show it.
   const icon = [join(root, `${scheme}.png`), join(root, '.DirIcon')].find((f) => existsSync(f));
   if (icon) {
+    // hicolor has no folder above 512 x 512 (Ubuntu): an icon in one is never found, and the dock shows a gear.
+    if (Number(size.split('x')[0]) > 512) size = '512x512';
     const target = join(data, 'icons', 'hicolor', size, 'apps', `${scheme}.png`);
     mkdirSync(join(target, '..'), { recursive: true });
     copyFileSync(icon, target);
